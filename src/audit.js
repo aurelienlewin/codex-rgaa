@@ -170,6 +170,7 @@ export async function runAudit(options) {
   let aborted = false;
   let chrome = null;
   let mcpConfig = options.mcp || {};
+  const aiUseMcp = Boolean(options.ai?.useMcp);
   let pagesFailed = 0;
   let aiFailed = 0;
   const wantsDebugSnapshots =
@@ -350,7 +351,8 @@ export async function runAudit(options) {
               reportLang,
               onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
-              signal
+              signal,
+              mcp: aiUseMcp ? mcpConfig : null
             });
             for (const r of Array.isArray(batchResults) ? batchResults : []) {
               const key = String(r?.criterion_id || '');
@@ -394,7 +396,8 @@ export async function runAudit(options) {
               reportLang,
               onLog: (message) => reporter?.onAILog?.({ criterion, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
-              signal
+              signal,
+              mcp: aiUseMcp ? mcpConfig : null
             });
           }
 

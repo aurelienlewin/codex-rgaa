@@ -1,5 +1,10 @@
 export function getSnapshotExpression() {
-  return `(() => {
+  const shouldScroll = (() => {
+    const raw = String(process.env.AUDIT_SNAPSHOT_SCROLL || '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes';
+  })();
+
+  return `(async () => {
     const doc = document;
     const html = doc.documentElement;
 
@@ -8,6 +13,25 @@ export function getSnapshotExpression() {
     const lang = (html && html.getAttribute('lang')) || '';
     const href = String(location && location.href ? location.href : '');
     const readyState = doc.readyState || '';
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const scrollToLoadLazyContent = async () => {
+      const maxSteps = 12;
+      const step = Math.max(200, Math.floor(window.innerHeight * 0.85));
+      const total = Math.max(doc.body ? doc.body.scrollHeight : 0, doc.documentElement.scrollHeight || 0);
+      const steps = Math.max(1, Math.min(maxSteps, Math.ceil(total / step)));
+      for (let i = 0; i < steps; i += 1) {
+        window.scrollTo(0, Math.min(total, i * step));
+        await sleep(120);
+      }
+      await sleep(300);
+      window.scrollTo(0, 0);
+      await sleep(120);
+    };
+
+    if (${shouldScroll}) {
+      await scrollToLoadLazyContent();
+    }
 
     const getText = (node) => (node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {

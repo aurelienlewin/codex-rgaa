@@ -1,82 +1,21 @@
 import fs from 'node:fs/promises';
-import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createAbortError, isAbortError } from './abort.js';
 import { getSnapshotExpression } from './snapshot.js';
+import {
+  buildMcpArgs,
+  normalizeBrowserUrl,
+  looksLikeMcpConnectError,
+  looksLikeMcpInstallOrNetworkError
+} from './mcpConfig.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-snapshot-schema.json', import.meta.url));
 const LIST_PAGES_SCHEMA_PATH = fileURLToPath(
   new URL('../data/mcp-list-pages-schema.json', import.meta.url)
 );
-const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-function normalizeBrowserUrl(browserUrl) {
-  const url = String(browserUrl || '').trim();
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `http://${url}`;
-}
-
-function resolveLocalMcpBinary() {
-  const name =
-    process.platform === 'win32' ? 'chrome-devtools-mcp.cmd' : 'chrome-devtools-mcp';
-  const localPath = path.join(PROJECT_ROOT, 'node_modules', '.bin', name);
-  try {
-    fsSync.accessSync(localPath, fsSync.constants.X_OK);
-    return localPath;
-  } catch {
-    return '';
-  }
-}
-
-function resolveMcpCommand() {
-  const overridden = String(process.env.AUDIT_MCP_COMMAND || '').trim();
-  if (overridden) return { command: overridden, baseArgs: [] };
-
-  const local = resolveLocalMcpBinary();
-  if (local) return { command: local, baseArgs: [] };
-
-  // Upstream recommends using `npx -y` to avoid interactive install prompts.
-  // This is critical for non-interactive `codex exec` runs where there is no TTY.
-  return { command: resolveNpxCommand(), baseArgs: ['-y', 'chrome-devtools-mcp@latest'] };
-}
-
-function buildMcpArgs({ browserUrl, autoConnect, channel } = {}) {
-  if (process.env.CODEX_MCP_MODE === 'none') {
-    return ['-c', 'mcp_servers={}'];
-  }
-
-  const url = normalizeBrowserUrl(browserUrl || process.env.AUDIT_MCP_BROWSER_URL);
-  const resolvedAutoConnect =
-    url ? false : typeof autoConnect === 'boolean' ? autoConnect : true;
-  const resolvedChannel = String(channel || process.env.AUDIT_MCP_CHANNEL || '').trim();
-
-  // We still set npm_config_yes=true in buildCodexEnv(), but `npx -y` is the most reliable
-  // way to suppress install prompts across npm versions.
-  const { command, baseArgs } = resolveMcpCommand();
-  const args = [...baseArgs];
-  if (url) {
-    args.push(`--browser-url=${url}`);
-  } else if (resolvedAutoConnect) {
-    args.push('--autoConnect');
-    if (resolvedChannel) args.push(`--channel=${resolvedChannel}`);
-  }
-
-  // Codex `-c` values are parsed as TOML. Use dotted paths so values are valid TOML scalars/arrays.
-  return [
-    '-c',
-    'mcp_servers={}',
-    '-c',
-    `mcp_servers.chrome-devtools.command=${JSON.stringify(command)}`,
-    '-c',
-    `mcp_servers.chrome-devtools.args=${JSON.stringify(args)}`,
-    '-c',
-    'mcp_servers.chrome-devtools.startup_timeout_sec=30'
-  ];
-}
 
 function buildPrompt({ url, pageId } = {}) {
   const expression = getSnapshotExpression();
@@ -131,27 +70,6 @@ function looksLikeCodexHomePermissionError(stderr) {
   );
 }
 
-function resolveNpxCommand() {
-  if (process.env.AUDIT_NPX_PATH) return String(process.env.AUDIT_NPX_PATH);
-  if (process.platform === 'win32') return 'npx.cmd';
-
-  const candidates = [
-    // Homebrew default locations (covers some sanitized PATH cases).
-    '/usr/local/bin/npx',
-    '/opt/homebrew/bin/npx',
-    'npx'
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      if (candidate === 'npx') return candidate;
-      fsSync.accessSync(candidate, fsSync.constants.X_OK);
-      return candidate;
-    } catch {}
-  }
-
-  return 'npx';
-}
 
 function summarizeCodexStderr(stderr) {
   const text = String(stderr || '').trim();
@@ -179,32 +97,6 @@ function summarizeCodexStderr(stderr) {
   return String(candidates[0] || lines[lines.length - 1] || '').slice(0, 400);
 }
 
-function looksLikeMcpConnectError(stderr) {
-  const text = String(stderr || '').toLowerCase();
-  return (
-    text.includes('econnrefused') ||
-    text.includes('connection refused') ||
-    text.includes('connect') && text.includes('9222') ||
-    text.includes('websocket') ||
-    text.includes('ws://') ||
-    text.includes('devtools') && text.includes('connect')
-  );
-}
-
-function looksLikeMcpInstallOrNetworkError(stderr) {
-  const text = String(stderr || '').toLowerCase();
-  return (
-    (text.includes('chrome-devtools-mcp') &&
-      (text.includes('registry.npmjs.org') ||
-        text.includes('npm error network') ||
-        text.includes('enotfound') ||
-        text.includes('etimedout') ||
-        text.includes('eai_again') ||
-        text.includes('self signed certificate') ||
-        text.includes('unable to get local issuer certificate'))) ||
-    (text.includes('npx') && text.includes('network'))
-  );
-}
 
 function decorateCodexError(err) {
   if (!err) return err;

@@ -134,11 +134,18 @@ All non-automated criteria are reviewed via the local **Codex CLI** (`codex exec
 
 You can override the model with `--codex-model` if your Codex config supports it.
 
+Optional: enable **AI+MCP** to let the reviewer call chrome-devtools MCP tools for extra evidence (a11y tree, targeted DOM queries, screenshots):
+- CLI: `--ai-mcp`
+- Env: `AUDIT_AI_MCP=1`
+
+This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks depend on the model’s visual capabilities; otherwise it will only use textual tool outputs.
+
 The CLI shows a **live Codex feed** during progress (table + colors + spinner), with a short rationale snippet for each criterion.
 
 In guided mode, the live UI is cleared at the end and replaced with a final **decisions report** plus summary.
 
 To inspect what the tool actually captured per page, set `AUDIT_DEBUG_SNAPSHOTS=1` to write per-page snapshot JSON files under `out/<run>/snapshots/`.
+To help with lazy-loaded content (images/cards loaded on scroll), set `AUDIT_SNAPSHOT_SCROLL=1` to scroll during snapshot capture.
 
 ## Notes on automation
 - Only a subset of criteria can be validated automatically with high confidence.

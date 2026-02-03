@@ -327,6 +327,11 @@ async function main() {
       type: 'string',
       describe: 'Codex model for AI review (optional).'
     })
+    .option('ai-mcp', {
+      type: 'boolean',
+      describe:
+        'Allow the AI reviewer to use chrome-devtools MCP tools for additional evidence (slower, but can reduce NA).'
+    })
     .option('timeout', {
       type: 'number',
       default: 45000,
@@ -623,6 +628,11 @@ async function main() {
     argv['codex-model'] ||
     process.env.AUDIT_CODEX_MODEL ||
     'gpt-5.2-codex-low';
+  const aiMcpEnv = String(process.env.AUDIT_AI_MCP || '').trim().toLowerCase();
+  const aiMcpEnvEnabled =
+    aiMcpEnv === '1' || aiMcpEnv === 'true' || aiMcpEnv === 'yes';
+  const aiMcp =
+    typeof argv['ai-mcp'] === 'boolean' ? argv['ai-mcp'] : aiMcpEnvEnabled;
   if (!process.env.CODEX_MCP_MODE) {
     process.env.CODEX_MCP_MODE = 'chrome';
   }
@@ -701,7 +711,8 @@ async function main() {
         pageId: mcpPageIdArg
       },
       ai: {
-        model: codexModel
+        model: codexModel,
+        useMcp: aiMcp
       }
     });
 

@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { STATUS } from './checks.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
+import {
+  buildMcpArgs,
+  looksLikeMcpConnectError,
+  looksLikeMcpInstallOrNetworkError
+} from './mcpConfig.js';
 
 const activeCodexChildren = new Set();
 const childProcessGroup = new WeakMap();
@@ -126,46 +131,46 @@ const BATCH_SCHEMA_PATH = fileURLToPath(
   new URL('../data/codex-review-batch-schema.json', import.meta.url)
 );
 
-function looksLikeNonVerifiable({ rationale, evidence } = {}) {
-  const text = `${rationale || ''} ${(Array.isArray(evidence) ? evidence.join(' ') : '')}`
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-  if (!text) return false;
-  return (
-    text.includes('insufficient evidence') ||
-    text.includes('insufficient') ||
-    text.includes('not enough evidence') ||
-    text.includes('missing evidence') ||
-    text.includes('cannot verify') ||
-    text.includes('cannot be verified') ||
-    text.includes('unable to verify') ||
-    text.includes('non-verifiable') ||
-    text.includes('non verifiable') ||
-    text.includes('preuves insuffisantes') ||
-    text.includes('preuve insuffisante') ||
-    text.includes('manque de preuves') ||
-    text.includes('preuve manquante') ||
-    text.includes('non vérifiable') ||
-    text.includes('impossible de vérifier') ||
-    text.includes('impossible a verifier')
-  );
-}
-
-function normalizeAiStatus(status, { rationale, evidence } = {}) {
+function normalizeAiStatus(status) {
   const normalized = String(status || '').trim();
-  if (normalized === STATUS.NC && looksLikeNonVerifiable({ rationale, evidence })) {
-    return STATUS.NA;
+  if (normalized === STATUS.C || normalized === STATUS.NC || normalized === STATUS.NA) {
+    return normalized;
   }
-  return normalized || STATUS.NC;
+  return STATUS.NC;
 }
 
 function buildEvidence(snapshot) {
   const safeSlice = (arr, max) => (Array.isArray(arr) ? arr.slice(0, max) : []);
+  const caps = {
+    headings: 60,
+    links: 60,
+    formControls: 60,
+    images: 60,
+    frames: 20,
+    tables: 40,
+    listItems: 60,
+    langChanges: 40
+  };
+  const counts = {
+    headings: Array.isArray(snapshot.headings) ? snapshot.headings.length : 0,
+    links: Array.isArray(snapshot.links) ? snapshot.links.length : 0,
+    formControls: Array.isArray(snapshot.formControls) ? snapshot.formControls.length : 0,
+    images: Array.isArray(snapshot.images) ? snapshot.images.length : 0,
+    frames: Array.isArray(snapshot.frames) ? snapshot.frames.length : 0,
+    tables: Array.isArray(snapshot.tables) ? snapshot.tables.length : 0,
+    listItems: Array.isArray(snapshot.listItems) ? snapshot.listItems.length : 0,
+    langChanges: Array.isArray(snapshot.langChanges) ? snapshot.langChanges.length : 0
+  };
+  const truncated = Object.fromEntries(
+    Object.entries(caps).map(([key, cap]) => [key, counts[key] > cap])
+  );
+
   return {
     doctype: snapshot.doctype || '',
     title: snapshot.title || '',
     lang: snapshot.lang || '',
+    href: snapshot.href || '',
+    readyState: snapshot.readyState || '',
     headings: safeSlice(snapshot.headings, 60),
     links: safeSlice(snapshot.links, 60),
     formControls: safeSlice(snapshot.formControls, 60),
@@ -175,20 +180,57 @@ function buildEvidence(snapshot) {
     listItems: safeSlice(snapshot.listItems, 60),
     langChanges: safeSlice(snapshot.langChanges, 40),
     media: snapshot.media || { video: 0, audio: 0, object: 0 },
-    scripts: snapshot.scripts || { scriptTags: 0, hasInlineHandlers: false }
+    scripts: snapshot.scripts || { scriptTags: 0, hasInlineHandlers: false },
+    visual: snapshot.visual || {
+      svg: 0,
+      canvas: 0,
+      picture: 0,
+      cssBackgroundImages: 0,
+      bgExamples: []
+    },
+    counts,
+    truncated
   };
 }
 
-function buildPrompt({ criterion, url, snapshot, reportLang }) {
+function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   const evidence = buildEvidence(snapshot);
+  const useMcp = Boolean(mcp);
+  const pageId =
+    typeof mcp?.pageId === 'number' && Number.isFinite(mcp.pageId) ? mcp.pageId : null;
   const lines =
     i18n.lang === 'en'
       ? [
           'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
           'Allowed statuses: "Conform", "Not conform", "Non applicable".',
-          'Use only the provided evidence. If evidence is insufficient or non-verifiable, return "Non applicable" and explain what is missing.',
-          'Always include 1–4 short evidence items for every result (including Conform and Non applicable).',
+          'Decision rules (in order):',
+          '1) Applicability → return "Non applicable" ONLY if evidence clearly shows the criterion does not apply (no relevant elements).',
+          '   Examples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
+          '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
+          '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance, return "Not conform" and state what is missing.',
+          '3) Compliance → if any relevant element violates the requirement, return "Not conform"; return "Conform" only when evidence explicitly shows compliance for ALL relevant elements.',
+          'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; langChanges 40.',
+          'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
+          'Use only the provided evidence; no assumptions or external sources.',
+          'Always include 1–4 short evidence items (even for Conform/Non applicable), each referencing a specific evidence path/value',
+          '(e.g., images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
+          ...(useMcp
+            ? [
+                'You MAY use chrome-devtools MCP tools to gather missing evidence. Use them only when needed.',
+                'If using MCP tools:',
+                pageId !== null
+                  ? `- select_page with MCP_PAGE_ID=${pageId} then verify location.href.`
+                  : '- list_pages then select a page whose URL matches; if none, navigate_page to MCP_TARGET_URL.',
+                '- Verify location.href; if mismatched, navigate_page to MCP_TARGET_URL.',
+                '- Prefer take_snapshot (a11y tree) and evaluate_script for targeted queries.',
+                '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
+                '- Do NOT submit forms or change data/state.',
+                'If you used MCP tools, include the relevant tool outputs in evidence items.',
+                `MCP_TARGET_URL: ${url}`,
+                pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
+              ].filter(Boolean)
+            : []),
           '',
           'Data:',
           JSON.stringify({
@@ -201,8 +243,33 @@ function buildPrompt({ criterion, url, snapshot, reportLang }) {
       : [
           'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
           'Statuts autorisés: "Conform", "Not conform", "Non applicable".',
-          'Utilise uniquement les preuves fournies. Si les preuves sont insuffisantes ou non vérifiables, réponds "Non applicable" en expliquant ce qui manque.',
-          'Fournis toujours 1–4 éléments de preuve courts pour chaque résultat (y compris Conforme et Non applicable).',
+          'Règles de décision (dans l’ordre):',
+          '1) Applicabilité → réponds "Non applicable" UNIQUEMENT si les preuves montrent clairement que le critère ne s’applique pas (aucun élément concerné).',
+          '   Exemples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
+          '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
+          '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité, réponds "Not conform" et précise ce qui manque.',
+          '3) Conformité → si un élément concerné est non conforme, réponds "Not conform"; réponds "Conform" seulement si les preuves démontrent la conformité pour TOUS les éléments concernés.',
+          'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; langChanges 40.',
+          'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
+          'Utilise uniquement les preuves fournies; pas d’hypothèses ni de sources externes.',
+          'Fournis toujours 1–4 éléments de preuve courts (y compris Conforme/Non applicable), en citant un chemin/valeur précis',
+          '(ex: images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
+          ...(useMcp
+            ? [
+                'Tu PEUX utiliser les outils MCP chrome-devtools pour obtenir des preuves manquantes. Fais-le seulement si nécessaire.',
+                'Si tu utilises MCP:',
+                pageId !== null
+                  ? `- select_page avec MCP_PAGE_ID=${pageId} puis vérifie location.href.`
+                  : '- list_pages puis sélectionne une page dont l’URL correspond; sinon navigate_page vers MCP_TARGET_URL.',
+                '- Vérifie location.href; si différent, navigate_page vers MCP_TARGET_URL.',
+                '- Privilégie take_snapshot (arbre a11y) et evaluate_script pour des requêtes ciblées.',
+                '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
+                '- Ne soumets pas de formulaires et ne modifie pas l’état.',
+                'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                `MCP_TARGET_URL: ${url}`,
+                pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
+              ].filter(Boolean)
+            : []),
           '',
           'Données:',
           JSON.stringify({
@@ -215,17 +282,45 @@ function buildPrompt({ criterion, url, snapshot, reportLang }) {
   return lines.join('\n');
 }
 
-function buildBatchPrompt({ criteria, url, snapshot, reportLang }) {
+function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   const evidence = buildEvidence(snapshot);
+  const useMcp = Boolean(mcp);
+  const pageId =
+    typeof mcp?.pageId === 'number' && Number.isFinite(mcp.pageId) ? mcp.pageId : null;
   const lines =
     i18n.lang === 'en'
       ? [
           'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
           'Allowed statuses: "Conform", "Not conform", "Non applicable".',
           'You MUST return a JSON object with a "results" property (array) containing EXACTLY one result per provided criterion.',
-          'Use only the provided evidence. If evidence is insufficient or non-verifiable for a criterion, return "Non applicable" and explain what is missing.',
-          'For each item: always include 1–4 short evidence items (even for Conform and Non applicable).',
+          'Decision rules (in order):',
+          '1) Applicability → return "Non applicable" ONLY if evidence clearly shows the criterion does not apply (no relevant elements).',
+          '   Examples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
+          '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
+          '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance, return "Not conform" and state what is missing.',
+          '3) Compliance → if any relevant element violates the requirement, return "Not conform"; return "Conform" only when evidence explicitly shows compliance for ALL relevant elements.',
+          'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; langChanges 40.',
+          'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
+          'Use only the provided evidence; no assumptions or external sources.',
+          'For each item: always include 1–4 short evidence items, each referencing a specific evidence path/value',
+          '(e.g., images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
+          ...(useMcp
+            ? [
+                'You MAY use chrome-devtools MCP tools to gather missing evidence. Use them only when needed.',
+                'If using MCP tools, do so once per batch and reuse the evidence across results.',
+                pageId !== null
+                  ? `- select_page with MCP_PAGE_ID=${pageId} then verify location.href.`
+                  : '- list_pages then select a page whose URL matches; if none, navigate_page to MCP_TARGET_URL.',
+                '- Verify location.href; if mismatched, navigate_page to MCP_TARGET_URL.',
+                '- Prefer take_snapshot (a11y tree) and evaluate_script for targeted queries.',
+                '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
+                '- Do NOT submit forms or change data/state.',
+                'If you used MCP tools, include the relevant tool outputs in evidence items.',
+                `MCP_TARGET_URL: ${url}`,
+                pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
+              ].filter(Boolean)
+            : []),
           '',
           'Data:',
           JSON.stringify({
@@ -242,8 +337,33 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang }) {
           'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
           'Statuts autorisés: "Conform", "Not conform", "Non applicable".',
           'Tu dois retourner un objet JSON contenant une propriété "results" (tableau) avec EXACTEMENT un résultat par critère fourni.',
-          'Utilise uniquement les preuves fournies. Si les preuves sont insuffisantes ou non vérifiables pour un critère, réponds "Non applicable" en expliquant ce qui manque.',
-          'Pour chaque item: fournis toujours 1–4 éléments de preuve courts (y compris Conforme et Non applicable).',
+          'Règles de décision (dans l’ordre):',
+          '1) Applicabilité → réponds "Non applicable" UNIQUEMENT si les preuves montrent clairement que le critère ne s’applique pas (aucun élément concerné).',
+          '   Exemples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
+          '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
+          '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité, réponds "Not conform" et précise ce qui manque.',
+          '3) Conformité → si un élément concerné est non conforme, réponds "Not conform"; réponds "Conform" seulement si les preuves démontrent la conformité pour TOUS les éléments concernés.',
+          'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; langChanges 40.',
+          'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
+          'Utilise uniquement les preuves fournies; pas d’hypothèses ni de sources externes.',
+          'Pour chaque item: fournis toujours 1–4 éléments de preuve courts, en citant un chemin/valeur précis',
+          '(ex: images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
+          ...(useMcp
+            ? [
+                'Tu PEUX utiliser les outils MCP chrome-devtools pour obtenir des preuves manquantes. Fais-le seulement si nécessaire.',
+                'Si tu utilises MCP, fais-le une fois par batch et réutilise les preuves.',
+                pageId !== null
+                  ? `- select_page avec MCP_PAGE_ID=${pageId} puis vérifie location.href.`
+                  : '- list_pages puis sélectionne une page dont l’URL correspond; sinon navigate_page vers MCP_TARGET_URL.',
+                '- Vérifie location.href; si différent, navigate_page vers MCP_TARGET_URL.',
+                '- Privilégie take_snapshot (arbre a11y) et evaluate_script pour des requêtes ciblées.',
+                '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
+                '- Ne soumets pas de formulaires et ne modifie pas l’état.',
+                'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                `MCP_TARGET_URL: ${url}`,
+                pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
+              ].filter(Boolean)
+            : []),
           '',
           'Données:',
           JSON.stringify({
@@ -266,7 +386,8 @@ async function runCodexPrompt({
   timeoutMs = 120000,
   onLog,
   onStage,
-  signal
+  signal,
+  mcp
 }) {
   if (signal?.aborted) {
     throw createAbortError();
@@ -278,28 +399,37 @@ async function runCodexPrompt({
   );
 
   const codexPath = process.env.CODEX_PATH || 'codex';
-  const args = [
-    'exec',
-    // AI review only consumes the provided JSON evidence; it does not need any MCP server.
-    // Keeping MCP disabled avoids flaky/slow `npx` installs and keeps runs reliable.
-    '-c',
-    'mcp_servers={}',
-    '--skip-git-repo-check',
-    '--output-schema',
-    schemaPath,
-    '--output-last-message',
-    outputFile,
-    '--color',
-    'never',
-    '--sandbox',
-    'read-only'
-  ];
-
-  if (model) {
-    args.push('-m', model);
-  }
-
-  args.push('-');
+  const buildArgs = (mcpConfig) => {
+    const args = [];
+    if (mcpConfig) {
+      // Allow non-interactive MCP startup (no TTY for approvals).
+      args.push('-a', 'on-failure');
+    }
+    args.push('exec');
+    if (mcpConfig) {
+      args.push(...buildMcpArgs(mcpConfig));
+    } else {
+      // AI review only consumes the provided JSON evidence; it does not need any MCP server.
+      // Keeping MCP disabled avoids flaky/slow `npx` installs and keeps runs reliable.
+      args.push('-c', 'mcp_servers={}');
+    }
+    args.push(
+      '--skip-git-repo-check',
+      '--output-schema',
+      schemaPath,
+      '--output-last-message',
+      outputFile,
+      '--color',
+      'never',
+      '--sandbox',
+      'read-only'
+    );
+    if (model) {
+      args.push('-m', model);
+    }
+    args.push('-');
+    return args;
+  };
 
   onStage?.('AI: preparing prompt');
   onLog?.('Codex: preparing prompt');
@@ -307,7 +437,7 @@ async function runCodexPrompt({
   let abortRequested = false;
   let abortHandler = null;
 
-  const runOnce = async (env) =>
+  const runOnce = async (env, args) =>
     new Promise((resolve, reject) => {
       onStage?.('AI: spawning Codex');
       const child = spawn(codexPath, args, {
@@ -390,18 +520,39 @@ async function runCodexPrompt({
     await ensureDir(process.env.CODEX_HOME);
   }
 
+  const runWithEnv = async (env, mcpConfig) => {
+    try {
+      await runOnce(env, buildArgs(mcpConfig));
+    } catch (err) {
+      // Common failure mode in sandboxed/CI environments: ~/.codex isn't writable.
+      if (!process.env.CODEX_HOME && looksLikeCodexHomePermissionError(err.stderr)) {
+        const fallbackHome = getFallbackCodexHome();
+        await ensureDir(fallbackHome);
+        await ensureDir(path.join(fallbackHome, 'sessions'));
+        await ensureDir(path.join(fallbackHome, 'npm-cache'));
+        await seedCodexConfig(fallbackHome, onLog);
+        onLog?.(`Codex: retrying with CODEX_HOME=${fallbackHome}`);
+        await runOnce(buildCodexEnv({ codexHome: fallbackHome }), buildArgs(mcpConfig));
+        return;
+      }
+      throw err;
+    }
+  };
+
   try {
-    await runOnce(buildCodexEnv());
+    await runWithEnv(buildCodexEnv(), mcp);
   } catch (err) {
-    // Common failure mode in sandboxed/CI environments: ~/.codex isn't writable.
-    if (!process.env.CODEX_HOME && looksLikeCodexHomePermissionError(err.stderr)) {
-      const fallbackHome = getFallbackCodexHome();
-      await ensureDir(fallbackHome);
-      await ensureDir(path.join(fallbackHome, 'sessions'));
-      await ensureDir(path.join(fallbackHome, 'npm-cache'));
-      await seedCodexConfig(fallbackHome, onLog);
-      onLog?.(`Codex: retrying with CODEX_HOME=${fallbackHome}`);
-      await runOnce(buildCodexEnv({ codexHome: fallbackHome }));
+    if (mcp && (looksLikeMcpConnectError(err.stderr) || looksLikeMcpInstallOrNetworkError(err.stderr))) {
+      onLog?.('Codex: MCP failed, retrying AI review without MCP.');
+      try {
+        await runWithEnv(buildCodexEnv(), null);
+      } catch (fallbackErr) {
+        const hint = summarizeCodexStderr(fallbackErr.stderr);
+        if (hint && fallbackErr && fallbackErr.message && !fallbackErr.message.includes(hint)) {
+          fallbackErr.message = `${fallbackErr.message} (${hint})`;
+        }
+        throw fallbackErr;
+      }
     } else {
       // Surface a meaningful hint to the caller.
       const hint = summarizeCodexStderr(err.stderr);
@@ -427,7 +578,8 @@ export async function aiReviewCriterion({
   reportLang,
   onLog,
   onStage,
-  signal
+  signal,
+  mcp
 }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   try {
@@ -435,18 +587,26 @@ export async function aiReviewCriterion({
       throw createAbortError();
     }
     onStage?.('AI: building prompt');
-    const prompt = buildPrompt({ criterion, url, snapshot, reportLang });
+    const prompt = buildPrompt({ criterion, url, snapshot, reportLang, mcp });
     const timeoutRaw = Number(process.env.AUDIT_CODEX_CRITERION_TIMEOUT_MS || '');
     const timeoutMs =
       Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? Math.floor(timeoutRaw) : 120000;
-    const content = await runCodexPrompt({ prompt, model, timeoutMs, onLog, onStage, signal });
+    const content = await runCodexPrompt({
+      prompt,
+      model,
+      timeoutMs,
+      onLog,
+      onStage,
+      signal,
+      mcp
+    });
     const parsed = JSON.parse(content);
     const confidence = Number(parsed.confidence || 0);
     const rationale = parsed.rationale || '';
     const evidence = Array.isArray(parsed.evidence) ? parsed.evidence : [];
 
     return {
-      status: normalizeAiStatus(parsed.status, { rationale, evidence }),
+      status: normalizeAiStatus(parsed.status),
       notes: `${i18n.notes.aiReviewLabel()} (${confidence.toFixed(2)}): ${rationale}`,
       ai: { confidence, rationale, evidence }
     };
@@ -474,14 +634,15 @@ export async function aiReviewCriteriaBatch({
   reportLang,
   onLog,
   onStage,
-  signal
+  signal,
+  mcp
 }) {
   try {
     if (signal?.aborted) {
       throw createAbortError();
     }
     onStage?.(`AI: building batch prompt (${criteria.length})`);
-    const prompt = buildBatchPrompt({ criteria, url, snapshot, reportLang });
+    const prompt = buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp });
     const timeoutRaw = Number(process.env.AUDIT_CODEX_BATCH_TIMEOUT_MS || '');
     const timeoutMs =
       Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? Math.floor(timeoutRaw) : 240000;
@@ -492,7 +653,8 @@ export async function aiReviewCriteriaBatch({
       timeoutMs,
       onLog,
       onStage,
-      signal
+      signal,
+      mcp
     });
     const parsed = JSON.parse(content);
     const results = parsed?.results;
@@ -501,10 +663,7 @@ export async function aiReviewCriteriaBatch({
     }
     return results.map((res) => ({
       ...res,
-      status: normalizeAiStatus(res?.status, {
-        rationale: res?.rationale,
-        evidence: Array.isArray(res?.evidence) ? res.evidence : []
-      })
+      status: normalizeAiStatus(res?.status)
     }));
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {

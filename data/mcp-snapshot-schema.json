@@ -20,6 +20,8 @@
     "doctype": { "type": "string" },
     "title": { "type": "string" },
     "lang": { "type": "string" },
+    "href": { "type": "string" },
+    "readyState": { "type": "string" },
     "images": {
       "type": "array",
       "items": {
@@ -126,6 +128,32 @@
         "video": { "type": "number" },
         "audio": { "type": "number" },
         "object": { "type": "number" }
+      }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["svg", "canvas", "picture", "cssBackgroundImages", "bgExamples"],
+      "properties": {
+        "svg": { "type": "number" },
+        "canvas": { "type": "number" },
+        "picture": { "type": "number" },
+        "cssBackgroundImages": { "type": "number" },
+        "bgExamples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tag", "id", "className", "ariaHidden", "backgroundImage"],
+            "properties": {
+              "tag": { "type": "string" },
+              "id": { "type": "string" },
+              "className": { "type": "string" },
+              "ariaHidden": { "type": "boolean" },
+              "backgroundImage": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "scripts": {
