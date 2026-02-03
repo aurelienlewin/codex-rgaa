@@ -69,7 +69,8 @@ const AI_NOISE_PATTERNS = [
   /autocomplete.*required.*describedby/i,
   /evaluate(?:d)? script response/i,
   /evaluate_script/i,
-  /^"content"\s*:\s*\[/i
+  /^"content"\s*:\s*\[/i,
+  /confirming script evaluation success/i
 ];
 
 function normalizeAiMessage(text) {
@@ -485,6 +486,8 @@ function createFancyReporter(options = {}) {
   const spinner = ora({ text: i18n.t('Préparation de l’audit…', 'Preparing audit…'), color: 'cyan' });
   const renderer = createLiveBlockRenderer();
   const humanizeEnabled = Boolean(options.humanizeFeed);
+  const verboseAiFeed =
+    String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase() === '1';
   const feedHumanizer = createCodexFeedHumanizer({
     enabled: humanizeEnabled,
     model: options.humanizeFeedModel || '',
@@ -623,6 +626,20 @@ function createFancyReporter(options = {}) {
       }
     });
     render();
+  };
+  const pushAiFeed = (raw, { replaceLastIfSameKind = false } = {}) => {
+    const lines = String(raw || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    if (!verboseAiFeed) {
+      pushFeed('progress', lines[lines.length - 1], { replaceLastIfSameKind });
+      return;
+    }
+    for (const line of lines) {
+      pushFeed('progress', line, { replaceLastIfSameKind: false });
+    }
   };
 
   const endStage = (label) => {
@@ -921,7 +938,7 @@ function createFancyReporter(options = {}) {
         if (clipped !== lastAILog || shouldRepeat) {
           lastAILog = clipped;
           lastAILogAt = now;
-          pushFeed('progress', clipped, { replaceLastIfSameKind: true });
+          pushAiFeed(cleaned, { replaceLastIfSameKind: true });
           stageLabel = i18n.t('Codex is thinking…', 'Codex is thinking…');
           render();
         }
@@ -1106,6 +1123,8 @@ function createLegacyReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  const verboseAiFeed =
+    String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase() === '1';
   let pulseTimer = null;
   let pulseLabel = '';
   let pulseDots = 0;
@@ -1152,6 +1171,18 @@ function createLegacyReporter(options = {}) {
     const text = `${palette.accent('Codex')} ${label}${message ? ` ${message}` : ''}`;
     if (typeof bars.log === 'function') bars.log(text);
     else console.log(text);
+  };
+  const logAiFeed = (raw, label) => {
+    const lines = String(raw || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    if (!verboseAiFeed) {
+      logAILine(label, lines[lines.length - 1]);
+      return;
+    }
+    for (const line of lines) logAILine(label, line);
   };
 
   return {
@@ -1304,7 +1335,7 @@ function createLegacyReporter(options = {}) {
         if (clipped !== lastAILog || shouldRepeat) {
           lastAILog = clipped;
           lastAILogAt = now;
-          logAILine('progress', clipped);
+          logAiFeed(cleaned, 'progress');
         }
       }
     },
@@ -1444,6 +1475,8 @@ function createPlainReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  const verboseAiFeed =
+    String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase() === '1';
   let pageStartAt = 0;
   let auditStartAt = 0;
   let auditMode = 'mcp';
@@ -1451,6 +1484,18 @@ function createPlainReporter(options = {}) {
 
   const line = (label, value = '') =>
     console.log(`${palette.muted(label)}${value ? ` ${value}` : ''}`);
+  const logAiFeed = (raw) => {
+    const lines = String(raw || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    if (!verboseAiFeed) {
+      line('Codex', lines[lines.length - 1]);
+      return;
+    }
+    for (const l of lines) line('Codex', l);
+  };
 
   return {
     async onStart({ pages, criteriaCount, codexModel, mcpMode: mcpModeFromCli, auditMode: mode }) {
@@ -1533,12 +1578,16 @@ function createPlainReporter(options = {}) {
       if (clipped !== lastAILog || shouldRepeat) {
         lastAILog = clipped;
         lastAILogAt = now;
-        line('Codex', i18n.t('Working…', 'Working…'));
-        feedHumanizer.request({
-          kind: 'progress',
-          text: sanitizeStatusLine(cleaned),
-          onResult: (rewritten) => line('Codex', rewritten)
-        });
+        if (verboseAiFeed) {
+          logAiFeed(message);
+        } else {
+          line('Codex', i18n.t('Working…', 'Working…'));
+          feedHumanizer.request({
+            kind: 'progress',
+            text: sanitizeStatusLine(cleaned),
+            onResult: (rewritten) => line('Codex', rewritten)
+          });
+        }
       }
     },
 
