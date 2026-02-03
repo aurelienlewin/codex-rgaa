@@ -956,8 +956,9 @@ async function main() {
 
   const outPath = argv.out ? path.resolve(argv.out) : null;
   const debugLogEnv = String(process.env.AUDIT_DEBUG_LOG || '').trim().toLowerCase();
-  const debugLogEnabled =
-    debugLogEnv === '1' || debugLogEnv === 'true' || debugLogEnv === 'yes';
+  const debugLogEnabled = debugLogEnv
+    ? debugLogEnv === '1' || debugLogEnv === 'true' || debugLogEnv === 'yes'
+    : true;
   const debugLogPath = debugLogEnabled
     ? path.join(outPath ? path.dirname(outPath) : path.join('out', formatRunId()), 'audit.debug.log')
     : '';
