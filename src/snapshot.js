@@ -188,7 +188,7 @@ export function getSnapshotExpression() {
     const headingsSummary = (() => {
       const summary = { total: headings.length, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
       for (const h of headings) {
-        const key = `h${h.level}`;
+        const key = 'h' + h.level;
         if (key in summary) summary[key] += 1;
       }
       return summary;
