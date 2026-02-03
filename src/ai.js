@@ -355,13 +355,15 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
           '(e.g., images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
             ? [
-                'You MAY use chrome-devtools MCP tools to gather missing evidence. Use them only when needed.',
+                'Use chrome-devtools MCP tools proactively to resolve missing/partial evidence.',
+                'Do NOT return "Review" until you have attempted targeted MCP checks (unless tool use is blocked).',
+                'If evidence is partial (snapshot.partial or capped lists), run targeted evaluate_script queries to compute the needed facts.',
                 'If using MCP tools:',
                 pageId !== null
                   ? `- select_page with MCP_PAGE_ID=${pageId} then verify location.href.`
                   : '- list_pages then select a page whose URL matches; if none, navigate_page to MCP_TARGET_URL.',
                 '- Verify location.href; if mismatched, navigate_page to MCP_TARGET_URL.',
-                '- Prefer take_snapshot (a11y tree) and evaluate_script for targeted queries.',
+                '- Prefer take_snapshot (a11y tree) and small evaluate_script queries for targeted facts.',
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
                 '- Do NOT submit forms or change data/state.',
                 'If you used MCP tools, include the relevant tool outputs in evidence items.',
@@ -407,7 +409,9 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
           '(ex: images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
             ? [
-                'Tu PEUX utiliser les outils MCP chrome-devtools pour obtenir des preuves manquantes. Fais-le seulement si nécessaire.',
+                'Tu DOIS utiliser les outils MCP chrome-devtools pour combler les preuves manquantes.',
+                "Ne réponds pas \"Review\" sans avoir tenté des vérifications MCP ciblées (sauf blocage d’outils).",
+                'Si les preuves sont partielles (snapshot.partial ou listes tronquées), fais des requêtes evaluate_script ciblées.',
                 'Si tu utilises MCP:',
                 pageId !== null
                   ? `- select_page avec MCP_PAGE_ID=${pageId} puis vérifie location.href.`
@@ -472,13 +476,15 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
           '(e.g., images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
             ? [
-                'You MAY use chrome-devtools MCP tools to gather missing evidence. Use them only when needed.',
+                'Use chrome-devtools MCP tools proactively to resolve missing/partial evidence.',
+                'Do NOT return "Review" until you have attempted targeted MCP checks (unless tool use is blocked).',
+                'If evidence is partial (snapshot.partial or capped lists), run targeted evaluate_script queries to compute the needed facts.',
                 'If using MCP tools, do so once per batch and reuse the evidence across results.',
                 pageId !== null
                   ? `- select_page with MCP_PAGE_ID=${pageId} then verify location.href.`
                   : '- list_pages then select a page whose URL matches; if none, navigate_page to MCP_TARGET_URL.',
                 '- Verify location.href; if mismatched, navigate_page to MCP_TARGET_URL.',
-                '- Prefer take_snapshot (a11y tree) and evaluate_script for targeted queries.',
+                '- Prefer take_snapshot (a11y tree) and small evaluate_script queries for targeted facts.',
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
                 '- Do NOT submit forms or change data/state.',
                 'If you used MCP tools, include the relevant tool outputs in evidence items.',
@@ -528,7 +534,9 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
           '(ex: images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
             ? [
-                'Tu PEUX utiliser les outils MCP chrome-devtools pour obtenir des preuves manquantes. Fais-le seulement si nécessaire.',
+                'Tu DOIS utiliser les outils MCP chrome-devtools pour combler les preuves manquantes.',
+                "Ne réponds pas \"Review\" sans avoir tenté des vérifications MCP ciblées (sauf blocage d’outils).",
+                'Si les preuves sont partielles (snapshot.partial ou listes tronquées), fais des requêtes evaluate_script ciblées.',
                 'Si tu utilises MCP, fais-le une fois par batch et réutilise les preuves.',
                 pageId !== null
                   ? `- select_page avec MCP_PAGE_ID=${pageId} puis vérifie location.href.`
