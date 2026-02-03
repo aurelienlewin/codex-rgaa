@@ -232,15 +232,16 @@ function createCodexFeedHumanizer({
     if (!payload) return '';
 
     const prompt =
-      `You rewrite internal audit logs into a short, human-friendly status update.\n` +
+      `You translate internal audit logs into short, plain-language status updates.\n` +
       `Language: ${lang === 'fr' ? 'French' : 'English'}.\n` +
       `Rules:\n` +
-      `- Output 1–2 short sentences (max 120 characters total).\n` +
+      `- Preserve meaning exactly; do not invent steps or progress.\n` +
+      `- Keep concrete details from input (page numbers, durations, URLs, counts, criterion IDs).\n` +
+      `- If input is already clear, keep it close to the original wording.\n` +
+      `- Output 1–2 short sentences (max 140 characters total).\n` +
       `- No bullets, no box-drawing characters, no emojis.\n` +
-      `- No acronyms or technical jargon (no MCP/CDP/JSON/schema/stderr/spawn/command lines).\n` +
-      `- Focus on what the audit is doing right now.\n` +
-      `- If it is AI-related, say so plainly (e.g., "AI reviewing criteria").\n` +
-      `- Be clear and reassuring.\n` +
+      `- Avoid unexplained acronyms; if one appears, expand it briefly.\n` +
+      `- If AI-related, say so plainly (e.g., "AI reviewing criteria").\n` +
       `Input: ${JSON.stringify(payload)}\n` +
       `Output:`;
 
@@ -445,8 +446,9 @@ function createFancyReporter(options = {}) {
   const isGuided = Boolean(options.guided);
   const spinner = ora({ text: i18n.t('Préparation de l’audit…', 'Preparing audit…'), color: 'cyan' });
   const renderer = createLiveBlockRenderer();
+  const humanizeEnabled = Boolean(options.humanizeFeed);
   const feedHumanizer = createCodexFeedHumanizer({
-    enabled: Boolean(options.humanizeFeed),
+    enabled: humanizeEnabled,
     model: options.humanizeFeedModel || '',
     lang: i18n.lang || options.lang || 'fr'
   });
@@ -477,31 +479,57 @@ function createFancyReporter(options = {}) {
   let feedSeq = 0;
   const humanizeKinds = new Set(['progress', 'stage', 'thinking']);
   const placeholderLine = i18n.t('Working…', 'Working…');
+  const pendingLabel = (kind, normalized) => {
+    const cleaned = clipInline(String(normalized || '').trim(), 120);
+    if (cleaned) return cleaned;
+    if (kind === 'thinking') return i18n.t('Réflexion…', 'Thinking…');
+    if (kind === 'stage') return i18n.t('Démarrage…', 'Starting…');
+    return placeholderLine;
+  };
   const pushFeed = (kind, message, { replaceLastIfSameKind = false } = {}) => {
     const raw = String(message || '');
     const normalized = sanitizeStatusLine(raw);
-    const base = humanizeKinds.has(kind) ? placeholderLine : normalized;
+    const base = humanizeKinds.has(kind) ? pendingLabel(kind, normalized) : normalized;
     const cleaned = clipInline(base, 320);
     if (!cleaned) return;
+    const shouldHumanize = humanizeKinds.has(kind);
+    const initialMessage = shouldHumanize && humanizeEnabled ? pendingLabel(kind, normalized) : normalized;
+    const initialStatus = shouldHumanize ? (humanizeEnabled ? 'pending' : 'failed') : 'n/a';
     if (replaceLastIfSameKind && feed.length && feed[feed.length - 1].kind === kind) {
       const id = feed[feed.length - 1].id || ++feedSeq;
-      feed[feed.length - 1] = { id, at: nowMs(), kind, message: cleaned };
+      feed[feed.length - 1] = {
+        id,
+        at: nowMs(),
+        kind,
+        message: clipInline(initialMessage, 320),
+        raw: normalized,
+        humanizeStatus: initialStatus
+      };
       feedHumanizer.request({
         kind,
         text: normalized,
         onResult: (rewritten) => {
           const idx = feed.findIndex((r) => r.id === id);
           if (idx < 0) return;
+          const cleanedRewrite = String(rewritten || '').trim();
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(rewritten, 320)
+            message: clipInline(cleanedRewrite || normalized, 320),
+            humanizeStatus: cleanedRewrite ? 'done' : 'failed'
           };
           render();
         }
       });
     } else {
       const id = ++feedSeq;
-      feed.push({ id, at: nowMs(), kind, message: cleaned });
+      feed.push({
+        id,
+        at: nowMs(),
+        kind,
+        message: clipInline(initialMessage, 320),
+        raw: normalized,
+        humanizeStatus: initialStatus
+      });
       while (feed.length > feedMax) feed.shift();
       feedHumanizer.request({
         kind,
@@ -509,9 +537,11 @@ function createFancyReporter(options = {}) {
         onResult: (rewritten) => {
           const idx = feed.findIndex((r) => r.id === id);
           if (idx < 0) return;
+          const cleanedRewrite = String(rewritten || '').trim();
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(rewritten, 320)
+            message: clipInline(cleanedRewrite || normalized, 320),
+            humanizeStatus: cleanedRewrite ? 'done' : 'failed'
           };
           render();
         }
@@ -538,7 +568,7 @@ function createFancyReporter(options = {}) {
 
   const startStage = (label) => {
     const original = sanitizeStatusLine(label);
-    stageLabel = placeholderLine;
+    stageLabel = pendingLabel('stage', original);
     stageStartAt = nowMs();
     lastStageMs = null;
     if (original) pushFeed('stage', original);
@@ -612,13 +642,13 @@ function createFancyReporter(options = {}) {
         : ''
     ].filter(Boolean);
 
-    const timeW = 6;
-    const typeW = 10;
+    const timeW = 5;
+    const typeW = 11;
     const msgW = Math.max(18, width - 2 - (timeW + typeW + 6));
     const feedHeader =
-      `${palette.muted(padVisibleRight('Time', timeW))} ` +
-      `${palette.muted(padVisibleRight('Type', typeW))} ` +
-      `${palette.muted(padVisibleRight('Message', msgW))}`;
+      `${palette.muted(padVisibleRight('Age', timeW))} ` +
+      `${palette.muted(padVisibleRight('Kind', typeW))} ` +
+      `${palette.muted(padVisibleRight('Update', msgW))}`;
 
     const feedLines = [feedHeader, palette.muted('─'.repeat(Math.min(width - 2, visibleLen(feedHeader))))];
     const now = nowMs();
@@ -628,14 +658,34 @@ function createFancyReporter(options = {}) {
       const ss = String(s % 60).padStart(2, '0');
       return `${mm}:${ss}`;
     };
-    for (const row of feed.slice(-feedMax)) {
+    const kindIcon = (kind) => {
+      if (kind === 'error') return '⛔';
+      if (kind === 'decision') return '✓';
+      if (kind === 'thinking') return '◆';
+      if (kind === 'progress') return '●';
+      if (kind === 'stage') return '◇';
+      if (kind === 'timing') return '⏱';
+      if (kind === 'page') return '▣';
+      return '•';
+    };
+    const pulseOn = frame % 2 === 0;
+    const pulseColor = pulseOn ? palette.accent : palette.primary;
+    const visibleFeed = feed.slice(-feedMax);
+    for (let i = 0; i < visibleFeed.length; i += 1) {
+      const row = visibleFeed[i];
+      const isNewest = i === visibleFeed.length - 1;
       const age = formatAge(row.at);
       const type = row.kind;
-      const msg = clipInline(row.message, msgW);
+      const showRaw = row.humanizeStatus === 'failed' && humanizeKinds.has(row.kind);
+      const raw = showRaw ? clipInline(String(row.raw || '').trim(), Math.floor(msgW / 2)) : '';
+      const baseMsg = row.message || '';
+      const msg = clipInline(raw ? `${baseMsg} • raw: ${raw}` : baseMsg, msgW);
+      const kindLabel = `${kindIcon(type)} ${padVisibleRight(type, typeW - 2)}`;
+      const msgColor = isNewest ? pulseColor : palette.primary;
       feedLines.push(
         `${palette.muted(padVisibleRight(age, timeW))} ` +
-          `${kindColor(type)(padVisibleRight(type, typeW))} ` +
-          `${padVisibleRight(msg, msgW)}`
+          `${kindColor(type)(padVisibleRight(kindLabel, typeW))} ` +
+          `${msgColor(padVisibleRight(msg, msgW))}`
       );
     }
 
@@ -682,10 +732,10 @@ function createFancyReporter(options = {}) {
           ]
         : []),
       drawPanel({
-        title: i18n.t('Codex feed', 'Codex feed'),
+        title: i18n.t('Live feed', 'Live feed'),
         lines: feedLines,
         width,
-        borderColor: palette.muted
+        borderColor: palette.accent
       }),
       ...(decisionLines.length
         ? [
