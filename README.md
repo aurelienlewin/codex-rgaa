@@ -125,9 +125,8 @@ To change the output path, pass `--out`.
 To disable XLSX export, pass `--no-xlsx`.
 
 The Excel file contains:
-- **Matrix**: rows = criteria, columns = pages. Values: `1` (Conform), `0` (Non applicable), `-1` (Not conform), `-2` (Error / audit tool failure). Cells are color-coded.
-- **Matrix UI**: same matrix but with **✓ / ✗ / – / !** icons for quick reading (also color-coded).
-- **Summary**: global counts + score.
+- **Summary** (first tab): global counts + score, color-coded status chips.
+- **Audit**: rows = criteria, columns = pages, with **✓ / ✗ / – / !** icons and color-coded cells. Page URLs are stored as header cell comments; page names appear in the header row.
 
 When evidence is still insufficient after MCP tools (a11y tree, targeted DOM, OCR), criteria are marked **Review** and the Matrix UI cell is left blank with a **solid red** background for human review.
 
