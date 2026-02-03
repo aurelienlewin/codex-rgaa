@@ -72,30 +72,6 @@ async function promptPages() {
   return urls;
 }
 
-async function promptXlsxOutput() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const ask = (question) =>
-    new Promise((resolve) => {
-      rl.question(question, (answer) => resolve(answer));
-    });
-
-  const answer = String(await ask('Generate XLSX output? (y/N) ')).trim().toLowerCase();
-  if (answer === 'y' || answer === 'yes') {
-    const pathAnswer = String(
-      await ask('XLSX output path (default: out/<run>/rgaa-audit.xlsx): ')
-    ).trim();
-    rl.close();
-    return pathAnswer || defaultXlsxOutPath();
-  }
-
-  rl.close();
-  return null;
-}
-
 async function promptRemoteDebug() {
   const rl = readline.createInterface({
     input: process.stdin,

@@ -480,12 +480,19 @@ export async function runAudit(options) {
     }
   }
 
+  const pageResultsById = pageResults.map((page) => {
+    const byId = new Map();
+    for (const res of page.results) {
+      if (res?.id) byId.set(res.id, res);
+    }
+    return byId;
+  });
+
   const globalByCriterion = new Map();
   for (const criterion of criteria) {
-    const perPage = pageResults.map((page) =>
-      page.results.find((res) => res.id === criterion.id)
+    const statuses = pageResultsById.map(
+      (byId) => byId.get(criterion.id)?.status || STATUS.ERR
     );
-    const statuses = perPage.map((res) => res.status);
     let status = STATUS.C;
     if (statuses.every((s) => s === STATUS.NA)) {
       status = STATUS.NA;
@@ -655,9 +662,9 @@ export async function runAudit(options) {
     for (const criterion of criteria) {
       const row = [criterion.id, criterion.theme, criterion.title];
       const uiRow = [criterion.id, criterion.theme, criterion.title];
-      for (const page of pageResults) {
-        const res = page.results.find((r) => r.id === criterion.id);
-        row.push(statusToValue(res.status));
+      for (let pageIndex = 0; pageIndex < pageResults.length; pageIndex += 1) {
+        const res = pageResultsById[pageIndex].get(criterion.id);
+        row.push(statusToValue(res?.status || STATUS.ERR));
         uiRow.push(''); // filled after row is created (for styling + note)
       }
       const excelRow = matrixSheet.addRow(row);
@@ -679,17 +686,17 @@ export async function runAudit(options) {
         }
       }
 
-      pageResults.forEach((page, pageIndex) => {
-        const res = page.results.find((r) => r.id === criterion.id);
+      for (let pageIndex = 0; pageIndex < pageResults.length; pageIndex += 1) {
+        const res = pageResultsById[pageIndex].get(criterion.id);
         const cell = excelRow.getCell(4 + pageIndex);
         cell.note = buildCellNote(res);
-        applyStatusCellStyle(cell, res.status);
+        applyStatusCellStyle(cell, res?.status || STATUS.ERR);
 
         const uiCell = excelUiRow.getCell(4 + pageIndex);
-        const s = applyStatusCellStyle(uiCell, res.status);
+        const s = applyStatusCellStyle(uiCell, res?.status || STATUS.ERR);
         uiCell.value = s.icon;
         uiCell.note = buildCellNote(res);
-      });
+      }
     }
 
     const summarySheet = workbook.addWorksheet('Summary');
