@@ -115,6 +115,47 @@ function nowMs() {
   return Date.now();
 }
 
+let outputClosed = false;
+
+function handleOutputError(err) {
+  if (!err || typeof err !== 'object') return false;
+  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_WRITE_AFTER_END') {
+    outputClosed = true;
+    return true;
+  }
+  return false;
+}
+
+function safeWrite(text) {
+  if (outputClosed) return false;
+  try {
+    return process.stdout.write(text);
+  } catch (err) {
+    if (handleOutputError(err)) return false;
+    throw err;
+  }
+}
+
+function safeMoveCursor(dx, dy) {
+  if (outputClosed || !process.stdout.isTTY) return;
+  try {
+    readline.moveCursor(process.stdout, dx, dy);
+  } catch (err) {
+    if (handleOutputError(err)) return;
+    throw err;
+  }
+}
+
+function safeClearScreenDown() {
+  if (outputClosed || !process.stdout.isTTY) return;
+  try {
+    readline.clearScreenDown(process.stdout);
+  } catch (err) {
+    if (handleOutputError(err)) return;
+    throw err;
+  }
+}
+
 function formatElapsed(ms) {
   const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
   const hh = Math.floor(totalSeconds / 3600);
@@ -444,32 +485,32 @@ function createLiveBlockRenderer() {
 
   const hideCursor = () => {
     if (!cursorHidden && process.stdout.isTTY) {
-      process.stdout.write('\x1b[?25l');
+      safeWrite('\x1b[?25l');
       cursorHidden = true;
     }
   };
   const showCursor = () => {
     if (cursorHidden && process.stdout.isTTY) {
-      process.stdout.write('\x1b[?25h');
+      safeWrite('\x1b[?25h');
       cursorHidden = false;
     }
   };
 
   const clearPrevious = () => {
     if (!process.stdout.isTTY) return;
-    if (lastLineCount > 0) readline.moveCursor(process.stdout, 0, -lastLineCount);
-    readline.clearScreenDown(process.stdout);
+    if (lastLineCount > 0) safeMoveCursor(0, -lastLineCount);
+    safeClearScreenDown();
   };
 
   return {
     render(block) {
       if (!process.stdout.isTTY) {
-        process.stdout.write(`${stripAnsi(block)}\n`);
+        safeWrite(`${stripAnsi(block)}\n`);
         return;
       }
       hideCursor();
       clearPrevious();
-      process.stdout.write(`${block}\n`);
+      safeWrite(`${block}\n`);
       lastLineCount = String(block).split('\n').length;
     },
     stop({ keepBlock = true } = {}) {
@@ -1074,7 +1115,7 @@ function createFancyReporter(options = {}) {
       if (spinner.isSpinning) spinner.stop();
       renderer.stop({ keepBlock: false });
       if (process.stdout.isTTY) {
-        process.stdout.write('\x1b[2J\x1b[0;0H');
+        safeWrite('\x1b[2J\x1b[0;0H');
       }
       const line = formatProgressStatus({
         totalPages,
@@ -1084,7 +1125,7 @@ function createFancyReporter(options = {}) {
         currentPageIndex,
         i18n
       });
-      process.stdout.write(`${line}\n`);
+      safeWrite(`${line}\n`);
     },
 
     onError(message) {
@@ -1437,7 +1478,7 @@ function createLegacyReporter(options = {}) {
       if (pageBar) pageBar.update(totalCriteria);
       bars.stop();
       if (process.stdout.isTTY) {
-        process.stdout.write('\x1b[2J\x1b[0;0H');
+        safeWrite('\x1b[2J\x1b[0;0H');
       }
       const line = formatProgressStatus({
         totalPages,
@@ -1447,7 +1488,7 @@ function createLegacyReporter(options = {}) {
         currentPageIndex,
         i18n
       });
-      process.stdout.write(`${line}\n`);
+      safeWrite(`${line}\n`);
     },
 
     onError(message) {
@@ -1635,7 +1676,7 @@ function createPlainReporter(options = {}) {
 
     onShutdown() {
       if (process.stdout.isTTY) {
-        process.stdout.write('\x1b[2J\x1b[0;0H');
+        safeWrite('\x1b[2J\x1b[0;0H');
       }
       const lineText = formatProgressStatus({
         totalPages,

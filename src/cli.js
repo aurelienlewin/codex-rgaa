@@ -17,6 +17,7 @@ import { listMcpPages } from './mcpSnapshot.js';
 
 let lastShutdownSignal = null;
 const fancyPromptState = { introShown: false };
+let outputErrorHandlerInstalled = false;
 
 const promptPalette = {
   primary: chalk.hex('#22d3ee'),
@@ -29,6 +30,18 @@ const promptPalette = {
 
 function isFancyTTY() {
   return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
+}
+
+function installOutputErrorHandlers() {
+  if (outputErrorHandlerInstalled) return;
+  outputErrorHandlerInstalled = true;
+  const handle = (err) => {
+    if (!err) return;
+    if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_WRITE_AFTER_END') return;
+    throw err;
+  };
+  process.stdout.on('error', handle);
+  process.stderr.on('error', handle);
 }
 
 function stripAnsi(text) {
@@ -297,7 +310,12 @@ function normalizeHttpBaseUrl(value) {
 
 function clearScreen() {
   if (!process.stdout.isTTY || process.env.TERM === 'dumb') return;
-  process.stdout.write('\x1b[2J\x1b[0;0H');
+  try {
+    process.stdout.write('\x1b[2J\x1b[0;0H');
+  } catch (err) {
+    if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_WRITE_AFTER_END')) return;
+    throw err;
+  }
 }
 
 async function canReachChromeDebugEndpoint(baseUrl) {
@@ -631,6 +649,7 @@ async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
 }
 
 async function main() {
+  installOutputErrorHandlers();
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const rawArgs = hideBin(process.argv).map((v) => String(v));
   const argv = yargs(rawArgs)
