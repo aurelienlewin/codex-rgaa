@@ -210,7 +210,8 @@ function createCodexFeedHumanizer({
   model,
   lang,
   minIntervalMs = 450,
-  timeoutMs = 2600
+  throttleMsByKind = { progress: 1200, stage: 2000, thinking: 1500 },
+  timeoutMs = 5000
 } = {}) {
   if (!enabled) {
     return {
@@ -224,10 +225,13 @@ function createCodexFeedHumanizer({
   const pending = [];
   let running = null;
   let lastRunAt = 0;
+  const lastByKind = new Map();
+  const throttleTimers = new Map();
+  const throttledLatest = new Map();
 
   const shouldRewriteKind = (kind) => kind === 'progress' || kind === 'stage' || kind === 'thinking';
 
-  const summarizeOnce = async (text) => {
+  const summarizeOnce = async (text, { retry = false } = {}) => {
     const payload = String(text || '').trim();
     if (!payload) return '';
 
@@ -330,6 +334,9 @@ function createCodexFeedHumanizer({
         await ensureDir(path.join(fallbackHome, 'npm-cache'));
         return await runWithEnv(buildCodexEnv({ codexHome: fallbackHome }), model);
       }
+      if (!retry && err?.message && /timed out/i.test(err.message)) {
+        return await summarizeOnce(text, { retry: true });
+      }
       throw err;
     }
   };
@@ -367,12 +374,38 @@ function createCodexFeedHumanizer({
       const raw = String(text || '').trim();
       if (!raw) return;
       if (!shouldRewriteKind(kind)) return;
-      pending.push({ kind, text: raw, onResult });
-      while (pending.length > 3) pending.shift();
-      drain();
+      const now = nowMs();
+      const throttleMs = throttleMsByKind?.[kind] || 0;
+      const lastAt = lastByKind.get(kind) || 0;
+      const enqueue = (payload) => {
+        pending.push(payload);
+        while (pending.length > 3) pending.shift();
+        lastByKind.set(kind, nowMs());
+        drain();
+      };
+      if (!throttleMs || now - lastAt >= throttleMs) {
+        enqueue({ kind, text: raw, onResult });
+        return;
+      }
+      throttledLatest.set(kind, { kind, text: raw, onResult });
+      if (throttleTimers.has(kind)) return;
+      const waitMs = Math.max(0, throttleMs - (now - lastAt));
+      const timer = setTimeout(() => {
+        throttleTimers.delete(kind);
+        const latest = throttledLatest.get(kind);
+        if (latest) {
+          throttledLatest.delete(kind);
+          enqueue(latest);
+        }
+      }, waitMs);
+      if (typeof timer.unref === 'function') timer.unref();
+      throttleTimers.set(kind, timer);
     },
     stop() {
       pending.length = 0;
+      throttledLatest.clear();
+      for (const timer of throttleTimers.values()) clearTimeout(timer);
+      throttleTimers.clear();
     }
   };
 }
