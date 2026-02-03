@@ -515,6 +515,8 @@ function createFancyReporter(options = {}) {
   const aiHeartbeatMs =
     Number.isFinite(aiHeartbeatRaw) && aiHeartbeatRaw > 0 ? Math.floor(aiHeartbeatRaw) : 5000;
   let aiHeartbeatTimer = null;
+  let aiHeartbeatActive = false;
+  let aiHeartbeatActive = false;
   let currentCriterion = null;
   let lastDecision = null;
   const decisions = [];
@@ -630,10 +632,12 @@ function createFancyReporter(options = {}) {
   const stopAiHeartbeat = () => {
     if (aiHeartbeatTimer) clearInterval(aiHeartbeatTimer);
     aiHeartbeatTimer = null;
+    aiHeartbeatActive = false;
   };
   const startAiHeartbeat = () => {
     if (!aiHeartbeatMs) return;
     if (aiHeartbeatTimer) return;
+    aiHeartbeatActive = true;
     aiHeartbeatTimer = setInterval(() => {
       const message = lastAILog || placeholderLine;
       pushFeed('progress', message, { replaceLastIfSameKind: true });
@@ -676,6 +680,12 @@ function createFancyReporter(options = {}) {
     const stageSpinner = stageStartAt ? spinnerFrames[frame] : ' ';
     const stageAge = stageStartAt ? `${nowMs() - stageStartAt}ms` : lastStageMs ? `${lastStageMs}ms` : '';
     const stageText = stageLabel || (currentUrl ? i18n.t('Audit en cours', 'Audit running') : '');
+    const aiBadge = aiHeartbeatActive
+      ? `${frame % 2 === 0 ? palette.accent('◆ AI') : palette.primary('◇ AI')}`
+      : '';
+    const stageTextWithAi = aiBadge
+      ? `${aiBadge} ${stageText}`.trim()
+      : stageText;
     const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
 
     const urlLine = currentUrl ? clipInline(currentUrl, width - 18) : '';
@@ -693,7 +703,7 @@ function createFancyReporter(options = {}) {
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
       `${padVisibleRight(palette.muted('Stage'), 8)} ${palette.primary(stageSpinner)} ${palette.muted(
-        clipInline(stageText, width - 22)
+        clipInline(stageTextWithAi, width - 22)
       )}${stageAge ? ` ${palette.muted('•')} ${palette.accent(stageAge)}` : ''}`,
       elapsed
         ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)}`
@@ -1503,10 +1513,12 @@ function createPlainReporter(options = {}) {
   const stopAiHeartbeat = () => {
     if (aiHeartbeatTimer) clearInterval(aiHeartbeatTimer);
     aiHeartbeatTimer = null;
+    aiHeartbeatActive = false;
   };
   const startAiHeartbeat = () => {
     if (!aiHeartbeatMs) return;
     if (aiHeartbeatTimer) return;
+    aiHeartbeatActive = true;
     const heartbeatLabel = i18n.t('Working…', 'Working…');
     aiHeartbeatTimer = setInterval(() => {
       const message = lastAILog || heartbeatLabel;
