@@ -82,6 +82,7 @@ function isNoiseAiMessage(text) {
   const cleaned = normalizeAiMessage(text).toLowerCase();
   if (!cleaned) return false;
   if (/^[}\]]+,?$/.test(cleaned)) return true;
+  if (/^[{}[\]]$/.test(cleaned)) return true;
   return AI_NOISE_PATTERNS.some((pattern) => pattern.test(cleaned));
 }
 
