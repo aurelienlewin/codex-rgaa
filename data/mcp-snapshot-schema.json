@@ -1,0 +1,141 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "doctype",
+    "title",
+    "lang",
+    "images",
+    "frames",
+    "links",
+    "formControls",
+    "headings",
+    "listItems",
+    "langChanges",
+    "tables",
+    "media",
+    "scripts"
+  ],
+  "properties": {
+    "doctype": { "type": "string" },
+    "title": { "type": "string" },
+    "lang": { "type": "string" },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tag", "role", "ariaHidden", "alt", "name"],
+        "properties": {
+          "tag": { "type": "string" },
+          "role": { "type": "string" },
+          "ariaHidden": { "type": "boolean" },
+          "alt": { "type": ["string", "null"] },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "ariaLabel", "ariaLabelledby"],
+        "properties": {
+          "title": { "type": "string" },
+          "ariaLabel": { "type": "string" },
+          "ariaLabelledby": { "type": "string" }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["href", "name", "rawText", "title", "ariaLabel", "ariaLabelledby"],
+        "properties": {
+          "href": { "type": "string" },
+          "name": { "type": "string" },
+          "rawText": { "type": "string" },
+          "title": { "type": "string" },
+          "ariaLabel": { "type": "string" },
+          "ariaLabelledby": { "type": "string" }
+        }
+      }
+    },
+    "formControls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tag", "type", "id", "name", "label"],
+        "properties": {
+          "tag": { "type": "string" },
+          "type": { "type": "string" },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "headings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "text"],
+        "properties": {
+          "level": { "type": "number" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "listItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["parent"],
+        "properties": {
+          "parent": { "type": "string" }
+        }
+      }
+    },
+    "langChanges": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hasTh", "hasCaption"],
+        "properties": {
+          "hasTh": { "type": "boolean" },
+          "hasCaption": { "type": "boolean" }
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["video", "audio", "object"],
+      "properties": {
+        "video": { "type": "number" },
+        "audio": { "type": "number" },
+        "object": { "type": "number" }
+      }
+    },
+    "scripts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scriptTags", "hasInlineHandlers"],
+      "properties": {
+        "scriptTags": { "type": "number" },
+        "hasInlineHandlers": { "type": "boolean" }
+      }
+    }
+  }
+}
