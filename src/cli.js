@@ -79,6 +79,116 @@ function formatRunId(date = new Date()) {
   return `${y}${m}${d}-${hh}${mm}${ss}`;
 }
 
+function createDebugLogger({ logPath }) {
+  if (!logPath) return null;
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  } catch {}
+  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  const log = (event, details = '') => {
+    const line = `${new Date().toISOString()} ${event}${details ? ` ${details}` : ''}\n`;
+    stream.write(line);
+  };
+  const close = () => {
+    try {
+      stream.end();
+    } catch {}
+  };
+  return { log, close, logPath };
+}
+
+function wrapReporterWithDebug({ reporter, logger }) {
+  if (!logger) return { reporter, stop: () => {} };
+  const safe = (val, max = 400) => {
+    const text = String(val || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  };
+  const stop = () => logger.close();
+  const wrapped = {
+    ...reporter,
+    onStart(payload) {
+      logger.log('start', JSON.stringify(payload || {}));
+      reporter.onStart?.(payload);
+    },
+    onChromeReady(payload) {
+      logger.log('chrome-ready');
+      reporter.onChromeReady?.(payload);
+    },
+    onPageStart(payload) {
+      logger.log('page-start', safe(payload?.url));
+      reporter.onPageStart?.(payload);
+    },
+    onPageNavigateStart(payload) {
+      logger.log('page-load');
+      reporter.onPageNavigateStart?.(payload);
+    },
+    onPageNetworkIdle(payload) {
+      logger.log(
+        'page-idle',
+        `${payload?.durationMs || 0}ms${payload?.timedOut ? ' timed-out' : ''}`
+      );
+      reporter.onPageNetworkIdle?.(payload);
+    },
+    onSnapshotStart(payload) {
+      logger.log('snapshot-start');
+      reporter.onSnapshotStart?.(payload);
+    },
+    onSnapshotEnd(payload) {
+      logger.log('snapshot-end', `${payload?.durationMs || 0}ms`);
+      reporter.onSnapshotEnd?.(payload);
+    },
+    onChecksStart(payload) {
+      logger.log('checks-start');
+      reporter.onChecksStart?.(payload);
+    },
+    onChecksEnd(payload) {
+      logger.log('checks-end');
+      reporter.onChecksEnd?.(payload);
+    },
+    onAIStart(payload) {
+      const crit = payload?.criterion;
+      logger.log('ai-start', safe(`${crit?.id || ''} ${crit?.title || ''}`));
+      reporter.onAIStart?.(payload);
+    },
+    onAIStage(payload) {
+      logger.log('ai-stage', safe(payload?.label));
+      reporter.onAIStage?.(payload);
+    },
+    onAILog(payload) {
+      logger.log('ai-log', safe(payload?.message));
+      reporter.onAILog?.(payload);
+    },
+    onCriterion(payload) {
+      const crit = payload?.criterion;
+      const status = payload?.evaluation?.status || '';
+      logger.log('criterion', safe(`${crit?.id || ''} ${status}`));
+      reporter.onCriterion?.(payload);
+    },
+    onPageEnd(payload) {
+      logger.log('page-end', safe(payload?.url));
+      reporter.onPageEnd?.(payload);
+    },
+    onPageError(payload) {
+      logger.log('page-error', safe(payload?.error?.message || payload?.error));
+      reporter.onPageError?.(payload);
+    },
+    onDone(payload) {
+      logger.log('done', JSON.stringify(payload || {}));
+      reporter.onDone?.(payload);
+    },
+    onShutdown(payload) {
+      logger.log('shutdown', safe(payload?.signal));
+      reporter.onShutdown?.(payload);
+    },
+    onError(payload) {
+      logger.log('error', safe(payload));
+      reporter.onError?.(payload);
+    }
+  };
+  return { reporter: wrapped, stop };
+}
+
 function createAiWatchdog({ reporter, abortController, stallTimeoutMs, stageTimeoutMs }) {
   if (!stallTimeoutMs && !stageTimeoutMs) {
     return { reporter, stop: () => {} };
@@ -845,6 +955,13 @@ async function main() {
   }
 
   const outPath = argv.out ? path.resolve(argv.out) : null;
+  const debugLogEnv = String(process.env.AUDIT_DEBUG_LOG || '').trim().toLowerCase();
+  const debugLogEnabled =
+    debugLogEnv === '1' || debugLogEnv === 'true' || debugLogEnv === 'yes';
+  const debugLogPath = debugLogEnabled
+    ? path.join(outPath ? path.dirname(outPath) : path.join('out', formatRunId()), 'audit.debug.log')
+    : '';
+  const debugLogger = debugLogEnabled ? createDebugLogger({ logPath: debugLogPath }) : null;
   const debugSnapshotsEnvExplicit =
     Object.prototype.hasOwnProperty.call(process.env, 'AUDIT_DEBUG_SNAPSHOTS') &&
     process.env.AUDIT_DEBUG_SNAPSHOTS !== undefined;
@@ -891,6 +1008,7 @@ async function main() {
     humanizeFeed,
     humanizeFeedModel
   });
+  const debugWrapped = wrapReporterWithDebug({ reporter, logger: debugLogger });
   const aiStallRaw = Number(process.env.AUDIT_AI_STALL_TIMEOUT_MS || '');
   const aiStallTimeoutMs =
     Number.isFinite(aiStallRaw) && aiStallRaw > 0 ? Math.floor(aiStallRaw) : 0;
@@ -913,7 +1031,7 @@ async function main() {
 
   const abortController = new AbortController();
   const watchdog = createAiWatchdog({
-    reporter,
+    reporter: debugWrapped.reporter,
     abortController,
     stallTimeoutMs: aiStallTimeoutMs,
     stageTimeoutMs: aiStageTimeoutMs
@@ -927,6 +1045,7 @@ async function main() {
     const exitCode = signal === 'SIGINT' ? 130 : 143;
     if (signal === 'SIGTERM') {
       watchdog.stop();
+      debugWrapped.stop();
       if (reporter.onShutdown) {
         reporter.onShutdown({ signal });
       } else {
@@ -935,6 +1054,7 @@ async function main() {
       }
     } else {
       watchdog.stop();
+      debugWrapped.stop();
       reporter.onError?.(`Received ${signal}. Shutting down…`);
     }
     abortController.abort();
@@ -999,12 +1119,14 @@ async function main() {
     }
   } catch (err) {
     watchdog.stop();
+    debugWrapped.stop();
     if (isAbortError(err) || abortController.signal.aborted) {
       throw createAbortError();
     }
     throw err;
   } finally {
     watchdog.stop();
+    debugWrapped.stop();
     terminateCodexChildren();
     if (forceExitTimer) clearTimeout(forceExitTimer);
   }
