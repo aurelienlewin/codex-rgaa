@@ -3,6 +3,10 @@ export function getSnapshotExpression() {
     const raw = String(process.env.AUDIT_SNAPSHOT_SCROLL || '').trim().toLowerCase();
     return raw === '1' || raw === 'true' || raw === 'yes';
   })();
+  const maxItems = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_ITEMS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 500;
+  })();
 
   return `(async () => {
     const doc = document;
@@ -33,6 +37,8 @@ export function getSnapshotExpression() {
     if (${shouldScroll}) {
       await scrollToLoadLazyContent();
     }
+
+    const cap = (arr) => (Array.isArray(arr) ? arr.slice(0, ${maxItems}) : arr);
 
     const getText = (node) => (node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
@@ -496,33 +502,33 @@ export function getSnapshotExpression() {
       lang,
       href,
       readyState,
-      images,
-      frames,
-      links,
-      formControls,
-      headings,
+      images: cap(images),
+      frames: cap(frames),
+      links: cap(links),
+      formControls: cap(formControls),
+      headings: cap(headings),
       headingsSummary,
-      listItems,
-      langChanges,
+      listItems: cap(listItems),
+      langChanges: cap(langChanges),
       dir,
-      dirChanges,
-      tables,
+      dirChanges: cap(dirChanges),
+      tables: cap(tables),
       tableSummary,
-      fieldsets,
+      fieldsets: cap(fieldsets),
       formSummary,
-      buttons,
-      landmarks,
-      focusables,
+      buttons: cap(buttons),
+      landmarks: cap(landmarks),
+      focusables: cap(focusables),
       focusableSummary,
       ariaLive,
       ariaSummary,
-      rolesSummary,
-      meta,
-      linkSummary,
-      media,
+      rolesSummary: cap(rolesSummary),
+      meta: cap(meta),
+      linkSummary: cap(linkSummary),
+      media: cap(media),
       mediaDetails,
       visual,
-      scripts
+      scripts: cap(scripts)
     };
   })();`;
 }
