@@ -136,6 +136,8 @@ You can override the model with `--codex-model` if your Codex config supports it
 
 The CLI shows a **live Codex feed** during progress (table + colors + spinner), with a short rationale snippet for each criterion.
 
+In guided mode, the live UI is cleared at the end and replaced with a final **decisions report** plus summary.
+
 If you prefer the previous progress UI, run with `AUDIT_UI=legacy` (or `AUDIT_UI=plain` for CI/log-friendly output).
 
 To inspect what the tool actually captured per page, set `AUDIT_DEBUG_SNAPSHOTS=1` to write per-page snapshot JSON files under `out/<run>/snapshots/`.
