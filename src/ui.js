@@ -506,6 +506,18 @@ function createFancyReporter(options = {}) {
   let auditMode = 'mcp';
   let mcpMode = '';
   let lastAILog = '';
+  let lastAILogAt = 0;
+  const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
+  const aiLogRepeatMs =
+    Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  let lastAILogAt = 0;
+  const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
+  const aiLogRepeatMs =
+    Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  let lastAILogAt = 0;
+  const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
+  const aiLogRepeatMs =
+    Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
   let currentCriterion = null;
   let lastDecision = null;
   const decisions = [];
@@ -910,8 +922,11 @@ function createFancyReporter(options = {}) {
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = cleaned.slice(0, 64);
       if (clipped) {
-        if (clipped !== lastAILog) {
+        const now = nowMs();
+        const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
+        if (clipped !== lastAILog || shouldRepeat) {
           lastAILog = clipped;
+          lastAILogAt = now;
           pushFeed('progress', clipped, { replaceLastIfSameKind: true });
           stageLabel = i18n.t('Codex is thinking…', 'Codex is thinking…');
           render();
@@ -1284,10 +1299,13 @@ function createLegacyReporter(options = {}) {
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = cleaned.slice(0, 64);
       if (clipped) {
+        const now = nowMs();
+        const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
         stopPulse();
         pageBar.update(null, { crit: `${palette.accent('AI')} ${clipped}` });
-        if (clipped !== lastAILog) {
+        if (clipped !== lastAILog || shouldRepeat) {
           lastAILog = clipped;
+          lastAILogAt = now;
           logAILine('progress', clipped);
         }
       }
@@ -1508,8 +1526,11 @@ function createPlainReporter(options = {}) {
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = sanitizeStatusLine(cleaned).slice(0, 120);
-      if (clipped !== lastAILog) {
+      const now = nowMs();
+      const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
+      if (clipped !== lastAILog || shouldRepeat) {
         lastAILog = clipped;
+        lastAILogAt = now;
         line('Codex', i18n.t('Working…', 'Working…'));
         feedHumanizer.request({
           kind: 'progress',
