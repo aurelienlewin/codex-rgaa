@@ -92,6 +92,28 @@ function isValidLangCode(lang) {
 
 function evaluateImagesAlt(snapshot, i18n) {
   const images = snapshot.images || [];
+  const summary = snapshot.imageSummary || null;
+  if (images.length === 0 && summary && summary.total > 0) {
+    if (summary.missingAltCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${summary.missingAltCount} image(s) sans alt.`,
+          `${summary.missingAltCount} image(s) missing alt.`
+        )
+      };
+    }
+    if (summary.roleImgMissingNameCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${summary.roleImgMissingNameCount} role="img" sans nom accessible.`,
+          `${summary.roleImgMissingNameCount} role="img" without accessible name.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'images',
@@ -206,6 +228,19 @@ function evaluateImagesAlt(snapshot, i18n) {
 
 function evaluateFramesTitle(snapshot, i18n) {
   const frames = snapshot.frames || [];
+  const summary = snapshot.frameSummary || null;
+  if (frames.length === 0 && summary && summary.total > 0) {
+    if (summary.missingTitleCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${summary.missingTitleCount} frame(s) sans title (ou nom ARIA).`,
+          `${summary.missingTitleCount} frame(s) missing title.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'frames',
@@ -241,6 +276,19 @@ function evaluateFramesTitle(snapshot, i18n) {
 
 function evaluateLinksHaveName(snapshot, i18n) {
   const links = snapshot.links || [];
+  const summary = snapshot.linkSummary || null;
+  if (links.length === 0 && summary && summary.total > 0) {
+    if (summary.missingNameCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${summary.missingNameCount} lien(s) sans nom accessible.`,
+          `${summary.missingNameCount} link(s) without accessible name.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'links',
@@ -273,6 +321,19 @@ function evaluateLinksHaveName(snapshot, i18n) {
 
 function evaluateLinksExplicit(snapshot, i18n) {
   const links = snapshot.links || [];
+  const summary = snapshot.linkSummary || null;
+  if (links.length === 0 && summary && summary.total > 0) {
+    if (summary.genericCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${summary.genericCount} lien(s) avec libellé générique (vérifier explicitation).`,
+          `${summary.genericCount} link(s) with generic label (review explicitness).`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'links',
@@ -398,6 +459,30 @@ function evaluateLangChangesValid(snapshot, i18n) {
 
 function evaluateHeadingStructure(snapshot, i18n) {
   const headings = snapshot.headings || [];
+  const headingSummary = snapshot.headingsSummary || null;
+  const headingAnalysis = snapshot.headingAnalysis || null;
+  if (headings.length === 0 && headingSummary && headingSummary.total > 0) {
+    const h1Count = headingAnalysis?.h1Count ?? headingSummary.h1 ?? 0;
+    if (h1Count === 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t('H1 manquant.', 'Missing H1.')
+      };
+    }
+    if (h1Count > 1) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(`Plusieurs H1 (${h1Count}).`, `Multiple H1 (${h1Count}).`)
+      };
+    }
+    if (headingAnalysis?.hasLevelJumps) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t('Sauts de niveaux de titres détectés.', 'Heading level jumps detected.')
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'headings',
@@ -454,6 +539,19 @@ function evaluateHeadingStructure(snapshot, i18n) {
 
 function evaluateListStructure(snapshot, i18n) {
   const items = snapshot.listItems || [];
+  const listSummary = snapshot.listSummary || null;
+  if (items.length === 0 && listSummary && listSummary.total > 0) {
+    if (listSummary.invalidCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${listSummary.invalidCount} élément(s) <li> hors liste.`,
+          `${listSummary.invalidCount} list item(s) not in a list.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'listItems',
@@ -481,6 +579,19 @@ function evaluateListStructure(snapshot, i18n) {
 
 function evaluateFormLabels(snapshot, i18n) {
   const controls = snapshot.formControls || [];
+  const summary = snapshot.formSummary || null;
+  if (controls.length === 0 && summary && summary.controlsTotal > 0) {
+    if (summary.missingLabel > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${summary.missingLabel} champ(s) sans libellé.`,
+          `${summary.missingLabel} form control(s) without label.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'formControls',
@@ -517,6 +628,14 @@ function evaluateFormLabels(snapshot, i18n) {
 
 function evaluateSkipLink(snapshot, i18n) {
   const links = snapshot.links || [];
+  const summary = snapshot.linkSummary || null;
+  if (links.length === 0 && summary && summary.total > 0) {
+    if (summary.skipLinkFound) return { status: STATUS.C };
+    return {
+      status: STATUS.NC,
+      notes: i18n.t('Aucun lien d’évitement vers le contenu principal détecté.', 'No skip link to main content detected.')
+    };
+  }
   const missingReview = reviewForMissing(
     snapshot,
     'links',

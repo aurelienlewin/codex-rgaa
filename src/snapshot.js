@@ -9,9 +9,10 @@ export function getSnapshotExpression() {
   })();
   const snapshotMode = (() => {
     const raw = String(process.env.AUDIT_SNAPSHOT_MODE || '').trim().toLowerCase();
-    return raw || 'counts';
+    return raw || 'lite';
   })();
-  const countsOnly = snapshotMode === 'counts' || snapshotMode === 'lite';
+  const countsOnly = snapshotMode === 'counts';
+  const collectArrays = snapshotMode === 'full';
   const maxLinks = (() => {
     const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_LINKS || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
@@ -94,6 +95,7 @@ export function getSnapshotExpression() {
     }
 
     const cap = (arr, max = ${maxItems}) => (Array.isArray(arr) ? arr.slice(0, max) : arr);
+    const collectArrays = ${collectArrays};
 
     const getText = (node) => clip(node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
@@ -126,42 +128,126 @@ export function getSnapshotExpression() {
       return '';
     };
 
-    const images = Array.from(doc.querySelectorAll('img, [role="img"]')).map((el) => {
+    const normalizeLinkText = (text) =>
+      String(text || '')
+        .toLowerCase()
+        .replace(/[\u2019'".,:;!?()\[\]{}]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const GENERIC_LINK_TEXTS = new Set([
+      'cliquez ici',
+      'ici',
+      'lire la suite',
+      'lire plus',
+      'en savoir plus',
+      'plus',
+      'voir plus',
+      'voir',
+      'découvrir',
+      'decouvrir',
+      'suite',
+      'details',
+      'détails',
+      'accéder',
+      'acceder'
+    ]);
+
+    const imageNodes = Array.from(doc.querySelectorAll('img, [role="img"]'));
+    const images = [];
+    const imageSummary = {
+      total: imageNodes.length,
+      missingAltCount: 0,
+      roleImgMissingNameCount: 0
+    };
+    for (const el of imageNodes) {
       const tag = el.tagName.toLowerCase();
       const role = (el.getAttribute('role') || '').toLowerCase();
       const ariaHidden = (el.getAttribute('aria-hidden') || '').toLowerCase() === 'true';
       const alt = el.getAttribute('alt');
       const name = getAccessibleName(el);
-      return {
-        tag,
-        role,
-        ariaHidden,
-        alt: alt === null ? null : clip(alt),
-        name: clip(name)
-      };
-    });
+      if (tag === 'img' && alt === null && !ariaHidden) imageSummary.missingAltCount += 1;
+      if (tag !== 'img' && role === 'img' && !name) imageSummary.roleImgMissingNameCount += 1;
+      if (collectArrays) {
+        images.push({
+          tag,
+          role,
+          ariaHidden,
+          alt: alt === null ? null : clip(alt),
+          name: clip(name)
+        });
+      }
+    }
 
-    const frames = Array.from(doc.querySelectorAll('iframe, frame')).map((el) => {
-      return {
-        title: clip((el.getAttribute('title') || '').trim()),
-        ariaLabel: clip((el.getAttribute('aria-label') || '').trim()),
-        ariaLabelledby: clip((el.getAttribute('aria-labelledby') || '').trim())
-      };
-    });
+    const frameNodes = Array.from(doc.querySelectorAll('iframe, frame'));
+    const frames = [];
+    const frameSummary = {
+      total: frameNodes.length,
+      missingTitleCount: 0
+    };
+    for (const el of frameNodes) {
+      const title = clip((el.getAttribute('title') || '').trim());
+      const ariaLabel = clip((el.getAttribute('aria-label') || '').trim());
+      const ariaLabelledby = clip((el.getAttribute('aria-labelledby') || '').trim());
+      if (!title && !ariaLabel && !ariaLabelledby) frameSummary.missingTitleCount += 1;
+      if (collectArrays) {
+        frames.push({ title, ariaLabel, ariaLabelledby });
+      }
+    }
 
-    const links = Array.from(doc.querySelectorAll('a[href]')).map((el) => {
+    const linkNodes = Array.from(doc.querySelectorAll('a[href]'));
+    const links = [];
+    const linkSummary = {
+      total: linkNodes.length,
+      targetBlank: 0,
+      targetBlankNoRel: 0,
+      fragmentLinks: 0,
+      missingNameCount: 0,
+      genericCount: 0,
+      skipLinkFound: false
+    };
+    for (const el of linkNodes) {
       const name = getAccessibleName(el);
-      return {
-        href: el.getAttribute('href') || '',
-        name: clip(name),
-        rawText: clip((el.textContent || '').trim()),
-        title: clip((el.getAttribute('title') || '').trim()),
-        ariaLabel: clip((el.getAttribute('aria-label') || '').trim()),
-        ariaLabelledby: clip((el.getAttribute('aria-labelledby') || '').trim()),
-        target: clip((el.getAttribute('target') || '').trim()),
-        rel: clip((el.getAttribute('rel') || '').trim())
-      };
-    });
+      const href = (el.getAttribute('href') || '').trim();
+      const target = (el.getAttribute('target') || '').trim();
+      const rel = (el.getAttribute('rel') || '').trim();
+      if (!name) {
+        linkSummary.missingNameCount += 1;
+      } else {
+        const normalized = normalizeLinkText(name);
+        if (
+          GENERIC_LINK_TEXTS.has(normalized) ||
+          (normalized.length <= 3 && ['+', '→', '>>', '>'].includes(normalized))
+        ) {
+          linkSummary.genericCount += 1;
+        }
+        if (href.startsWith('#')) {
+          if (normalized.includes('contenu') || normalized.includes('skip') || normalized.includes('principal')) {
+            linkSummary.skipLinkFound = true;
+          }
+        }
+      }
+      if (target === '_blank') {
+        linkSummary.targetBlank += 1;
+        const relLower = rel.toLowerCase();
+        if (!relLower.includes('noopener') && !relLower.includes('noreferrer')) {
+          linkSummary.targetBlankNoRel += 1;
+        }
+      }
+      if (href.startsWith('#')) linkSummary.fragmentLinks += 1;
+
+      if (collectArrays) {
+        links.push({
+          href,
+          name: clip(name),
+          rawText: clip((el.textContent || '').trim()),
+          title: clip((el.getAttribute('title') || '').trim()),
+          ariaLabel: clip((el.getAttribute('aria-label') || '').trim()),
+          ariaLabelledby: clip((el.getAttribute('aria-labelledby') || '').trim()),
+          target: clip(target),
+          rel: clip(rel)
+        });
+      }
+    }
 
     const isFormControl = (el) => {
       if (el.matches('input[type="hidden"], input[type="submit"], input[type="reset"], input[type="button"], button')) {
@@ -190,12 +276,31 @@ export function getSnapshotExpression() {
       return legend ? clip((legend.textContent || '').trim()) : '';
     };
 
-    const formControls = Array.from(doc.querySelectorAll('input, select, textarea, button'))
-      .filter(isFormControl)
-      .map((el) => {
-        const fieldset = el.closest('fieldset');
-        const fieldsetLegend = getFieldsetLegend(fieldset);
-        return {
+    const formControls = [];
+    const formSummary = {
+      controlsTotal: 0,
+      missingLabel: 0,
+      requiredCount: 0,
+      autocompleteCount: 0,
+      describedByCount: 0,
+      inFieldsetCount: 0,
+      fieldsetCount: 0,
+      fieldsetWithLegendCount: 0
+    };
+    const fieldsets = [];
+
+    const fieldsetNodes = Array.from(doc.querySelectorAll('fieldset'));
+    formSummary.fieldsetCount = fieldsetNodes.length;
+    for (const fieldset of fieldsetNodes) {
+      const legend = getFieldsetLegend(fieldset);
+      if (legend) formSummary.fieldsetWithLegendCount += 1;
+      if (!collectArrays) continue;
+      if (fieldsets.length >= 30) continue;
+      const controls = Array.from(
+        fieldset.querySelectorAll('input, select, textarea, button')
+      )
+        .filter(isFormControl)
+        .map((el) => ({
           tag: el.tagName.toLowerCase(),
           type: clip((el.getAttribute('type') || '').toLowerCase()),
           id: clip(el.getAttribute('id') || ''),
@@ -203,62 +308,81 @@ export function getSnapshotExpression() {
           label: clip(getControlLabel(el)),
           required: el.hasAttribute('required'),
           ariaRequired: (el.getAttribute('aria-required') || '').toLowerCase() === 'true',
-          autocomplete: clip((el.getAttribute('autocomplete') || '').trim()),
-          describedBy: clip(getDescribedBy(el)),
+          autocomplete: clip((el.getAttribute('autocomplete') || '').trim())
+        }));
+      fieldsets.push({
+        legend,
+        hasLegend: Boolean(legend),
+        controlCount: controls.length,
+        controls: controls.slice(0, 12)
+      });
+    }
+
+    const controlNodes = Array.from(doc.querySelectorAll('input, select, textarea, button'))
+      .filter(isFormControl);
+    for (const el of controlNodes) {
+      const fieldset = el.closest('fieldset');
+      const fieldsetLegend = getFieldsetLegend(fieldset);
+      const label = getControlLabel(el);
+      const required = el.hasAttribute('required');
+      const ariaRequired = (el.getAttribute('aria-required') || '').toLowerCase() === 'true';
+      const autocomplete = (el.getAttribute('autocomplete') || '').trim();
+      const describedBy = getDescribedBy(el);
+      formSummary.controlsTotal += 1;
+      if (!label) formSummary.missingLabel += 1;
+      if (required || ariaRequired) formSummary.requiredCount += 1;
+      if (autocomplete && autocomplete !== 'off') formSummary.autocompleteCount += 1;
+      if (describedBy) formSummary.describedByCount += 1;
+      if (fieldset) formSummary.inFieldsetCount += 1;
+
+      if (collectArrays) {
+        formControls.push({
+          tag: el.tagName.toLowerCase(),
+          type: clip((el.getAttribute('type') || '').toLowerCase()),
+          id: clip(el.getAttribute('id') || ''),
+          name: clip(el.getAttribute('name') || ''),
+          label: clip(label),
+          required,
+          ariaRequired,
+          autocomplete: clip(autocomplete),
+          describedBy: clip(describedBy),
           inFieldset: Boolean(fieldset),
           fieldsetLegend: clip(fieldsetLegend)
-        };
-      });
-
-    const fieldsets = (() => {
-      const maxFieldsets = 30;
-      const maxControls = 12;
-      const out = [];
-      const nodes = Array.from(doc.querySelectorAll('fieldset'));
-      for (const fieldset of nodes) {
-        if (out.length >= maxFieldsets) break;
-        const legend = getFieldsetLegend(fieldset);
-        const controls = Array.from(
-          fieldset.querySelectorAll('input, select, textarea, button')
-        )
-          .filter(isFormControl)
-          .map((el) => ({
-            tag: el.tagName.toLowerCase(),
-            type: clip((el.getAttribute('type') || '').toLowerCase()),
-            id: clip(el.getAttribute('id') || ''),
-            name: clip(el.getAttribute('name') || ''),
-            label: clip(getControlLabel(el)),
-            required: el.hasAttribute('required'),
-            ariaRequired: (el.getAttribute('aria-required') || '').toLowerCase() === 'true',
-            autocomplete: clip((el.getAttribute('autocomplete') || '').trim())
-          }));
-        out.push({
-          legend,
-          hasLegend: Boolean(legend),
-          controlCount: controls.length,
-          controls: controls.slice(0, maxControls)
         });
       }
-      return out;
-    })();
+    }
 
-    const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6')).map((el) => ({
-      level: Number(el.tagName.replace('H', '')),
-      text: clip((el.textContent || '').trim())
-    }));
-    const headingsSummary = (() => {
-      const summary = { total: headings.length, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
-      for (const h of headings) {
-        const key = 'h' + h.level;
-        if (key in summary) summary[key] += 1;
+    const headings = [];
+    const headingsSummary = { total: 0, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
+    const headingAnalysis = { h1Count: 0, hasLevelJumps: false };
+    let prevHeadingLevel = null;
+    const headingNodes = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    for (const el of headingNodes) {
+      const level = Number(el.tagName.replace('H', ''));
+      headingsSummary.total += 1;
+      const key = 'h' + level;
+      if (key in headingsSummary) headingsSummary[key] += 1;
+      if (level === 1) headingAnalysis.h1Count += 1;
+      if (prevHeadingLevel !== null && level - prevHeadingLevel > 1) {
+        headingAnalysis.hasLevelJumps = true;
       }
-      return summary;
-    })();
+      prevHeadingLevel = level;
+      if (collectArrays) {
+        headings.push({
+          level,
+          text: clip((el.textContent || '').trim())
+        });
+      }
+    }
 
-    const listItems = Array.from(doc.querySelectorAll('li')).map((el) => {
+    const listNodes = Array.from(doc.querySelectorAll('li'));
+    const listItems = [];
+    const listSummary = { total: listNodes.length, invalidCount: 0 };
+    for (const el of listNodes) {
       const parent = el.parentElement ? el.parentElement.tagName.toLowerCase() : '';
-      return { parent: clip(parent) };
-    });
+      if (!['ul', 'ol', 'menu'].includes(parent)) listSummary.invalidCount += 1;
+      if (collectArrays) listItems.push({ parent: clip(parent) });
+    }
 
     const langChanges = Array.from(doc.querySelectorAll('[lang]'))
       .map((el) => clip((el.getAttribute('lang') || '').trim()))
@@ -268,7 +392,19 @@ export function getSnapshotExpression() {
       .map((el) => clip((el.getAttribute('dir') || '').trim().toLowerCase()))
       .filter((val) => val && val !== dir);
 
-    const tables = Array.from(doc.querySelectorAll('table')).map((table) => {
+    const tables = [];
+    const tableSummary = {
+      total: 0,
+      withCaption: 0,
+      withTh: 0,
+      withScope: 0,
+      withId: 0,
+      withHeadersAttr: 0,
+      withThead: 0
+    };
+    const tableNodes = Array.from(doc.querySelectorAll('table'));
+    tableSummary.total = tableNodes.length;
+    for (const table of tableNodes) {
       const hasTh = !!table.querySelector('th');
       const hasCaption = !!table.querySelector('caption');
       const ths = Array.from(table.querySelectorAll('th'));
@@ -278,38 +414,26 @@ export function getSnapshotExpression() {
       const hasThead = !!table.querySelector('thead');
       const hasTbody = !!table.querySelector('tbody');
       const hasTfoot = !!table.querySelector('tfoot');
-      return {
-        hasTh,
-        hasCaption,
-        thCount: ths.length,
-        thWithScope,
-        thWithId,
-        cellsWithHeaders,
-        hasThead,
-        hasTbody,
-        hasTfoot
-      };
-    });
-    const tableSummary = (() => {
-      const summary = {
-        total: tables.length,
-        withCaption: 0,
-        withTh: 0,
-        withScope: 0,
-        withId: 0,
-        withHeadersAttr: 0,
-        withThead: 0
-      };
-      for (const t of tables) {
-        if (t.hasCaption) summary.withCaption += 1;
-        if (t.hasTh) summary.withTh += 1;
-        if (t.thWithScope > 0) summary.withScope += 1;
-        if (t.thWithId > 0) summary.withId += 1;
-        if (t.cellsWithHeaders > 0) summary.withHeadersAttr += 1;
-        if (t.hasThead) summary.withThead += 1;
+      if (hasCaption) tableSummary.withCaption += 1;
+      if (hasTh) tableSummary.withTh += 1;
+      if (thWithScope > 0) tableSummary.withScope += 1;
+      if (thWithId > 0) tableSummary.withId += 1;
+      if (cellsWithHeaders > 0) tableSummary.withHeadersAttr += 1;
+      if (hasThead) tableSummary.withThead += 1;
+      if (collectArrays) {
+        tables.push({
+          hasTh,
+          hasCaption,
+          thCount: ths.length,
+          thWithScope,
+          thWithId,
+          cellsWithHeaders,
+          hasThead,
+          hasTbody,
+          hasTfoot
+        });
       }
-      return summary;
-    })();
+    }
 
     const buttons = Array.from(doc.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'))
       .map((el) => ({
@@ -530,54 +654,33 @@ export function getSnapshotExpression() {
       return entries.slice(0, 30);
     })();
 
-    const formSummary = (() => {
-      const summary = {
-        controlsTotal: formControls.length,
-        missingLabel: 0,
-        requiredCount: 0,
-        autocompleteCount: 0,
-        describedByCount: 0,
-        inFieldsetCount: 0,
-        fieldsetCount: fieldsets.length,
-        fieldsetWithLegendCount: fieldsets.filter((f) => f.hasLegend).length
-      };
-      for (const control of formControls) {
-        if (!control.label) summary.missingLabel += 1;
-        if (control.required || control.ariaRequired) summary.requiredCount += 1;
-        if (control.autocomplete && control.autocomplete !== 'off') summary.autocompleteCount += 1;
-        if (control.describedBy) summary.describedByCount += 1;
-        if (control.inFieldset) summary.inFieldsetCount += 1;
-      }
-      return summary;
-    })();
-
     const counts = {
-      images: images.length,
-      frames: frames.length,
-      links: links.length,
-      formControls: formControls.length,
-      headings: headings.length,
-      listItems: listItems.length,
+      images: imageSummary.total,
+      frames: frameSummary.total,
+      links: linkSummary.total,
+      formControls: formSummary.controlsTotal,
+      headings: headingsSummary.total,
+      listItems: listSummary.total,
       langChanges: langChanges.length,
       dirChanges: dirChanges.length,
-      tables: tables.length,
-      fieldsets: fieldsets.length,
+      tables: tableSummary.total,
+      fieldsets: formSummary.fieldsetCount,
       buttons: buttons.length,
       landmarks: landmarks.length,
       focusables: focusables.length
     };
 
-    const partial = ${countsOnly}
-      || images.length > ${maxImages}
-      || links.length > ${maxLinks}
-      || listItems.length > ${maxListItems}
-      || formControls.length > ${maxFormControls}
-      || headings.length > ${maxHeadings}
+    const partial = !collectArrays
+      || imageSummary.total > ${maxImages}
+      || linkSummary.total > ${maxLinks}
+      || listSummary.total > ${maxListItems}
+      || formSummary.controlsTotal > ${maxFormControls}
+      || headingsSummary.total > ${maxHeadings}
       || buttons.length > ${maxButtons}
       || landmarks.length > ${maxLandmarks}
       || focusables.length > ${maxFocusables}
-      || tables.length > ${maxTables}
-      || fieldsets.length > ${maxFieldsets};
+      || tableSummary.total > ${maxTables}
+      || formSummary.fieldsetCount > ${maxFieldsets};
 
     if (${countsOnly}) {
       return {
@@ -589,6 +692,11 @@ export function getSnapshotExpression() {
         dir,
         counts,
         partial,
+        imageSummary,
+        frameSummary,
+        linkSummary,
+        listSummary,
+        headingAnalysis,
         headingsSummary,
         tableSummary,
         formSummary,
@@ -613,6 +721,11 @@ export function getSnapshotExpression() {
       readyState,
       counts,
       partial,
+      imageSummary,
+      frameSummary,
+      linkSummary,
+      listSummary,
+      headingAnalysis,
       images: cap(images, ${maxImages}),
       frames: cap(frames),
       links: cap(links, ${maxLinks}),
