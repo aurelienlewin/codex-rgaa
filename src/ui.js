@@ -65,7 +65,8 @@ function clipFixed(text, width) {
 const AI_NOISE_PATTERNS = [
   /mcp snapshot/i,
   /mcp list_pages/i,
-  /spawning codex/i
+  /spawning codex/i,
+  /autocomplete.*required.*describedby/i
 ];
 
 function normalizeAiMessage(text) {
