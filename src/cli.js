@@ -73,7 +73,7 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
 }
 
-async function promptPages({ tabs } = {}) {
+async function promptPages({ tabs, guided = false } = {}) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -91,23 +91,8 @@ async function promptPages({ tabs } = {}) {
     if (tabPages.length > 12) {
       console.log(`(+${tabPages.length - 12} more)`);
     }
-    const ask = (q) =>
-      new Promise((resolve) => {
-        rl.question(q, (answer) => resolve(answer));
-      });
-    const selection = String(
-      await ask('Select tab numbers (comma), "all", or press Enter to skip: ')
-    )
-      .trim()
-      .toLowerCase();
-    if (selection) {
-      const picks =
-        selection === 'all'
-          ? tabPages.map((_, idx) => idx)
-          : selection
-              .split(',')
-              .map((token) => Number(token.trim()) - 1)
-              .filter((idx) => Number.isFinite(idx) && idx >= 0 && idx < tabPages.length);
+    if (guided) {
+      const picks = tabPages.map((_, idx) => idx);
       for (const idx of picks) {
         const url = tabPages[idx]?.url;
         if (isHttpUrl(url)) {
@@ -116,13 +101,45 @@ async function promptPages({ tabs } = {}) {
           console.log('Skipped (not http/https):', url);
         }
       }
-      if (picks.length === 1) {
-        const candidateId = tabPages[picks[0]]?.id;
-        if (Number.isFinite(candidateId)) {
-          selectedPageId = candidateId;
+    } else {
+      const ask = (q) =>
+        new Promise((resolve) => {
+          rl.question(q, (answer) => resolve(answer));
+        });
+      const selection = String(
+        await ask('Select tab numbers (comma), "all", or press Enter to skip: ')
+      )
+        .trim()
+        .toLowerCase();
+      if (selection) {
+        const picks =
+          selection === 'all'
+            ? tabPages.map((_, idx) => idx)
+            : selection
+                .split(',')
+                .map((token) => Number(token.trim()) - 1)
+                .filter((idx) => Number.isFinite(idx) && idx >= 0 && idx < tabPages.length);
+        for (const idx of picks) {
+          const url = tabPages[idx]?.url;
+          if (isHttpUrl(url)) {
+            urls.push(url);
+          } else if (url) {
+            console.log('Skipped (not http/https):', url);
+          }
+        }
+        if (picks.length === 1) {
+          const candidateId = tabPages[picks[0]]?.id;
+          if (Number.isFinite(candidateId)) {
+            selectedPageId = candidateId;
+          }
         }
       }
     }
+  }
+
+  if (guided && tabPages.length) {
+    rl.close();
+    return { urls, pageId: selectedPageId };
   }
 
   console.log('Enter page URLs (one per line). Empty line to finish:');
@@ -456,34 +473,39 @@ async function main() {
       const hasAutoConnect = Boolean(mcpAutoConnectArg);
 
       if (!mcpBrowserUrlExplicit && !mcpAutoConnectExplicit && !hasBrowserUrl && !hasAutoConnect) {
-        const connectIndex = await promptChoice(
-          'How should we connect to Chrome?',
-          [
-            'Auto-connect (recommended) — Chrome 144+ will prompt you to allow debugging connections.',
-            'Use an existing debugging URL (advanced) — e.g. http://127.0.0.1:9222'
-          ],
-          { defaultIndex: 1 }
-        );
-
-        if (connectIndex === 0) {
+        if (guided) {
           mcpAutoConnectArg = true;
           mcpBrowserUrlArg = '';
         } else {
-          const defaultBrowserUrl = 'http://127.0.0.1:9222';
-          mcpAutoConnectArg = false;
-          mcpBrowserUrlArg =
-            (await (async () => {
-              const rl = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout
-              });
-              const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
-              const answer = String(
-                await ask(`Chrome debugging URL (default: ${defaultBrowserUrl}): `)
-              ).trim();
-              rl.close();
-              return answer || defaultBrowserUrl;
-            })()) || mcpBrowserUrlArg;
+          const connectIndex = await promptChoice(
+            'How should we connect to Chrome?',
+            [
+              'Auto-connect (recommended) — Chrome 144+ will prompt you to allow debugging connections.',
+              'Use an existing debugging URL (advanced) — e.g. http://127.0.0.1:9222'
+            ],
+            { defaultIndex: 1 }
+          );
+
+          if (connectIndex === 0) {
+            mcpAutoConnectArg = true;
+            mcpBrowserUrlArg = '';
+          } else {
+            const defaultBrowserUrl = 'http://127.0.0.1:9222';
+            mcpAutoConnectArg = false;
+            mcpBrowserUrlArg =
+              (await (async () => {
+                const rl = readline.createInterface({
+                  input: process.stdin,
+                  output: process.stdout
+                });
+                const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
+                const answer = String(
+                  await ask(`Chrome debugging URL (default: ${defaultBrowserUrl}): `)
+                ).trim();
+                rl.close();
+                return answer || defaultBrowserUrl;
+              })()) || mcpBrowserUrlArg;
+          }
         }
       }
 
@@ -579,7 +601,7 @@ async function main() {
       console.error('No pages provided. Use --pages or --pages-file in non-interactive mode.');
       process.exit(1);
     }
-    const promptResult = await promptPages({ tabs: mcpTabs });
+    const promptResult = await promptPages({ tabs: mcpTabs, guided });
     pages = promptResult.urls;
     if (snapshotMode === 'mcp' && !mcpPageIdArg && Number.isFinite(promptResult.pageId)) {
       mcpPageIdArg = promptResult.pageId;
