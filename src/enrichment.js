@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import sharp from 'sharp';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
-import { contrast } from 'wcag-contrast';
+import { rgb as contrastRgb } from 'wcag-contrast';
 import Color from 'colorjs.io';
-import cheerio from 'cheerio';
+import { load as loadCheerio } from 'cheerio';
 
 function safeNumber(value) {
   const n = Number(value);
@@ -72,7 +72,9 @@ export function analyzeContrast(styleSamples = []) {
     const bgRgb = colorToRgbArray(bg);
     if (!fgRgb || !bgRgb) continue;
     try {
-      const ratio = contrast.rgb(fgRgb, bgRgb);
+      const fgScaled = fgRgb.map((c) => Math.round(c * 255));
+      const bgScaled = bgRgb.map((c) => Math.round(c * 255));
+      const ratio = contrastRgb(fgScaled, bgScaled);
       results.push({
         text: sample.text,
         selector: sample.selector,
@@ -96,7 +98,7 @@ export function analyzeContrast(styleSamples = []) {
 
 export function analyzeHtmlHints(htmlSnippet = '') {
   if (!htmlSnippet) return null;
-  const $ = cheerio.load(htmlSnippet);
+  const $ = loadCheerio(htmlSnippet);
   const marqueeCount = $('marquee').length;
   const blinkCount = $('blink').length;
   const styleAnimCount = $('[style*="animation"],[style*="transition"]').length;
