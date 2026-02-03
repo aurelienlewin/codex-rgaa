@@ -7,6 +7,46 @@ export function getSnapshotExpression() {
     const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_ITEMS || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 500;
   })();
+  const maxLinks = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_LINKS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
+  })();
+  const maxImages = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_IMAGES || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
+  })();
+  const maxListItems = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_LIST_ITEMS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
+  })();
+  const maxFormControls = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_FORM_CONTROLS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
+  })();
+  const maxHeadings = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_HEADINGS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120;
+  })();
+  const maxButtons = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_BUTTONS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120;
+  })();
+  const maxLandmarks = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_LANDMARKS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 80;
+  })();
+  const maxFocusables = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_FOCUSABLES || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120;
+  })();
+  const maxTables = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_TABLES || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120;
+  })();
+  const maxFieldsets = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_FIELDSETS || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 80;
+  })();
   const maxText = (() => {
     const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_TEXT || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
@@ -48,7 +88,7 @@ export function getSnapshotExpression() {
       await scrollToLoadLazyContent();
     }
 
-    const cap = (arr) => (Array.isArray(arr) ? arr.slice(0, ${maxItems}) : arr);
+    const cap = (arr, max) => (Array.isArray(arr) ? arr.slice(0, max) : arr);
 
     const getText = (node) => clip(node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
@@ -512,33 +552,33 @@ export function getSnapshotExpression() {
       lang,
       href,
       readyState,
-      images: cap(images),
+      images: cap(images, ${maxImages}),
       frames: cap(frames),
-      links: cap(links),
-      formControls: cap(formControls),
-      headings: cap(headings),
+      links: cap(links, ${maxLinks}),
+      formControls: cap(formControls, ${maxFormControls}),
+      headings: cap(headings, ${maxHeadings}),
       headingsSummary,
-      listItems: cap(listItems),
+      listItems: cap(listItems, ${maxListItems}),
       langChanges: cap(langChanges),
       dir,
       dirChanges: cap(dirChanges),
-      tables: cap(tables),
+      tables: cap(tables, ${maxTables}),
       tableSummary,
-      fieldsets: cap(fieldsets),
+      fieldsets: cap(fieldsets, ${maxFieldsets}),
       formSummary,
-      buttons: cap(buttons),
-      landmarks: cap(landmarks),
-      focusables: cap(focusables),
+      buttons: cap(buttons, ${maxButtons}),
+      landmarks: cap(landmarks, ${maxLandmarks}),
+      focusables: cap(focusables, ${maxFocusables}),
       focusableSummary,
       ariaLive,
       ariaSummary,
-      rolesSummary: cap(rolesSummary),
-      meta: cap(meta),
-      linkSummary: cap(linkSummary),
-      media: cap(media),
+      rolesSummary: cap(rolesSummary, ${maxItems}),
+      meta: cap(meta, ${maxItems}),
+      linkSummary: cap(linkSummary, ${maxItems}),
+      media: cap(media, ${maxItems}),
       mediaDetails,
       visual,
-      scripts: cap(scripts)
+      scripts: cap(scripts, ${maxItems})
     };
   })();`;
 }
