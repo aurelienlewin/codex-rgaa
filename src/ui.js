@@ -170,32 +170,6 @@ function sanitizeStatusLine(text) {
     .trim();
 }
 
-function fallbackHumanizeStatus(text, i18n) {
-  const raw = sanitizeStatusLine(text);
-  if (!raw) return '';
-  const lower = raw.toLowerCase();
-  const t = (en) => i18n?.t(en, en) || en;
-
-  if (raw.length <= 2) return t('Processing update');
-  if (lower.includes('schema')) return t('Validating schemas');
-  if (lower.includes('list_pages') || lower.includes('list pages')) return t('Reading Chrome tabs');
-  if (lower.includes('snapshot')) return t('Capturing the page');
-  if (lower.includes('navigate') || lower.includes('page load')) return t('Loading the page');
-  if (lower.includes('network idle')) return t('Waiting for the page to settle');
-  if (lower.includes('ocr')) return t('Reading text from images');
-  if (lower.includes('ai thinking') || lower.includes('thinking')) return t('AI reviewing criteria');
-  if (lower.includes('batch') && lower.includes('criteria')) return t('AI reviewing criteria');
-  if (lower.includes('chrome-devtools') || lower.includes('devtools')) return t('Connecting to Chrome');
-  if (lower.includes('mcp')) return t('Connecting to Chrome');
-  if (lower.includes('spawn') || lower.includes('starting')) return t('Starting the audit');
-  if (lower.includes('parse') || lower.includes('parsing')) return t('Reading results');
-  if (lower.includes('command') || lower.includes('exec')) return t('Running a check');
-  if (lower.includes('evaluate') || lower.includes('script')) return t('Running page checks');
-  if (lower.includes('response') || lower.includes('result')) return t('Processing results');
-
-  return raw;
-}
-
 function looksLikeCodexHomePermissionError(stderr) {
   const text = String(stderr || '');
   return (
@@ -505,9 +479,7 @@ function createFancyReporter(options = {}) {
   const pushFeed = (kind, message, { replaceLastIfSameKind = false } = {}) => {
     const raw = String(message || '');
     const normalized = sanitizeStatusLine(raw);
-    const base = humanizeKinds.has(kind)
-      ? fallbackHumanizeStatus(normalized, i18n) || placeholderLine
-      : normalized;
+    const base = humanizeKinds.has(kind) ? placeholderLine : normalized;
     const cleaned = clipInline(base, 320);
     if (!cleaned) return;
     if (replaceLastIfSameKind && feed.length && feed[feed.length - 1].kind === kind) {
@@ -519,10 +491,9 @@ function createFancyReporter(options = {}) {
         onResult: (rewritten) => {
           const idx = feed.findIndex((r) => r.id === id);
           if (idx < 0) return;
-          const safe = fallbackHumanizeStatus(rewritten, i18n) || fallbackHumanizeStatus(normalized, i18n) || placeholderLine;
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(safe, 320)
+            message: clipInline(rewritten, 320)
           };
           render();
         }
@@ -537,10 +508,9 @@ function createFancyReporter(options = {}) {
         onResult: (rewritten) => {
           const idx = feed.findIndex((r) => r.id === id);
           if (idx < 0) return;
-          const safe = fallbackHumanizeStatus(rewritten, i18n) || fallbackHumanizeStatus(normalized, i18n) || placeholderLine;
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(safe, 320)
+            message: clipInline(rewritten, 320)
           };
           render();
         }
@@ -567,7 +537,7 @@ function createFancyReporter(options = {}) {
 
   const startStage = (label) => {
     const original = sanitizeStatusLine(label);
-    stageLabel = fallbackHumanizeStatus(original, i18n) || placeholderLine;
+    stageLabel = placeholderLine;
     stageStartAt = nowMs();
     lastStageMs = null;
     if (original) pushFeed('stage', original);
@@ -1446,7 +1416,7 @@ function createPlainReporter(options = {}) {
       const clipped = sanitizeStatusLine(cleaned).slice(0, 120);
       if (clipped !== lastAILog) {
         lastAILog = clipped;
-        line('Codex', fallbackHumanizeStatus(clipped, i18n) || i18n.t('Working…', 'Working…'));
+        line('Codex', i18n.t('Working…', 'Working…'));
         feedHumanizer.request({
           kind: 'progress',
           text: sanitizeStatusLine(cleaned),
