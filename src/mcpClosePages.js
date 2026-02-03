@@ -213,6 +213,8 @@ function buildPrompt({ urls }) {
   const original = Array.from(new Set(urls.map((u) => String(u || '').trim()).filter(Boolean)));
   return [
     'You are a technical tool runner. Use ONLY chrome-devtools MCP tools.',
+    'Do not add narration, explanations, or confirmations (no free text).',
+    'Only output MCP tool calls and the final JSON response.',
     'Goal: close Chrome tabs whose URL matches one of the audited URLs.',
     'Rules:',
     '- First call list_pages.',

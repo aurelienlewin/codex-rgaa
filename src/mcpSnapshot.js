@@ -52,6 +52,8 @@ function buildPrompt({ url, pageId } = {}) {
       : `URL ${url}`;
   return [
     'Tu es un outil technique. Utilise uniquement le MCP chrome-devtools.',
+    'Ne fournis aucune narration, explication ou confirmation (pas de texte libre).',
+    'N’écris que des appels d’outils MCP et la réponse JSON finale.',
     'Étapes obligatoires:',
     '1) Détermine la page cible:',
     typeof pageId === 'number' && Number.isFinite(pageId)
@@ -81,6 +83,8 @@ function buildPrompt({ url, pageId } = {}) {
 function buildListPagesPrompt() {
   return [
     'Tu es un outil technique. Utilise uniquement le MCP chrome-devtools.',
+    'Ne fournis aucune narration, explication ou confirmation (pas de texte libre).',
+    'N’écris que des appels d’outils MCP et la réponse JSON finale.',
     'Étapes obligatoires:',
     '1) Appelle list_pages.',
     '2) Réponds uniquement avec le JSON retourné (pas de texte supplémentaire).'
