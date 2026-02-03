@@ -231,7 +231,7 @@ function createCodexFeedHumanizer({
   enabled,
   model,
   lang,
-  minIntervalMs = 1100,
+  minIntervalMs = 450,
   timeoutMs = 2600
 } = {}) {
   if (!enabled) {
