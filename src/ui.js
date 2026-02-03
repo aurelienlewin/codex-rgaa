@@ -510,14 +510,6 @@ function createFancyReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
-  let lastAILogAt = 0;
-  const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
-  const aiLogRepeatMs =
-    Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
-  let lastAILogAt = 0;
-  const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
-  const aiLogRepeatMs =
-    Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
   let currentCriterion = null;
   let lastDecision = null;
   const decisions = [];
