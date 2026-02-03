@@ -57,6 +57,9 @@ function summarizeCodexStderr(stderr) {
 }
 
 function buildPrompt({ url, pageId, paths }) {
+  const htmlMaxRaw = Number(process.env.AUDIT_ENRICH_HTML_MAX || '');
+  const htmlMax =
+    Number.isFinite(htmlMaxRaw) && htmlMaxRaw > 0 ? Math.floor(htmlMaxRaw) : 20000;
   const targetLabel =
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `page id ${pageId}`
@@ -121,7 +124,7 @@ function buildPrompt({ url, pageId, paths }) {
     '  const html = (document.documentElement && document.documentElement.outerHTML) || "";',
     '  return {',
     '    styleSamples: samples,',
-    '    htmlSnippet: html.length > 200000 ? html.slice(0, 200000) : html',
+    `    htmlSnippet: html.length > ${htmlMax} ? html.slice(0, ${htmlMax}) : html`,
     '  };',
     '}'
   ]
