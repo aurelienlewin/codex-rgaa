@@ -935,6 +935,7 @@ function createFancyReporter(options = {}) {
       if (!label || isNoiseAiMessage(label)) return;
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
+      startAiHeartbeat();
     },
 
     onAILog({ message }) {
@@ -1340,6 +1341,7 @@ function createLegacyReporter(options = {}) {
       const line = `${palette.muted('•')} ${palette.muted(label)}`;
       if (typeof bars.log === 'function') bars.log(line);
       else console.log(line);
+      startAiHeartbeat();
     },
 
     onAILog({ message }) {
@@ -1596,6 +1598,7 @@ function createPlainReporter(options = {}) {
           text: normalized,
           onResult: (rewritten) => line('Codex', rewritten)
         });
+        startAiHeartbeat();
       }
     },
 
