@@ -86,7 +86,7 @@ If you explicitly disable autoConnect and don’t provide a `--mcp-browser-url`,
 Note: MCP mode shells out to `chrome-devtools-mcp` (via `npx chrome-devtools-mcp@latest` unless you provide a local command). If your environment has no npm network access, use `--snapshot-mode cdp` or set `AUDIT_MCP_COMMAND` to a pre-installed `chrome-devtools-mcp` binary.
 
 #### Recommended (Chrome 144+): autoConnect to your running Chrome (no CLI flags)
-With Chrome 144+, `chrome-devtools-mcp` can auto-connect to your already-open Chrome instance. The auditor will prompt you to:
+With Chrome 144+, `chrome-devtools-mcp` can auto-connect to your already-open Chrome instance. In guided mode, the auditor **auto-connects by default** and will prompt you to:
 - launch Chrome
 - enable remote debugging in `chrome://inspect/#remote-debugging`
 - click “Allow” for incoming connections
@@ -97,6 +97,9 @@ npm run audit -- --snapshot-mode mcp --allow-remote-debug
 ```
 
 Note: in non-interactive runs (no TTY), autoConnect can’t be guided by prompts—either pre-configure Chrome as above or use `--mcp-browser-url`.
+
+#### Guided mode + existing tabs (MCP)
+If guided mode detects open Chrome tabs via MCP, it **audits all detected tabs by default** (no selection prompt). To audit specific URLs instead, provide `--pages` or `--pages-file`.
 
 #### Connect to an existing Chrome session (CDP port 9222)
 If you already have Chrome running with remote debugging (e.g. `--remote-debugging-port=9222`),
