@@ -9,6 +9,7 @@ import { loadCriteria } from './criteria.js';
 import { createReporter } from './ui.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
+import { listMcpPages } from './mcpSnapshot.js';
 
 function formatRunId(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -68,13 +69,55 @@ function parsePagesFile(filePath) {
   return urls;
 }
 
-async function promptPages() {
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+async function promptPages({ tabs } = {}) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
   });
 
   const urls = [];
+  const tabPages = Array.isArray(tabs) ? tabs : [];
+  if (tabPages.length) {
+    console.log('\nOpen tabs detected:');
+    tabPages.slice(0, 12).forEach((page, index) => {
+      const title = page?.title ? ` — ${page.title}` : '';
+      console.log(`${index + 1}) ${page?.url || '(no url)'}${title}`);
+    });
+    if (tabPages.length > 12) {
+      console.log(`(+${tabPages.length - 12} more)`);
+    }
+    const ask = (q) =>
+      new Promise((resolve) => {
+        rl.question(q, (answer) => resolve(answer));
+      });
+    const selection = String(
+      await ask('Select tab numbers (comma), "all", or press Enter to skip: ')
+    )
+      .trim()
+      .toLowerCase();
+    if (selection) {
+      const picks =
+        selection === 'all'
+          ? tabPages.map((_, idx) => idx)
+          : selection
+              .split(',')
+              .map((token) => Number(token.trim()) - 1)
+              .filter((idx) => Number.isFinite(idx) && idx >= 0 && idx < tabPages.length);
+      for (const idx of picks) {
+        const url = tabPages[idx]?.url;
+        if (isHttpUrl(url)) {
+          urls.push(url);
+        } else if (url) {
+          console.log('Skipped (not http/https):', url);
+        }
+      }
+    }
+  }
+
   console.log('Enter page URLs (one per line). Empty line to finish:');
 
   for await (const line of rl) {
@@ -324,19 +367,6 @@ async function main() {
 
   pages = Array.from(new Set(pages));
 
-  if (pages.length === 0) {
-    if (!interactive) {
-      console.error('No pages provided. Use --pages or --pages-file in non-interactive mode.');
-      process.exit(1);
-    }
-    pages = await promptPages();
-  }
-
-  if (pages.length === 0) {
-    console.error('No pages provided.');
-    process.exit(1);
-  }
-
   let allowRemoteDebug = argv['allow-remote-debug'];
   if (allowRemoteDebug === undefined) {
     if (!interactive) {
@@ -504,6 +534,50 @@ async function main() {
     await promptMcpAutoConnectSetup({
       channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
     });
+  }
+
+  let mcpTabs = [];
+  if (interactive && guided && snapshotMode === 'mcp' && pages.length === 0) {
+    try {
+      console.log('\nChecking existing Chrome tabs (list_pages)…');
+      const list = await listMcpPages({
+        model: argv['codex-model'],
+        mcp: {
+          browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
+          autoConnect: mcpAutoConnect,
+          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
+        }
+      });
+      const entries = Array.isArray(list?.pages) ? list.pages : [];
+      mcpTabs = entries;
+      if (entries.length) {
+        console.log('Open tabs:');
+        entries.slice(0, 8).forEach((page) => {
+          const title = page?.title ? ` — ${page.title}` : '';
+          console.log(`- [${page?.id}] ${page?.url || '(no url)'}${title}`);
+        });
+        if (entries.length > 8) {
+          console.log(`- (+${entries.length - 8} more)`);
+        }
+      }
+    } catch (err) {
+      console.log(
+        `\nWarning: unable to list Chrome tabs via MCP (${err?.message || 'unknown error'}).`
+      );
+    }
+  }
+
+  if (pages.length === 0) {
+    if (!interactive) {
+      console.error('No pages provided. Use --pages or --pages-file in non-interactive mode.');
+      process.exit(1);
+    }
+    pages = await promptPages({ tabs: mcpTabs });
+  }
+
+  if (pages.length === 0) {
+    console.error('No pages provided.');
+    process.exit(1);
   }
 
   const outPath = argv.out ? path.resolve(argv.out) : null;

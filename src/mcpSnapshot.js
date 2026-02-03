@@ -8,6 +8,9 @@ import { createAbortError, isAbortError } from './abort.js';
 import { getSnapshotExpression } from './snapshot.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-snapshot-schema.json', import.meta.url));
+const LIST_PAGES_SCHEMA_PATH = fileURLToPath(
+  new URL('../data/mcp-list-pages-schema.json', import.meta.url)
+);
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function normalizeBrowserUrl(browserUrl) {
@@ -106,6 +109,15 @@ function buildPrompt({ url, pageId } = {}) {
     '  }',
     `  return ${expression}`,
     '}'
+  ].join('\n');
+}
+
+function buildListPagesPrompt() {
+  return [
+    'Tu es un outil technique. Utilise uniquement le MCP chrome-devtools.',
+    'Étapes obligatoires:',
+    '1) Appelle list_pages.',
+    '2) Réponds uniquement avec le JSON retourné (pas de texte supplémentaire).'
   ].join('\n');
 }
 
@@ -271,7 +283,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
   );
 
   const codexPath = process.env.CODEX_PATH || 'codex';
-  const buildArgs = (mcpConfig) => {
+  const buildArgs = (mcpConfig, schemaPath) => {
     const args = [
       // MCP servers are launched as local processes (e.g. `npx chrome-devtools-mcp@latest ...`).
       // In non-interactive `codex exec` runs, the default approval policy can block spawning them
@@ -282,7 +294,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
       ...buildMcpArgs(mcpConfig),
       '--skip-git-repo-check',
       '--output-schema',
-      SCHEMA_PATH,
+      schemaPath,
       '--output-last-message',
       outputFile,
       '--color',
@@ -386,7 +398,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
   }
 
   try {
-    await runOnce(preferredEnv, buildArgs(mcp));
+    await runOnce(preferredEnv, buildArgs(mcp, SCHEMA_PATH));
   } catch (err) {
     // Default behavior may point to an existing local CDP endpoint (127.0.0.1:9222).
     // If that endpoint isn't available, retry using autoConnect (when enabled).
@@ -400,7 +412,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
       fallbackConfig.browserUrl = '';
       fallbackConfig.autoConnect = true;
       try {
-        await runOnce(preferredEnv, buildArgs(fallbackConfig));
+        await runOnce(preferredEnv, buildArgs(fallbackConfig, SCHEMA_PATH));
       } catch (fallbackErr) {
         throw decorateCodexError(fallbackErr);
       }
@@ -414,7 +426,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
       await seedCodexConfig(fallbackHome, onLog);
       onLog?.(`Codex: retrying with CODEX_HOME=${fallbackHome}`);
       try {
-        await runOnce(buildCodexEnv({ codexHome: fallbackHome }), buildArgs(mcp));
+        await runOnce(buildCodexEnv({ codexHome: fallbackHome }), buildArgs(mcp, SCHEMA_PATH));
       } catch (fallbackErr) {
         throw decorateCodexError(fallbackErr);
       }
@@ -432,4 +444,165 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
 
 export async function collectSnapshotWithMcp({ url, model, mcp, onLog, onStage, signal }) {
   return runCodexSnapshot({ url, model, mcp, onLog, onStage, signal });
+}
+
+export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+
+  const outputFile = path.join(
+    os.tmpdir(),
+    `codex-mcp-list-pages-${Date.now()}-${Math.random().toString(16).slice(2)}.json`
+  );
+
+  const codexPath = process.env.CODEX_PATH || 'codex';
+  const buildArgs = (mcpConfig) => {
+    const args = [
+      '-a',
+      'on-failure',
+      'exec',
+      ...buildMcpArgs(mcpConfig),
+      '--skip-git-repo-check',
+      '--output-schema',
+      LIST_PAGES_SCHEMA_PATH,
+      '--output-last-message',
+      outputFile,
+      '--color',
+      'never',
+      '--sandbox',
+      'read-only'
+    ];
+    if (model) args.push('-m', model);
+    args.push('-');
+    return args;
+  };
+
+  onStage?.('AI: preparing MCP list_pages');
+  onLog?.('Codex: preparing MCP list_pages');
+
+  const runOnce = async (env, args) =>
+    new Promise((resolve, reject) => {
+      onStage?.('AI: spawning Codex');
+      const child = spawn(codexPath, args, {
+        stdio: ['pipe', 'ignore', 'pipe'],
+        env
+      });
+
+      let settled = false;
+      let stderrText = '';
+      let abortHandler = null;
+      const finalize = (err) => {
+        if (settled) return;
+        settled = true;
+        if (signal && abortHandler) {
+          signal.removeEventListener('abort', abortHandler);
+        }
+        if (err) {
+          err.stderr = stderrText;
+          reject(err);
+        } else {
+          resolve();
+        }
+      };
+
+      abortHandler = () => {
+        onLog?.('Codex: abort signal received');
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+      };
+
+      if (signal) {
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
+      child.on('error', (err) => {
+        if (signal?.aborted || isAbortError(err)) {
+          finalize(createAbortError());
+          return;
+        }
+        finalize(err);
+      });
+      child.on('exit', (code) => {
+        if (signal?.aborted) {
+          finalize(createAbortError());
+          return;
+        }
+        if (code === 0) finalize();
+        else finalize(new Error(`codex exec exited with code ${code}`));
+      });
+
+      if (child.stderr) {
+        child.stderr.on('data', (chunk) => {
+          const message = String(chunk);
+          stderrText += message;
+          if (stderrText.length > 64_000) stderrText = stderrText.slice(-64_000);
+          const trimmed = message.trim();
+          if (trimmed) onLog?.(`Codex: ${trimmed.split('\n').slice(-1)[0]}`);
+        });
+      }
+
+      onStage?.('AI: running MCP list_pages');
+      onLog?.('Codex: running MCP list_pages');
+      child.stdin.write(buildListPagesPrompt());
+      child.stdin.end();
+    });
+
+  let preferredEnv = buildCodexEnv();
+  if (process.env.CODEX_HOME) {
+    try {
+      await ensureDir(process.env.CODEX_HOME);
+    } catch (err) {
+      const fallbackHome = getFallbackCodexHome();
+      await ensureDir(fallbackHome);
+      await ensureDir(path.join(fallbackHome, 'sessions'));
+      await ensureDir(path.join(fallbackHome, 'npm-cache'));
+      await seedCodexConfig(fallbackHome, onLog);
+      onLog?.(
+        `Codex: CODEX_HOME=${process.env.CODEX_HOME} is not writable; retrying with CODEX_HOME=${fallbackHome}`
+      );
+      preferredEnv = buildCodexEnv({ codexHome: fallbackHome });
+    }
+  }
+
+  try {
+    await runOnce(preferredEnv, buildArgs(mcp));
+  } catch (err) {
+    const providedBrowserUrl = normalizeBrowserUrl(mcp?.browserUrl);
+    const canFallback = Boolean(providedBrowserUrl && mcp?.autoConnect);
+    if (canFallback && looksLikeMcpConnectError(err.stderr)) {
+      onLog?.(
+        `Codex: MCP connect to ${providedBrowserUrl} failed; retrying with --autoConnect`
+      );
+      const fallbackConfig = { ...(mcp || {}) };
+      fallbackConfig.browserUrl = '';
+      fallbackConfig.autoConnect = true;
+      try {
+        await runOnce(preferredEnv, buildArgs(fallbackConfig));
+      } catch (fallbackErr) {
+        throw decorateCodexError(fallbackErr);
+      }
+    } else if (!process.env.CODEX_HOME && looksLikeCodexHomePermissionError(err.stderr)) {
+      const fallbackHome = getFallbackCodexHome();
+      await ensureDir(fallbackHome);
+      await ensureDir(path.join(fallbackHome, 'sessions'));
+      await ensureDir(path.join(fallbackHome, 'npm-cache'));
+      await seedCodexConfig(fallbackHome, onLog);
+      onLog?.(`Codex: retrying with CODEX_HOME=${fallbackHome}`);
+      try {
+        await runOnce(buildCodexEnv({ codexHome: fallbackHome }), buildArgs(mcp));
+      } catch (fallbackErr) {
+        throw decorateCodexError(fallbackErr);
+      }
+    } else {
+      throw decorateCodexError(err);
+    }
+  }
+
+  onStage?.('AI: parsing MCP list_pages');
+  onLog?.('Codex: parsing MCP list_pages');
+  const content = await fs.readFile(outputFile, 'utf-8');
+  await fs.unlink(outputFile).catch(() => {});
+  return JSON.parse(content);
 }
