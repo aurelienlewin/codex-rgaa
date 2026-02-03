@@ -5,7 +5,8 @@ export const STATUS = {
   NC: 'Not conform',
   NA: 'Non applicable',
   ERR: 'Error',
-  AI: 'Review'
+  AI: 'Review',
+  REVIEW: 'Review'
 };
 
 const GENERIC_LINK_TEXTS = new Set([

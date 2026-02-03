@@ -44,6 +44,7 @@ export function getI18n(lang) {
       conform: () => t('Conforme (C)', 'Conform (C)'),
       notConform: () => t('Non conforme (NC)', 'Not conform (NC)'),
       nonApplicable: () => t('Non applicable (NA)', 'Non applicable (NA)'),
+      review: () => t('À vérifier (REV)', 'Review (REV)'),
       errors: () => t('Erreurs (ERR)', 'Errors (ERR)')
     },
     notes: {

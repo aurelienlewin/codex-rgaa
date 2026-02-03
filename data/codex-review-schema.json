@@ -6,7 +6,7 @@
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["Conform", "Not conform", "Non applicable"]
+      "enum": ["Conform", "Not conform", "Non applicable", "Review"]
     },
     "confidence": {
       "type": "number",

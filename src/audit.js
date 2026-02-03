@@ -18,12 +18,13 @@ function sanitizeSheetName(name) {
 }
 
 function summarizeCounts(results) {
-  const counts = { C: 0, NC: 0, NA: 0, ERR: 0 };
+  const counts = { C: 0, NC: 0, NA: 0, ERR: 0, REVIEW: 0 };
   for (const res of results) {
     if (res.status === STATUS.C) counts.C += 1;
     if (res.status === STATUS.NC) counts.NC += 1;
     if (res.status === STATUS.NA) counts.NA += 1;
     if (res.status === STATUS.ERR) counts.ERR += 1;
+    if (res.status === STATUS.REVIEW) counts.REVIEW += 1;
   }
   return counts;
 }
@@ -558,6 +559,8 @@ export async function runAudit(options) {
       naFg: 'FF475569',
       errBg: 'FFFFEDD5',
       errFg: 'FF9A3412',
+      reviewBg: 'FFDC2626',
+      reviewFg: 'FFFFFFFF',
       aiBg: 'FFEDE9FE',
       aiFg: 'FF6D28D9'
     };
@@ -597,6 +600,7 @@ export async function runAudit(options) {
       if (status === STATUS.NC) return { bg: COLORS.notConformBg, fg: COLORS.notConformFg, icon: '✗' };
       if (status === STATUS.NA) return { bg: COLORS.naBg, fg: COLORS.naFg, icon: '–' };
       if (status === STATUS.ERR) return { bg: COLORS.errBg, fg: COLORS.errFg, icon: '!' };
+      if (status === STATUS.REVIEW) return { bg: COLORS.reviewBg, fg: COLORS.reviewFg, icon: '' };
       if (status === STATUS.AI) return { bg: COLORS.aiBg, fg: COLORS.aiFg, icon: '?' };
       return { bg: 'FFFFFFFF', fg: 'FF0F172A', icon: '' };
     };
@@ -620,6 +624,7 @@ export async function runAudit(options) {
     const statusToValue = (status) => {
       if (status === STATUS.C) return 1;
       if (status === STATUS.NA) return 0;
+      if (status === STATUS.REVIEW) return null;
       if (status === STATUS.ERR) return -2;
       return -1;
     };
@@ -726,6 +731,7 @@ export async function runAudit(options) {
     summarySheet.addRow([i18n.excel.conform(), globalCounts.C]);
     summarySheet.addRow([i18n.excel.notConform(), globalCounts.NC]);
     summarySheet.addRow([i18n.excel.nonApplicable(), globalCounts.NA]);
+    summarySheet.addRow([i18n.excel.review(), globalCounts.REVIEW || 0]);
     summarySheet.addRow([i18n.excel.errors(), globalCounts.ERR]);
 
     // Legend (UI-friendly)
@@ -735,6 +741,7 @@ export async function runAudit(options) {
       [statusStyle(STATUS.C).icon, i18n.statusLabel(STATUS.C)],
       [statusStyle(STATUS.NC).icon, i18n.statusLabel(STATUS.NC)],
       [statusStyle(STATUS.NA).icon, i18n.statusLabel(STATUS.NA)],
+      [statusStyle(STATUS.REVIEW).icon, i18n.statusLabel(STATUS.REVIEW)],
       [statusStyle(STATUS.ERR).icon, i18n.statusLabel(STATUS.ERR)]
     ];
     for (const [icon, label] of legend) {

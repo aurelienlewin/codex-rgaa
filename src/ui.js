@@ -17,6 +17,7 @@ const palette = {
   glow: chalk.hex('#f472b6'),
   warn: chalk.hex('#f59e0b'),
   error: chalk.hex('#ef4444'),
+  review: chalk.hex('#dc2626'),
   muted: chalk.hex('#94a3b8'),
   ok: chalk.hex('#22c55e'),
   steel: chalk.hex('#0f172a')
@@ -645,6 +646,8 @@ function createFancyReporter(options = {}) {
       if (status === 'Conform') statusColor = palette.ok;
       if (status === 'Not conform') statusColor = palette.error;
       if (status === 'Non applicable') statusColor = palette.muted;
+      if (status === 'Review') statusColor = palette.review;
+      if (status === 'Review') statusColor = palette.review;
       if (status === 'Error') statusColor = palette.error;
       decisionLines.push(
         `${padVisibleRight(palette.muted('Status'), 8)} ${statusColor(chalk.bold(status))} ${palette.muted('•')} ${palette.accent(
@@ -852,7 +855,7 @@ function createFancyReporter(options = {}) {
       const score = counts.C + counts.NC === 0 ? 0 : counts.C / (counts.C + counts.NC);
       pushFeed(
         'page',
-        `Page ${index + 1}/${totalPages} summary: C ${counts.C}, NC ${counts.NC}, NA ${counts.NA}, Score ${formatPercent(
+        `Page ${index + 1}/${totalPages} summary: C ${counts.C}, NC ${counts.NC}, NA ${counts.NA}, REV ${counts.REVIEW || 0}, Score ${formatPercent(
           score
         )}, Time ${totalElapsed}ms`
       );
@@ -874,6 +877,7 @@ function createFancyReporter(options = {}) {
         col('Conform', String(counts.C), palette.ok),
         col('Not conform', String(counts.NC), palette.error),
         col('Non applicable', String(counts.NA), palette.muted),
+        col('Review', String(counts.REVIEW || 0), palette.review),
         col('Errors', String(counts.ERR || 0), palette.error),
         col('Score', formatPercent(globalScore), palette.accent)
       ].join('\n');
@@ -898,6 +902,7 @@ function createFancyReporter(options = {}) {
           if (item.status === 'Conform') statusColor = palette.ok;
           if (item.status === 'Not conform') statusColor = palette.error;
           if (item.status === 'Non applicable') statusColor = palette.muted;
+          if (item.status === 'Review') statusColor = palette.review;
           if (item.status === 'Error') statusColor = palette.error;
           const details = item.rationale ? ` • ${item.rationale}` : '';
           decisionLines.push(`${statusColor(status)} ${item.crit}${details}`);
@@ -1208,6 +1213,7 @@ function createLegacyReporter(options = {}) {
       if (statusLabel === 'Conform') statusColor = palette.ok;
       if (statusLabel === 'Not conform') statusColor = palette.error;
       if (statusLabel === 'Non applicable') statusColor = palette.muted;
+      if (statusLabel === 'Review') statusColor = palette.review;
       if (statusLabel === 'Error') statusColor = palette.error;
 
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 56);
@@ -1234,6 +1240,7 @@ function createLegacyReporter(options = {}) {
         `${palette.ok(`C ${counts.C}`)}  ` +
         `${palette.error(`NC ${counts.NC}`)}  ` +
         `${palette.muted(`NA ${counts.NA}`)}  ` +
+        `${counts.REVIEW ? palette.review(`REV ${counts.REVIEW}`) + '  ' : ''}` +
         `${counts.ERR ? palette.error(`ERR ${counts.ERR}`) + '  ' : ''}` +
         `${palette.accent(`Score ${formatPercent(score)}`)}  ` +
         `${palette.muted(`Time ${totalElapsed}ms`)}`;
@@ -1259,6 +1266,7 @@ function createLegacyReporter(options = {}) {
         col('Conform', String(counts.C), palette.ok),
         col('Not conform', String(counts.NC), palette.error),
         col('Non applicable', String(counts.NA), palette.muted),
+        col('Review', String(counts.REVIEW || 0), palette.review),
         col('Errors', String(counts.ERR || 0), palette.error),
         col('Score', formatPercent(globalScore), palette.accent)
       ].join('\n');
@@ -1438,7 +1446,7 @@ function createPlainReporter(options = {}) {
       const score = counts.C + counts.NC === 0 ? 0 : counts.C / (counts.C + counts.NC);
       line(
         i18n.t('Page summary:', 'Page summary:'),
-        `${index + 1}/${totalPages} C ${counts.C} NC ${counts.NC} NA ${counts.NA} Score ${formatPercent(
+        `${index + 1}/${totalPages} C ${counts.C} NC ${counts.NC} NA ${counts.NA} REV ${counts.REVIEW || 0} Score ${formatPercent(
           score
         )} Time ${totalElapsed}ms • ${url}`
       );
@@ -1449,6 +1457,7 @@ function createPlainReporter(options = {}) {
       line('Conform:', String(counts.C));
       line('Not conform:', String(counts.NC));
       line('Non applicable:', String(counts.NA));
+      line('Review:', String(counts.REVIEW || 0));
       line('Errors:', String(counts.ERR || 0));
       line('Score:', formatPercent(globalScore));
       const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';

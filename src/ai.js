@@ -163,10 +163,36 @@ function looksLikeModelNotFound(stderr) {
 
 function normalizeAiStatus(status) {
   const normalized = String(status || '').trim();
-  if (normalized === STATUS.C || normalized === STATUS.NC || normalized === STATUS.NA) {
+  if (normalized === STATUS.C || normalized === STATUS.NC || normalized === STATUS.NA || normalized === STATUS.REVIEW) {
     return normalized;
   }
   return STATUS.NC;
+}
+
+function looksLikeNonVerifiable({ rationale, evidence } = {}) {
+  const text = `${rationale || ''} ${(Array.isArray(evidence) ? evidence.join(' ') : '')}`
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('insufficient evidence') ||
+    text.includes('insufficient') ||
+    text.includes('not enough evidence') ||
+    text.includes('missing evidence') ||
+    text.includes('cannot verify') ||
+    text.includes('cannot be verified') ||
+    text.includes('unable to verify') ||
+    text.includes('non-verifiable') ||
+    text.includes('non verifiable') ||
+    text.includes('preuves insuffisantes') ||
+    text.includes('preuve insuffisante') ||
+    text.includes('manque de preuves') ||
+    text.includes('preuve manquante') ||
+    text.includes('non vérifiable') ||
+    text.includes('impossible de vérifier') ||
+    text.includes('impossible a verifier')
+  );
 }
 
 function buildEvidence(snapshot) {
@@ -234,12 +260,12 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
     i18n.lang === 'en'
       ? [
           'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
-          'Allowed statuses: "Conform", "Not conform", "Non applicable".',
+          'Allowed statuses: "Conform", "Not conform", "Non applicable", "Review".',
           'Decision rules (in order):',
           '1) Applicability → return "Non applicable" ONLY if evidence clearly shows the criterion does not apply (no relevant elements).',
           '   Examples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
           '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
-          '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance, return "Not conform" and state what is missing.',
+          '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance EVEN after using MCP tools, return "Review" and state what is missing.',
           '3) Compliance → if any relevant element violates the requirement, return "Not conform"; return "Conform" only when evidence explicitly shows compliance for ALL relevant elements.',
           'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; langChanges 40.',
           'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
@@ -279,12 +305,12 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
         ]
       : [
           'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
-          'Statuts autorisés: "Conform", "Not conform", "Non applicable".',
+          'Statuts autorisés: "Conform", "Not conform", "Non applicable", "Review".',
           'Règles de décision (dans l’ordre):',
           '1) Applicabilité → réponds "Non applicable" UNIQUEMENT si les preuves montrent clairement que le critère ne s’applique pas (aucun élément concerné).',
           '   Exemples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
           '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
-          '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité, réponds "Not conform" et précise ce qui manque.',
+          '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité MÊME après usage des outils MCP, réponds "Review" et précise ce qui manque.',
           '3) Conformité → si un élément concerné est non conforme, réponds "Not conform"; réponds "Conform" seulement si les preuves démontrent la conformité pour TOUS les éléments concernés.',
           'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; langChanges 40.',
           'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
@@ -336,13 +362,13 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
     i18n.lang === 'en'
       ? [
           'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
-          'Allowed statuses: "Conform", "Not conform", "Non applicable".',
+          'Allowed statuses: "Conform", "Not conform", "Non applicable", "Review".',
           'You MUST return a JSON object with a "results" property (array) containing EXACTLY one result per provided criterion.',
           'Decision rules (in order):',
           '1) Applicability → return "Non applicable" ONLY if evidence clearly shows the criterion does not apply (no relevant elements).',
           '   Examples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
           '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
-          '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance, return "Not conform" and state what is missing.',
+          '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance EVEN after using MCP tools, return "Review" and state what is missing.',
           '3) Compliance → if any relevant element violates the requirement, return "Not conform"; return "Conform" only when evidence explicitly shows compliance for ALL relevant elements.',
           'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; langChanges 40.',
           'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
@@ -385,13 +411,13 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
         ]
       : [
           'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
-          'Statuts autorisés: "Conform", "Not conform", "Non applicable".',
+          'Statuts autorisés: "Conform", "Not conform", "Non applicable", "Review".',
           'Tu dois retourner un objet JSON contenant une propriété "results" (tableau) avec EXACTEMENT un résultat par critère fourni.',
           'Règles de décision (dans l’ordre):',
           '1) Applicabilité → réponds "Non applicable" UNIQUEMENT si les preuves montrent clairement que le critère ne s’applique pas (aucun élément concerné).',
           '   Exemples: images.length=0, links.length=0, formControls.length=0, frames.length=0, tables.length=0, listItems.length=0,',
           '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
-          '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité, réponds "Not conform" et précise ce qui manque.',
+          '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité MÊME après usage des outils MCP, réponds "Review" et précise ce qui manque.',
           '3) Conformité → si un élément concerné est non conforme, réponds "Not conform"; réponds "Conform" seulement si les preuves démontrent la conformité pour TOUS les éléments concernés.',
           'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; langChanges 40.',
           'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
@@ -668,8 +694,13 @@ export async function aiReviewCriterion({
     const rationale = parsed.rationale || '';
     const evidence = Array.isArray(parsed.evidence) ? parsed.evidence : [];
 
+    const normalized = normalizeAiStatus(parsed.status);
+    const finalStatus =
+      normalized === STATUS.NC && looksLikeNonVerifiable({ rationale, evidence })
+        ? STATUS.REVIEW
+        : normalized;
     return {
-      status: normalizeAiStatus(parsed.status),
+      status: finalStatus,
       notes: `${i18n.notes.aiReviewLabel()} (${confidence.toFixed(2)}): ${rationale}`,
       ai: { confidence, rationale, evidence }
     };
@@ -724,10 +755,15 @@ export async function aiReviewCriteriaBatch({
     if (!Array.isArray(results)) {
       throw new Error('Invalid AI batch response (expected {results: [...]}).');
     }
-    return results.map((res) => ({
-      ...res,
-      status: normalizeAiStatus(res?.status)
-    }));
+    return results.map((res) => {
+      const normalized = normalizeAiStatus(res?.status);
+      const finalStatus =
+        normalized === STATUS.NC &&
+        looksLikeNonVerifiable({ rationale: res?.rationale, evidence: res?.evidence })
+          ? STATUS.REVIEW
+          : normalized;
+      return { ...res, status: finalStatus };
+    });
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {
       throw createAbortError();
