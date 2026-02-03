@@ -1034,9 +1034,6 @@ function createPlainReporter(options = {}) {
 }
 
 export function createReporter(options = {}) {
-  const mode = String(process.env.AUDIT_UI || '').trim().toLowerCase();
-  if (mode === 'legacy') return createLegacyReporter(options);
-  if (mode === 'plain') return createPlainReporter(options);
   if (!isFancyTTY()) return createPlainReporter(options);
   return createFancyReporter(options);
 }
