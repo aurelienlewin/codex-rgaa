@@ -7,6 +7,11 @@ export function getSnapshotExpression() {
     const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_ITEMS || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 500;
   })();
+  const snapshotMode = (() => {
+    const raw = String(process.env.AUDIT_SNAPSHOT_MODE || '').trim().toLowerCase();
+    return raw || 'counts';
+  })();
+  const countsOnly = snapshotMode === 'counts' || snapshotMode === 'lite';
   const maxLinks = (() => {
     const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_LINKS || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
@@ -88,7 +93,7 @@ export function getSnapshotExpression() {
       await scrollToLoadLazyContent();
     }
 
-    const cap = (arr, max) => (Array.isArray(arr) ? arr.slice(0, max) : arr);
+    const cap = (arr, max = ${maxItems}) => (Array.isArray(arr) ? arr.slice(0, max) : arr);
 
     const getText = (node) => clip(node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
@@ -546,12 +551,68 @@ export function getSnapshotExpression() {
       return summary;
     })();
 
+    const counts = {
+      images: images.length,
+      frames: frames.length,
+      links: links.length,
+      formControls: formControls.length,
+      headings: headings.length,
+      listItems: listItems.length,
+      langChanges: langChanges.length,
+      dirChanges: dirChanges.length,
+      tables: tables.length,
+      fieldsets: fieldsets.length,
+      buttons: buttons.length,
+      landmarks: landmarks.length,
+      focusables: focusables.length
+    };
+
+    const partial = ${countsOnly}
+      || images.length > ${maxImages}
+      || links.length > ${maxLinks}
+      || listItems.length > ${maxListItems}
+      || formControls.length > ${maxFormControls}
+      || headings.length > ${maxHeadings}
+      || buttons.length > ${maxButtons}
+      || landmarks.length > ${maxLandmarks}
+      || focusables.length > ${maxFocusables}
+      || tables.length > ${maxTables}
+      || fieldsets.length > ${maxFieldsets};
+
+    if (${countsOnly}) {
+      return {
+        doctype,
+        title,
+        lang,
+        href,
+        readyState,
+        dir,
+        counts,
+        partial,
+        headingsSummary,
+        tableSummary,
+        formSummary,
+        focusableSummary,
+        ariaLive,
+        ariaSummary,
+        rolesSummary,
+        meta,
+        linkSummary,
+        media,
+        mediaDetails,
+        visual,
+        scripts
+      };
+    }
+
     return {
       doctype,
       title,
       lang,
       href,
       readyState,
+      counts,
+      partial,
       images: cap(images, ${maxImages}),
       frames: cap(frames),
       links: cap(links, ${maxLinks}),

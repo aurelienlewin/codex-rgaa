@@ -53,6 +53,33 @@ function takeExamples(items, formatter, max = 3) {
   return out;
 }
 
+function getCount(snapshot, key) {
+  return Number(snapshot?.counts?.[key] || 0);
+}
+
+function hasItems(snapshot, key) {
+  const list = snapshot?.[key];
+  return (Array.isArray(list) && list.length > 0) || getCount(snapshot, key) > 0;
+}
+
+function needsReview(snapshot, key) {
+  const list = snapshot?.[key];
+  const count = getCount(snapshot, key);
+  if (!count) return false;
+  if (Array.isArray(list) && list.length > 0) return false;
+  return Boolean(snapshot?.partial);
+}
+
+function reviewForMissing(snapshot, key, i18n, noteFr, noteEn) {
+  if (!needsReview(snapshot, key)) return null;
+  return {
+    status: STATUS.AI,
+    aiCandidate: true,
+    automated: false,
+    notes: i18n.t(noteFr, noteEn)
+  };
+}
+
 function isValidLangCode(lang) {
   if (!lang) return false;
   try {
@@ -65,6 +92,14 @@ function isValidLangCode(lang) {
 
 function evaluateImagesAlt(snapshot, i18n) {
   const images = snapshot.images || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'images',
+    i18n,
+    "Données d’images tronquées; revue requise.",
+    'Image data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (images.length === 0) {
     const visual = snapshot.visual || {};
     const cssBg = Number(visual.cssBackgroundImages || 0);
@@ -171,6 +206,14 @@ function evaluateImagesAlt(snapshot, i18n) {
 
 function evaluateFramesTitle(snapshot, i18n) {
   const frames = snapshot.frames || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'frames',
+    i18n,
+    "Données de cadres tronquées; revue requise.",
+    'Frame data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (frames.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun cadre (frame/iframe) détecté.', 'No frames/iframes found.') };
   }
@@ -198,6 +241,14 @@ function evaluateFramesTitle(snapshot, i18n) {
 
 function evaluateLinksHaveName(snapshot, i18n) {
   const links = snapshot.links || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'links',
+    i18n,
+    "Données de liens tronquées; revue requise.",
+    'Link data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (links.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun lien détecté.', 'No links found.') };
   }
@@ -222,6 +273,14 @@ function evaluateLinksHaveName(snapshot, i18n) {
 
 function evaluateLinksExplicit(snapshot, i18n) {
   const links = snapshot.links || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'links',
+    i18n,
+    "Données de liens tronquées; revue requise.",
+    'Link data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (links.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun lien détecté.', 'No links found.') };
   }
@@ -297,6 +356,14 @@ function evaluateDoctype(snapshot, i18n) {
 
 function evaluateLangChangesDeclared(snapshot, i18n) {
   const changes = snapshot.langChanges || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'langChanges',
+    i18n,
+    "Données de changements de langue tronquées; revue requise.",
+    'Language change data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (changes.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun changement de langue détecté.', 'No language changes detected.') };
   }
@@ -311,6 +378,14 @@ function evaluateLangChangesDeclared(snapshot, i18n) {
 
 function evaluateLangChangesValid(snapshot, i18n) {
   const changes = snapshot.langChanges || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'langChanges',
+    i18n,
+    "Données de changements de langue tronquées; revue requise.",
+    'Language change data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (changes.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun changement de langue détecté.', 'No language changes detected.') };
   }
@@ -323,6 +398,14 @@ function evaluateLangChangesValid(snapshot, i18n) {
 
 function evaluateHeadingStructure(snapshot, i18n) {
   const headings = snapshot.headings || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'headings',
+    i18n,
+    "Données de titres tronquées; revue requise.",
+    'Heading data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (headings.length === 0) {
     return {
       status: STATUS.NC,
@@ -371,6 +454,14 @@ function evaluateHeadingStructure(snapshot, i18n) {
 
 function evaluateListStructure(snapshot, i18n) {
   const items = snapshot.listItems || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'listItems',
+    i18n,
+    "Données de listes tronquées; revue requise.",
+    'List data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (items.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun élément de liste détecté.', 'No list items found.') };
   }
@@ -390,6 +481,14 @@ function evaluateListStructure(snapshot, i18n) {
 
 function evaluateFormLabels(snapshot, i18n) {
   const controls = snapshot.formControls || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'formControls',
+    i18n,
+    "Données de formulaires tronquées; revue requise.",
+    'Form control data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   if (controls.length === 0) {
     return { status: STATUS.NA, notes: i18n.t('Aucun champ de formulaire détecté.', 'No form controls found.') };
   }
@@ -418,6 +517,14 @@ function evaluateFormLabels(snapshot, i18n) {
 
 function evaluateSkipLink(snapshot, i18n) {
   const links = snapshot.links || [];
+  const missingReview = reviewForMissing(
+    snapshot,
+    'links',
+    i18n,
+    "Données de liens tronquées; revue requise.",
+    'Link data truncated; review required.'
+  );
+  if (missingReview) return missingReview;
   const skip = links.find((link) => {
     const name = normalizeText(link.name);
     if (!link.href || !link.href.startsWith('#')) return false;
@@ -457,9 +564,9 @@ const RULES = new Map([
 ]);
 
 const THEME_APPLICABILITY = {
-  Images: (snapshot) => (snapshot.images || []).length > 0,
-  Cadres: (snapshot) => (snapshot.frames || []).length > 0,
-  Frames: (snapshot) => (snapshot.frames || []).length > 0,
+  Images: (snapshot) => hasItems(snapshot, 'images'),
+  Cadres: (snapshot) => hasItems(snapshot, 'frames'),
+  Frames: (snapshot) => hasItems(snapshot, 'frames'),
   Multimédia: (snapshot) => {
     const media = snapshot.media || {};
     return (media.video || 0) + (media.audio || 0) + (media.object || 0) > 0;
@@ -468,16 +575,16 @@ const THEME_APPLICABILITY = {
     const media = snapshot.media || {};
     return (media.video || 0) + (media.audio || 0) + (media.object || 0) > 0;
   },
-  Tableaux: (snapshot) => (snapshot.tables || []).length > 0,
-  Tables: (snapshot) => (snapshot.tables || []).length > 0,
-  Liens: (snapshot) => (snapshot.links || []).length > 0,
-  Links: (snapshot) => (snapshot.links || []).length > 0,
+  Tableaux: (snapshot) => hasItems(snapshot, 'tables'),
+  Tables: (snapshot) => hasItems(snapshot, 'tables'),
+  Liens: (snapshot) => hasItems(snapshot, 'links'),
+  Links: (snapshot) => hasItems(snapshot, 'links'),
   Scripts: (snapshot) => {
     const scripts = snapshot.scripts || {};
     return (scripts.scriptTags || 0) > 0 || scripts.hasInlineHandlers;
   },
-  Formulaires: (snapshot) => (snapshot.formControls || []).length > 0,
-  Forms: (snapshot) => (snapshot.formControls || []).length > 0
+  Formulaires: (snapshot) => hasItems(snapshot, 'formControls'),
+  Forms: (snapshot) => hasItems(snapshot, 'formControls')
 };
 
 export function evaluateCriterion(criterion, snapshot, options = {}) {
