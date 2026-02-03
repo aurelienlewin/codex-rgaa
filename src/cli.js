@@ -666,21 +666,8 @@ async function main() {
       }
     }
 
-    if (
-      !mcpChannelExplicit &&
-      (mcpAutoConnectArg || String(mcpBrowserUrlArg || '').trim() === '')
-    ) {
-      mcpChannelArg =
-        (await (async () => {
-          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-          const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
-          const answer = String(
-            await ask('Optional Chrome channel (leave empty for stable; e.g. "beta"): ')
-          ).trim();
-          rl.close();
-          clearScreen();
-          return answer;
-        })()) || mcpChannelArg;
+    if (!mcpChannelExplicit) {
+      mcpChannelArg = mcpChannelArg || '';
     }
 
     if (!mcpPageIdExplicit) {
