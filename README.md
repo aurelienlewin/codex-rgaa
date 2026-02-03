@@ -134,9 +134,10 @@ All non-automated criteria are reviewed via the local **Codex CLI** (`codex exec
 
 You can override the model with `--codex-model` if your Codex config supports it.
 
-Optional: enable **AI+MCP** to let the reviewer call chrome-devtools MCP tools for extra evidence (a11y tree, targeted DOM queries, screenshots):
-- CLI: `--ai-mcp`
-- Env: `AUDIT_AI_MCP=1`
+**AI+MCP is enabled by default** to let the reviewer call chrome-devtools MCP tools for extra evidence (a11y tree, targeted DOM queries, screenshots).
+Disable with:
+- CLI: `--no-ai-mcp`
+- Env: `AUDIT_AI_MCP=0`
 
 You can also enable OCR (repo-level, no system install required) to extract text from screenshots:
 - CLI: `--ai-ocr` (default: on when `--ai-mcp` is enabled)

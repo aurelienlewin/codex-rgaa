@@ -2,6 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import chalk from 'chalk';
+import boxen from 'boxen';
+import gradientString from 'gradient-string';
+import chalkAnimation from 'chalk-animation';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { runAudit } from './audit.js';
@@ -12,6 +16,57 @@ import { createAbortError, isAbortError } from './abort.js';
 import { listMcpPages } from './mcpSnapshot.js';
 
 let lastShutdownSignal = null;
+const fancyPromptState = { introShown: false };
+
+const promptPalette = {
+  primary: chalk.hex('#22d3ee'),
+  accent: chalk.hex('#a78bfa'),
+  glow: chalk.hex('#f472b6'),
+  warn: chalk.hex('#f59e0b'),
+  ok: chalk.hex('#22c55e'),
+  muted: chalk.hex('#94a3b8')
+};
+
+function isFancyTTY() {
+  return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
+}
+
+function stripAnsi(text) {
+  return String(text || '').replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+function visibleLen(text) {
+  return stripAnsi(text).length;
+}
+
+function padVisible(text, width) {
+  const str = String(text || '');
+  const len = visibleLen(str);
+  if (len >= width) return str;
+  return str + ' '.repeat(width - len);
+}
+
+async function showFancyIntro() {
+  if (!isFancyTTY() || fancyPromptState.introShown) return;
+  fancyPromptState.introShown = true;
+  const title = 'RGAA Guided Setup';
+  const animation = chalkAnimation.neon(title);
+  await new Promise((resolve) => setTimeout(resolve, 520));
+  animation.stop();
+  console.log(gradientString(['#22d3ee', '#a78bfa', '#f472b6'])(title));
+}
+
+function renderPromptBox(title, lines, { borderColor = 'cyan' } = {}) {
+  const content = lines.join('\n');
+  return boxen(content, {
+    padding: 1,
+    margin: { top: 1, bottom: 0, left: 0, right: 0 },
+    borderStyle: 'round',
+    borderColor,
+    title: title ? chalk.bold(title) : undefined,
+    titleAlignment: 'left'
+  });
+}
 
 function formatRunId(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -81,6 +136,7 @@ function isHttpUrl(value) {
 }
 
 async function promptPages({ tabs, guided = false } = {}) {
+  await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -90,13 +146,20 @@ async function promptPages({ tabs, guided = false } = {}) {
   const tabPages = Array.isArray(tabs) ? tabs : [];
   let selectedPageId;
   if (tabPages.length) {
-    console.log('\nOpen tabs detected:');
-    tabPages.slice(0, 12).forEach((page, index) => {
+    const tabLines = tabPages.slice(0, 12).map((page, index) => {
       const title = page?.title ? ` — ${page.title}` : '';
-      console.log(`${index + 1}) ${page?.url || '(no url)'}${title}`);
+      return `${promptPalette.accent(String(index + 1).padStart(2, '0'))} ${page?.url || '(no url)'}${title}`;
     });
     if (tabPages.length > 12) {
-      console.log(`(+${tabPages.length - 12} more)`);
+      tabLines.push(promptPalette.muted(`(+${tabPages.length - 12} more)`));
+    }
+    if (isFancyTTY()) {
+      console.log(
+        renderPromptBox('Open Tabs Detected', tabLines, { borderColor: 'cyan' })
+      );
+    } else {
+      console.log('\nOpen tabs detected:');
+      tabLines.forEach((line) => console.log(stripAnsi(line)));
     }
     if (guided) {
       const picks = tabPages.map((_, idx) => idx);
@@ -113,9 +176,10 @@ async function promptPages({ tabs, guided = false } = {}) {
         new Promise((resolve) => {
           rl.question(q, (answer) => resolve(answer));
         });
-      const selection = String(
-        await ask('Select tab numbers (comma), "all", or press Enter to skip: ')
-      )
+      const promptLabel = isFancyTTY()
+        ? promptPalette.primary('Select tab numbers (comma), "all", or press Enter to skip: ')
+        : 'Select tab numbers (comma), "all", or press Enter to skip: ';
+      const selection = String(await ask(promptLabel))
         .trim()
         .toLowerCase();
       if (selection) {
@@ -149,7 +213,20 @@ async function promptPages({ tabs, guided = false } = {}) {
     return { urls, pageId: selectedPageId };
   }
 
-  console.log('Enter page URLs (one per line). Empty line to finish:');
+  if (isFancyTTY()) {
+    console.log(
+      renderPromptBox(
+        'Pages to Audit',
+        [
+          'Enter page URLs (one per line).',
+          promptPalette.muted('Press Enter on an empty line to finish.')
+        ],
+        { borderColor: 'cyan' }
+      )
+    );
+  } else {
+    console.log('Enter page URLs (one per line). Empty line to finish:');
+  }
 
   for await (const line of rl) {
     const trimmed = line.trim();
@@ -167,6 +244,7 @@ async function promptPages({ tabs, guided = false } = {}) {
 }
 
 async function promptYesNo(question, defaultValue = false) {
+  await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -177,8 +255,19 @@ async function promptYesNo(question, defaultValue = false) {
       rl.question(q, (answer) => resolve(answer));
     });
 
-  const suffix = defaultValue ? ' (Y/n) ' : ' (y/N) ';
-  const raw = String(await ask(`${question}${suffix}`))
+  const suffix = defaultValue ? 'Y/n' : 'y/N';
+  if (isFancyTTY()) {
+    const lines = [
+      question,
+      `${promptPalette.muted('Default:')} ${defaultValue ? promptPalette.ok('Yes') : promptPalette.warn('No')}`,
+      `${promptPalette.muted('Answer:')} ${suffix}`
+    ];
+    console.log(renderPromptBox('Question', lines, { borderColor: 'magenta' }));
+  }
+  const promptLabel = isFancyTTY()
+    ? promptPalette.primary(`→ (${suffix}) `)
+    : `${question} (${suffix}) `;
+  const raw = String(await ask(promptLabel))
     .trim()
     .toLowerCase();
   rl.close();
@@ -190,6 +279,7 @@ async function promptYesNo(question, defaultValue = false) {
 }
 
 async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
+  await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -200,14 +290,30 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
       rl.question(q, (answer) => resolve(answer));
     });
 
-  console.log(`\n${question}`);
-  choices.forEach((label, index) => {
-    const n = index + 1;
-    const isDefault = index === defaultIndex;
-    console.log(`${n}) ${label}${isDefault ? ' (default)' : ''}`);
-  });
+  if (isFancyTTY()) {
+    const lines = [];
+    const labels = choices.map((label, index) => {
+      const n = index + 1;
+      const isDefault = index === defaultIndex;
+      const left = `${promptPalette.accent(String(n).padStart(2, '0'))} ${label}`;
+      return isDefault ? `${left} ${promptPalette.ok('• default')}` : left;
+    });
+    const maxLen = Math.max(0, ...labels.map((line) => visibleLen(line)));
+    labels.forEach((line) => lines.push(padVisible(line, maxLen)));
+    console.log(renderPromptBox(question, lines, { borderColor: 'cyan' }));
+  } else {
+    console.log(`\n${question}`);
+    choices.forEach((label, index) => {
+      const n = index + 1;
+      const isDefault = index === defaultIndex;
+      console.log(`${n}) ${label}${isDefault ? ' (default)' : ''}`);
+    });
+  }
 
-  const raw = String(await ask('Choose a number: ')).trim();
+  const promptLabel = isFancyTTY()
+    ? promptPalette.primary('→ Choose a number: ')
+    : 'Choose a number: ';
+  const raw = String(await ask(promptLabel)).trim();
   rl.close();
 
   if (!raw) return defaultIndex;
@@ -219,6 +325,7 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
 }
 
 async function promptOptionalNumber(question) {
+  await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -229,7 +336,17 @@ async function promptOptionalNumber(question) {
       rl.question(q, (answer) => resolve(answer));
     });
 
-  const raw = String(await ask(question)).trim();
+  if (isFancyTTY()) {
+    console.log(
+      renderPromptBox(
+        'Optional',
+        [question, promptPalette.muted('Leave empty to skip.')],
+        { borderColor: 'cyan' }
+      )
+    );
+  }
+  const promptLabel = isFancyTTY() ? promptPalette.primary('→ ') : question;
+  const raw = String(await ask(promptLabel)).trim();
   rl.close();
   if (!raw) return undefined;
   const n = Number(raw);
@@ -238,6 +355,7 @@ async function promptOptionalNumber(question) {
 }
 
 async function promptMcpAutoConnectSetup({ channel } = {}) {
+  await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -249,19 +367,27 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
     });
 
   const channelLabel = channel ? ` (${channel})` : '';
-  console.log('\nMCP autoConnect setup (Chrome 144+):');
-  console.log(`1) Launch Google Chrome${channelLabel} and keep it open.`);
-  console.log('2) Open the pages you want to audit in separate tabs/windows.');
-  console.log('3) Open chrome://inspect/#remote-debugging and enable remote debugging.');
-  console.log('4) Return here to continue. The Chrome permission prompt will appear after you press Enter.\n');
+  const lines = [
+    `${promptPalette.accent('1.')} Launch Google Chrome${channelLabel} and keep it open.`,
+    `${promptPalette.accent('2.')} Open the pages you want to audit in separate tabs/windows.`,
+    `${promptPalette.accent('3.')} Open chrome://inspect/#remote-debugging and enable remote debugging.`,
+    `${promptPalette.accent('4.')} Return here to continue. The Chrome permission prompt will appear after you press Enter.`
+  ];
+  if (isFancyTTY()) {
+    console.log(renderPromptBox('MCP autoConnect setup (Chrome 144+)', lines, { borderColor: 'cyan' }));
+  } else {
+    console.log('\nMCP autoConnect setup (Chrome 144+):');
+    lines.forEach((line) => console.log(stripAnsi(line)));
+  }
 
-  await ask('Press Enter to start auto-connect…');
+  await ask(isFancyTTY() ? promptPalette.primary('Press Enter to start auto-connect…') : 'Press Enter to start auto-connect…');
   readline.clearLine(process.stdout, 0);
   readline.cursorTo(process.stdout, 0);
   rl.close();
 }
 
 async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
+  await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -273,13 +399,20 @@ async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
     });
 
   const url = normalizeHttpBaseUrl(browserUrl);
-  console.log('\nChrome DevTools endpoint setup:');
-  console.log(`- Target URL: ${url || '(empty)'}`);
-  console.log('- Chrome must be launched with a remote debugging port enabled.');
-  console.log('  Example (Linux): google-chrome --remote-debugging-port=9222');
-  console.log('  Example (macOS): open -a "Google Chrome" --args --remote-debugging-port=9222\n');
+  const lines = [
+    `${promptPalette.muted('Target URL:')} ${url || '(empty)'}`,
+    'Chrome must be launched with a remote debugging port enabled.',
+    `${promptPalette.muted('Example (Linux):')} google-chrome --remote-debugging-port=9222`,
+    `${promptPalette.muted('Example (macOS):')} open -a "Google Chrome" --args --remote-debugging-port=9222`
+  ];
+  if (isFancyTTY()) {
+    console.log(renderPromptBox('Chrome DevTools endpoint setup', lines, { borderColor: 'cyan' }));
+  } else {
+    console.log('\nChrome DevTools endpoint setup:');
+    lines.forEach((line) => console.log(stripAnsi(line)));
+  }
 
-  await ask('Press Enter to continue…');
+  await ask(isFancyTTY() ? promptPalette.primary('Press Enter to continue…') : 'Press Enter to continue…');
   rl.close();
 }
 
@@ -330,7 +463,7 @@ async function main() {
     .option('ai-mcp', {
       type: 'boolean',
       describe:
-        'Allow the AI reviewer to use chrome-devtools MCP tools for additional evidence (slower, but can reduce NA).'
+        'Allow the AI reviewer to use chrome-devtools MCP tools for additional evidence (default: on; use --no-ai-mcp to disable).'
     })
     .option('ai-ocr', {
       type: 'boolean',
@@ -634,10 +767,12 @@ async function main() {
     process.env.AUDIT_CODEX_MODEL ||
     'gpt-5.2-codex-low';
   const aiMcpEnv = String(process.env.AUDIT_AI_MCP || '').trim().toLowerCase();
+  const aiMcpEnvExplicit = aiMcpEnv.length > 0;
   const aiMcpEnvEnabled =
     aiMcpEnv === '1' || aiMcpEnv === 'true' || aiMcpEnv === 'yes';
+  const aiMcpDefault = aiMcpEnvExplicit ? aiMcpEnvEnabled : true;
   const aiMcp =
-    typeof argv['ai-mcp'] === 'boolean' ? argv['ai-mcp'] : aiMcpEnvEnabled;
+    typeof argv['ai-mcp'] === 'boolean' ? argv['ai-mcp'] : aiMcpDefault;
   const aiOcrEnv = String(process.env.AUDIT_AI_OCR || '').trim().toLowerCase();
   const aiOcrEnvExplicit = aiOcrEnv.length > 0;
   const aiOcrEnvEnabled =
