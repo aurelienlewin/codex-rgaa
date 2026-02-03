@@ -143,6 +143,7 @@ function createLiveBlockRenderer() {
 
 function createFancyReporter(options = {}) {
   const i18n = getI18n(normalizeReportLang(options.lang));
+  const isGuided = Boolean(options.guided);
   const spinner = ora({ text: i18n.t('Préparation de l’audit…', 'Preparing audit…'), color: 'cyan' });
   const renderer = createLiveBlockRenderer();
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -163,6 +164,7 @@ function createFancyReporter(options = {}) {
   let lastAILog = '';
   let currentCriterion = null;
   let lastDecision = null;
+  const decisions = [];
 
   const feedMax = 7;
   const feed = [];
@@ -471,6 +473,11 @@ function createFancyReporter(options = {}) {
       overallDone += 1;
       pageDone += 1;
       lastDecision = { status: statusLabel, crit: critText, rationale };
+      decisions.push({
+        status: statusLabel,
+        crit: critText,
+        rationale
+      });
       pushFeed('decision', `${criterion.id} ${statusLabel}${rationale ? ` • ${rationale}` : ''}`);
       stageLabel = i18n.t('Waiting for next criterion…', 'Waiting for next criterion…');
       render();
@@ -491,7 +498,11 @@ function createFancyReporter(options = {}) {
 
     onDone({ outPath, globalScore, counts, errors }) {
       stopTicking();
-      renderer.stop({ keepBlock: true });
+      if (isGuided) {
+        renderer.stop({ keepBlock: false });
+      } else {
+        renderer.stop({ keepBlock: true });
+      }
 
       const col = (label, value, color) =>
         `${palette.muted(label.padEnd(16))}${color(value)}`;
@@ -503,14 +514,62 @@ function createFancyReporter(options = {}) {
         col('Score', formatPercent(globalScore), palette.accent)
       ].join('\n');
 
-      console.log(
-        boxen(summary, {
-          padding: 1,
-          borderStyle: 'double',
-          borderColor: counts.ERR ? 'red' : 'green',
-          title: 'Audit summary'
-        })
-      );
+      if (isGuided) {
+        const cols = process.stdout.columns || 100;
+        const width = Math.max(76, Math.min(cols - 1, 120));
+        const summaryPanel = drawPanel({
+          title: i18n.t('Synthèse', 'Summary'),
+          lines: summary.split('\n'),
+          width,
+          borderColor: counts.ERR ? palette.error : palette.ok
+        });
+
+        const decisionMax = 12;
+        const totalDecisions = decisions.length;
+        const decisionLines = [];
+        const show = decisions.slice(-decisionMax);
+        for (const item of show) {
+          const status = i18n.statusLabel(item.status);
+          let statusColor = palette.muted;
+          if (item.status === 'Conform') statusColor = palette.ok;
+          if (item.status === 'Not conform') statusColor = palette.error;
+          if (item.status === 'Non applicable') statusColor = palette.muted;
+          if (item.status === 'Error') statusColor = palette.error;
+          const details = item.rationale ? ` • ${item.rationale}` : '';
+          decisionLines.push(`${statusColor(status)} ${item.crit}${details}`);
+        }
+        if (!decisionLines.length) {
+          decisionLines.push(i18n.t('Aucune décision enregistrée.', 'No decisions recorded.'));
+        }
+        if (totalDecisions > decisionMax) {
+          decisionLines.push(
+            palette.muted(
+              i18n.t(
+                `Dernières ${decisionMax} décisions affichées sur ${totalDecisions}.`,
+                `Showing last ${decisionMax} of ${totalDecisions} decisions.`
+              )
+            )
+          );
+        }
+
+        const decisionsPanel = drawPanel({
+          title: i18n.t('Décisions', 'Decisions'),
+          lines: decisionLines,
+          width,
+          borderColor: palette.muted
+        });
+
+        console.log([summaryPanel, decisionsPanel].join('\n'));
+      } else {
+        console.log(
+          boxen(summary, {
+            padding: 1,
+            borderStyle: 'double',
+            borderColor: counts.ERR ? 'red' : 'green',
+            title: 'Audit summary'
+          })
+        );
+      }
       if (errors && (errors.pagesFailed || errors.aiFailed)) {
         const details = [
           errors.pagesFailed ? `Pages failed: ${errors.pagesFailed}` : null,

@@ -620,7 +620,7 @@ async function main() {
   if (!process.env.CODEX_MCP_MODE) {
     process.env.CODEX_MCP_MODE = 'chrome';
   }
-  const reporter = createReporter({ lang: reportLang });
+  const reporter = createReporter({ lang: reportLang, guided });
   const criteriaCount = loadCriteria({ lang: reportLang }).length;
   if (reporter.onStart) {
     await reporter.onStart({
