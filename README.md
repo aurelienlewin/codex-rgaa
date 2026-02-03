@@ -118,7 +118,7 @@ npm run audit -- --chrome-port 9222 --allow-remote-debug
 ```
 
 ## Output
-By default the tool writes `rgaa-audit.xlsx` in the current directory.
+By default the tool writes one report per run under `out/`, for example: `out/20260203-153012/rgaa-audit.xlsx`.
 
 To change the output path, pass `--out`.
 

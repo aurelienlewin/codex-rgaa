@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import chromeLauncher from 'chrome-launcher';
 import CDP from 'chrome-remote-interface';
@@ -719,6 +720,7 @@ export async function runAudit(options) {
       r.getCell(1).alignment = { horizontal: 'center' };
     }
 
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
     await workbook.xlsx.writeFile(outPath);
     if (reporter && reporter.onDone) {
       reporter.onDone({ outPath, globalScore, counts: globalCounts, errors: errorSummary });

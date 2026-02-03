@@ -10,6 +10,21 @@ import { createReporter } from './ui.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 
+function formatRunId(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const y = date.getFullYear();
+  const m = pad(date.getMonth() + 1);
+  const d = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mm = pad(date.getMinutes());
+  const ss = pad(date.getSeconds());
+  return `${y}${m}${d}-${hh}${mm}${ss}`;
+}
+
+function defaultXlsxOutPath() {
+  return path.join('out', formatRunId(), 'rgaa-audit.xlsx');
+}
+
 function ensureCodexHomeDir() {
   const codexHome = process.env.CODEX_HOME;
   if (!codexHome) return;
@@ -71,10 +86,10 @@ async function promptXlsxOutput() {
   const answer = String(await ask('Generate XLSX output? (y/N) ')).trim().toLowerCase();
   if (answer === 'y' || answer === 'yes') {
     const pathAnswer = String(
-      await ask('XLSX output path (default: rgaa-audit.xlsx): ')
+      await ask('XLSX output path (default: out/<run>/rgaa-audit.xlsx): ')
     ).trim();
     rl.close();
-    return pathAnswer || 'rgaa-audit.xlsx';
+    return pathAnswer || defaultXlsxOutPath();
   }
 
   rl.close();
@@ -294,7 +309,7 @@ async function main() {
     argv.out = null;
   } else if (!argv.out) {
     // Default behavior: always produce an XLSX report.
-    argv.out = 'rgaa-audit.xlsx';
+    argv.out = defaultXlsxOutPath();
   }
 
   let pages = argv.pages || [];
