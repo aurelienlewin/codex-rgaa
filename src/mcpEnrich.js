@@ -129,6 +129,9 @@ function buildPrompt({ url, pageId, paths }) {
 async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
   if (signal?.aborted) throw createAbortError();
 
+  onStage?.('AI: preparing MCP enrichment');
+  onLog?.('Codex: preparing MCP enrichment');
+
   const outputFile = path.join(
     os.tmpdir(),
     `codex-mcp-enrich-${Date.now()}-${Math.random().toString(16).slice(2)}.json`
@@ -160,6 +163,7 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
 
   const runOnce = async (env, args) =>
     new Promise((resolve, reject) => {
+      onStage?.('AI: spawning Codex');
       const child = spawn(codexPath, args, { stdio: ['pipe', 'ignore', 'pipe'], env });
       let settled = false;
       let stderrText = '';
@@ -185,8 +189,11 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
 
       if (child.stderr) {
         child.stderr.on('data', (chunk) => {
-          stderrText += String(chunk);
+          const message = String(chunk);
+          stderrText += message;
           if (stderrText.length > 64000) stderrText = stderrText.slice(-64000);
+          const trimmed = message.trim();
+          if (trimmed) onLog?.(`Codex: ${trimmed.split('\n').slice(-1)[0]}`);
         });
       }
 
@@ -211,6 +218,8 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
         pageId: mcp?.pageId,
         paths: { screenshot1, screenshot2 }
       });
+      onStage?.('AI: running MCP enrichment');
+      onLog?.('Codex: running MCP enrichment');
       child.stdin.write(prompt);
       child.stdin.end();
     });
@@ -227,9 +236,6 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
       preferredEnv = buildCodexEnv({ codexHome: fallbackHome });
     }
   }
-
-  onStage?.('AI: running MCP enrichment');
-  onLog?.('Codex: running MCP enrichment');
 
   try {
     await runOnce(preferredEnv, buildArgs(mcp));
@@ -253,6 +259,8 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
     }
   }
 
+  onStage?.('AI: parsing MCP enrichment');
+  onLog?.('Codex: parsing MCP enrichment');
   const content = await fs.readFile(outputFile, 'utf-8');
   await fs.unlink(outputFile).catch(() => {});
   const parsed = JSON.parse(content);
