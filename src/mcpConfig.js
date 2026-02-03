@@ -57,7 +57,7 @@ function resolveMcpCommand() {
   return { command: resolveNpxCommand(), baseArgs: ['-y', 'chrome-devtools-mcp@latest'] };
 }
 
-export function buildMcpArgs({ browserUrl, autoConnect, channel, ocr } = {}) {
+export function buildMcpArgs({ browserUrl, autoConnect, channel, ocr, utils } = {}) {
   if (process.env.CODEX_MCP_MODE === 'none') {
     return ['-c', 'mcp_servers={}'];
   }
@@ -106,6 +106,22 @@ export function buildMcpArgs({ browserUrl, autoConnect, channel, ocr } = {}) {
     );
   }
 
+  if (utils) {
+    const utilsCommand = String(process.env.AUDIT_UTILS_COMMAND || process.execPath || 'node');
+    const utilsScript = String(
+      process.env.AUDIT_UTILS_SCRIPT || path.join(PROJECT_ROOT, 'src', 'mcpUtilsServer.js')
+    );
+    const utilsArgs = [utilsScript];
+    configs.push(
+      '-c',
+      `mcp_servers.rgaa-utils.command=${JSON.stringify(utilsCommand)}`,
+      '-c',
+      `mcp_servers.rgaa-utils.args=${JSON.stringify(utilsArgs)}`,
+      '-c',
+      'mcp_servers.rgaa-utils.startup_timeout_sec=30'
+    );
+  }
+
   return configs;
 }
 
@@ -134,6 +150,8 @@ export function looksLikeMcpInstallOrNetworkError(stderr) {
         text.includes('unable to get local issuer certificate'))) ||
     (text.includes('npx') && text.includes('network')) ||
     (text.includes('rgaa-ocr') &&
+      (text.includes('spawn') || text.includes('error') || text.includes('failed'))) ||
+    (text.includes('rgaa-utils') &&
       (text.includes('spawn') || text.includes('error') || text.includes('failed'))) ||
     text.includes('mcp startup') ||
     text.includes('mcp server') && text.includes('failed')

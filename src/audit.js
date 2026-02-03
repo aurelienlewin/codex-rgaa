@@ -176,7 +176,12 @@ export async function runAudit(options) {
   let mcpConfig = options.mcp || {};
   const aiUseMcp = Boolean(options.ai?.useMcp);
   const aiUseOcr = Boolean(options.ai?.ocr);
-  const mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr } : null;
+  const aiUseUtilsRaw = String(process.env.AUDIT_AI_UTILS || '').trim().toLowerCase();
+  const aiUseUtils =
+    aiUseUtilsRaw === ''
+      ? true
+      : !(aiUseUtilsRaw === '0' || aiUseUtilsRaw === 'false' || aiUseUtilsRaw === 'no');
+  const mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr, utils: aiUseUtils } : null;
   let pagesFailed = 0;
   let aiFailed = 0;
   const wantsEnrichment =
@@ -313,6 +318,15 @@ export async function runAudit(options) {
       };
       reporter?.onChecksStart?.({ index: pageIndex, url });
       const pendingAI = [];
+      const reviewRetry = [];
+      const reviewRetryQueued = new Set();
+      const queueReviewRetry = (criterion, index, evaluation) => {
+        if (!mcpForAi) return;
+        if (evaluation?.status !== STATUS.REVIEW) return;
+        if (reviewRetryQueued.has(index)) return;
+        reviewRetryQueued.add(index);
+        reviewRetry.push({ criterion, index });
+      };
       for (const criterion of criteria) {
         if (aborted || signal?.aborted) {
           throw createAbortError();
@@ -409,6 +423,7 @@ export async function runAudit(options) {
               if (evaluation.status === STATUS.ERR) {
                 aiFailed += 1;
               }
+              queueReviewRetry(criterion, index, evaluation);
               reportCriterion(
                 criterion,
                 {
@@ -463,6 +478,7 @@ export async function runAudit(options) {
           }
 
           results[index] = { ...criterion, ...evaluation };
+          queueReviewRetry(criterion, index, evaluation);
           reportCriterion(criterion, {
             status: evaluation.status || STATUS.ERR,
             notes: evaluation.notes || 'Missing evaluation.',
@@ -470,6 +486,37 @@ export async function runAudit(options) {
             automated: Boolean(evaluation.automated),
             aiCandidate: Boolean(evaluation.aiCandidate)
           }, index);
+        }
+      }
+
+      if (reviewRetry.length > 0) {
+        const pseudoCriterion = {
+          id: `AI(${reviewRetry.length})`,
+          title: 'Review follow-up',
+          theme: 'AI'
+        };
+        reporter?.onAIStart?.({ criterion: pseudoCriterion });
+        for (const pending of reviewRetry) {
+          if (aborted || signal?.aborted) {
+            throw createAbortError();
+          }
+          const { criterion, index } = pending;
+          const evaluation = await aiReviewCriterion({
+            model: options.ai.model,
+            url,
+            criterion,
+            snapshot: page.snapshot,
+            reportLang,
+            onLog: (message) => reporter?.onAILog?.({ criterion, message }),
+            onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+            signal,
+            mcp: mcpForAi,
+            retry: true
+          });
+          if (evaluation.status === STATUS.ERR) {
+            aiFailed += 1;
+          }
+          results[index] = { ...criterion, ...evaluation };
         }
       }
 
@@ -530,6 +577,8 @@ export async function runAudit(options) {
       status = STATUS.ERR;
     } else if (statuses.some((s) => s === STATUS.NC)) {
       status = STATUS.NC;
+    } else if (statuses.some((s) => s === STATUS.REVIEW)) {
+      status = STATUS.REVIEW;
     }
     globalByCriterion.set(criterion.id, {
       ...criterion,
@@ -584,13 +633,13 @@ export async function runAudit(options) {
       conformBg: 'FFDCFCE7',
       conformFg: 'FF166534',
       notConformBg: 'FFFEE2E2',
-      notConformFg: 'FF991B1B',
+      notConformFg: 'FFB91C1C',
       naBg: 'FFF1F5F9',
       naFg: 'FF475569',
-      errBg: 'FFFFEDD5',
-      errFg: 'FF9A3412',
-      reviewBg: 'FFDC2626',
-      reviewFg: 'FFFFFFFF',
+      errBg: 'FFFCA5A5',
+      errFg: 'FF7F1D1D',
+      reviewBg: 'FFFEF3C7',
+      reviewFg: 'FF92400E',
       aiBg: 'FFEDE9FE',
       aiFg: 'FF6D28D9'
     };

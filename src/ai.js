@@ -323,7 +323,7 @@ function buildEvidence(snapshot) {
   };
 }
 
-function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
+function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   const evidence = buildEvidence(snapshot);
   const useMcp = Boolean(mcp);
@@ -341,6 +341,11 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
           '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
           '2) Evidence sufficiency → if the criterion applies but required information is missing to verify compliance EVEN after using MCP tools, return "Review" and state what is missing.',
           '3) Compliance → if any relevant element violates the requirement, return "Not conform"; return "Conform" only when evidence explicitly shows compliance for ALL relevant elements.',
+          ...(retry
+            ? [
+                'Previous pass returned "Review". Re-check using MCP tools to resolve missing evidence; return "Review" only if still blocked after targeted tool use.'
+              ]
+            : []),
           'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; fieldsets 30; buttons 40; landmarks 40; focusables 80; dirChanges 40; rolesSummary 30; langChanges 40.',
           'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
           'Use only the provided evidence; no assumptions or external sources.',
@@ -373,6 +378,10 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
                       'Use OCR only to extract visible text from images; cite the OCR output in evidence.'
                     ]
                   : []),
+                'Local analysis tools available:',
+                '- rgaa_html_analyze {html|path} for DOM/HTML accessibility hints (links/images/forms/structure).',
+                '- rgaa_contrast_samples {samples[]} to compute contrast ratios from style samples.',
+                '- rgaa_motion_diff {screenshot1,screenshot2} to detect motion between screenshots.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -395,6 +404,11 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
           '   langChanges.length=0, media.video=0 & media.audio=0 & media.object=0, visual.cssBackgroundImages=0 & visual.svg=0 & visual.canvas=0 & visual.picture=0.',
           '2) Suffisance des preuves → si le critère s’applique mais que des informations nécessaires manquent pour vérifier la conformité MÊME après usage des outils MCP, réponds "Review" et précise ce qui manque.',
           '3) Conformité → si un élément concerné est non conforme, réponds "Not conform"; réponds "Conform" seulement si les preuves démontrent la conformité pour TOUS les éléments concernés.',
+          ...(retry
+            ? [
+                'Un premier passage a rendu "Review". Re-vérifie en utilisant les outils MCP pour combler les preuves manquantes; ne réponds "Review" que si tu restes bloqué après des vérifications ciblées.'
+              ]
+            : []),
           'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; fieldsets 30; buttons 40; landmarks 40; focusables 80; dirChanges 40; rolesSummary 30; langChanges 40.',
           'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
           'Utilise uniquement les preuves fournies; pas d’hypothèses ni de sources externes.',
@@ -427,6 +441,10 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
                       'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.'
                     ]
                   : []),
+                'Outils locaux disponibles :',
+                '- rgaa_html_analyze {html|path} pour des indices d’accessibilité DOM/HTML.',
+                '- rgaa_contrast_samples {samples[]} pour calculer les ratios de contraste.',
+                '- rgaa_motion_diff {screenshot1,screenshot2} pour détecter du mouvement.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -494,6 +512,10 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                       'Use OCR only to extract visible text from images; cite the OCR output in evidence.'
                     ]
                   : []),
+                'Local analysis tools available:',
+                '- rgaa_html_analyze {html|path} for DOM/HTML accessibility hints (links/images/forms/structure).',
+                '- rgaa_contrast_samples {samples[]} to compute contrast ratios from style samples.',
+                '- rgaa_motion_diff {screenshot1,screenshot2} to detect motion between screenshots.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -552,6 +574,10 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                       'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.'
                     ]
                   : []),
+                'Outils locaux disponibles :',
+                '- rgaa_html_analyze {html|path} pour des indices d’accessibilité DOM/HTML.',
+                '- rgaa_contrast_samples {samples[]} pour calculer les ratios de contraste.',
+                '- rgaa_motion_diff {screenshot1,screenshot2} pour détecter du mouvement.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -806,7 +832,8 @@ export async function aiReviewCriterion({
   onLog,
   onStage,
   signal,
-  mcp
+  mcp,
+  retry = false
 }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   try {
@@ -814,7 +841,7 @@ export async function aiReviewCriterion({
       throw createAbortError();
     }
     onStage?.('AI: building prompt');
-    const prompt = buildPrompt({ criterion, url, snapshot, reportLang, mcp });
+    const prompt = buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry });
     const timeoutRaw = Number(process.env.AUDIT_CODEX_CRITERION_TIMEOUT_MS || '');
     const timeoutMs =
       Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? Math.floor(timeoutRaw) : 120000;
