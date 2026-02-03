@@ -146,7 +146,11 @@ You can also enable OCR (repo-level, no system install required) to extract text
 
 This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks use the built-in OCR tool to extract visible text and include it as evidence.
 
-The CLI shows a **live Codex feed** during progress (table + colors + spinner), with a short rationale snippet for each criterion.
+The CLI shows a **live humanized Codex feed** during progress (table + colors + spinner) to explain what the audit is doing. Technical lines are rewritten into short status messages.
+
+Feed controls:
+- `--humanize-feed/--no-humanize-feed`
+- `--humanize-feed-model`
 
 In guided mode, the live UI is cleared at the end and replaced with a final **decisions report** plus summary.
 

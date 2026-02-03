@@ -148,12 +148,6 @@ function chromeAutomationWarningLines({ i18n, mcpMode }) {
           'Cliquez sur Autoriser/OK à chaque fois pour que l’audit continue.',
           'Click Allow/OK each time so the audit can continue.'
         )
-      ),
-      palette.muted(
-        i18n.t(
-          'Astuce : Réglages Système → Confidentialité et sécurité → Automatisation.',
-          'Tip: System Settings → Privacy & Security → Automation.'
-        )
       )
     ];
   }
