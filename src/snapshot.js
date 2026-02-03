@@ -6,6 +6,8 @@ export function getSnapshotExpression() {
     const doctype = doc.doctype ? doc.doctype.name : '';
     const title = doc.title || '';
     const lang = (html && html.getAttribute('lang')) || '';
+    const href = String(location && location.href ? location.href : '');
+    const readyState = doc.readyState || '';
 
     const getText = (node) => (node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
@@ -125,6 +127,42 @@ export function getSnapshotExpression() {
       object: doc.querySelectorAll('object, embed').length
     };
 
+    const visual = (() => {
+      const svg = doc.querySelectorAll('svg').length;
+      const canvas = doc.querySelectorAll('canvas').length;
+      const picture = doc.querySelectorAll('picture').length;
+
+      let cssBackgroundImages = 0;
+      const bgExamples = [];
+      try {
+        const els = Array.from(doc.querySelectorAll('body *'));
+        const maxScan = 2000;
+        for (let i = 0; i < els.length && i < maxScan; i += 1) {
+          const el = els[i];
+          const style = window.getComputedStyle(el);
+          const bg = style && style.backgroundImage ? String(style.backgroundImage) : '';
+          if (!bg || bg === 'none') continue;
+          if (!bg.includes('url(')) continue;
+          cssBackgroundImages += 1;
+          if (bgExamples.length < 3) {
+            const className = typeof el.className === 'string' ? el.className.trim() : '';
+            const id = (el.getAttribute('id') || '').trim();
+            const ariaHidden = (el.getAttribute('aria-hidden') || '').toLowerCase() === 'true';
+            bgExamples.push({
+              tag: el.tagName.toLowerCase(),
+              id,
+              className: className.length > 80 ? className.slice(0, 77) + '…' : className,
+              ariaHidden,
+              backgroundImage: bg.length > 140 ? bg.slice(0, 137) + '…' : bg
+            });
+          }
+          if (cssBackgroundImages >= 40) break;
+        }
+      } catch (_) {}
+
+      return { svg, canvas, picture, cssBackgroundImages, bgExamples };
+    })();
+
     const scripts = {
       scriptTags: doc.querySelectorAll('script').length,
       hasInlineHandlers: !!doc.querySelector('[onclick],[onkeydown],[onkeyup],[onkeypress],[onmouseover],[onfocus],[onblur]')
@@ -134,6 +172,8 @@ export function getSnapshotExpression() {
       doctype,
       title,
       lang,
+      href,
+      readyState,
       images,
       frames,
       links,
@@ -143,6 +183,7 @@ export function getSnapshotExpression() {
       langChanges,
       tables,
       media,
+      visual,
       scripts
     };
   })();`;

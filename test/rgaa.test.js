@@ -11,6 +11,8 @@ const baseSnapshot = {
   doctype: 'html',
   title: 'Test',
   lang: 'fr',
+  href: 'https://example.test/',
+  readyState: 'complete',
   images: [],
   frames: [],
   links: [],
@@ -20,6 +22,7 @@ const baseSnapshot = {
   langChanges: [],
   tables: [],
   media: { video: 0, audio: 0, object: 0 },
+  visual: { svg: 0, canvas: 0, picture: 0, cssBackgroundImages: 0, bgExamples: [] },
   scripts: { scriptTags: 0, hasInlineHandlers: false }
 };
 
@@ -58,6 +61,13 @@ test('1.1 images alt rule', () => {
 
   const na = evaluateCriterion(criterion, baseSnapshot);
   assert.equal(na.status, STATUS.NA);
+
+  const needsReview = evaluateCriterion(criterion, {
+    ...baseSnapshot,
+    visual: { ...baseSnapshot.visual, cssBackgroundImages: 2 }
+  });
+  assert.equal(needsReview.status, STATUS.AI);
+  assert.equal(needsReview.aiCandidate, true);
 });
 
 test('2.1 frames title rule', () => {

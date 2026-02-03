@@ -507,6 +507,35 @@ async function main() {
   }
 
   const outPath = argv.out ? path.resolve(argv.out) : null;
+  const debugSnapshotsEnvExplicit =
+    Object.prototype.hasOwnProperty.call(process.env, 'AUDIT_DEBUG_SNAPSHOTS') &&
+    process.env.AUDIT_DEBUG_SNAPSHOTS !== undefined;
+
+  if (guided && !debugSnapshotsEnvExplicit) {
+    const defaultEnabled = true;
+    let enableDebugSnapshots = defaultEnabled;
+
+    if (interactive) {
+      const targetHint = outPath
+        ? `This writes per-page snapshot JSON under ${path.join(path.dirname(outPath), 'snapshots')}/`
+        : 'XLSX output is disabled, so snapshots will not be written.';
+      enableDebugSnapshots = await promptYesNo(
+        `Export debug snapshots for troubleshooting? (${targetHint})`,
+        defaultEnabled
+      );
+    }
+
+    if (enableDebugSnapshots && outPath) {
+      process.env.AUDIT_DEBUG_SNAPSHOTS = '1';
+    } else if (!enableDebugSnapshots) {
+      process.env.AUDIT_DEBUG_SNAPSHOTS = '0';
+    } else if (enableDebugSnapshots && !outPath) {
+      console.log(
+        'Debug snapshots requested, but XLSX output is disabled (--no-xlsx), so there is no out/<run>/ folder to write snapshots into.'
+      );
+    }
+  }
+
   const codexModel =
     argv['codex-model'] ||
     process.env.CODEX_MODEL ||

@@ -134,7 +134,11 @@ All non-automated criteria are reviewed via the local **Codex CLI** (`codex exec
 
 You can override the model with `--codex-model` if your Codex config supports it.
 
-The CLI shows an **AI feed** during progress, with a short rationale snippet for each criterion.
+The CLI shows a **live Codex feed** during progress (table + colors + spinner), with a short rationale snippet for each criterion.
+
+If you prefer the previous progress UI, run with `AUDIT_UI=legacy` (or `AUDIT_UI=plain` for CI/log-friendly output).
+
+To inspect what the tool actually captured per page, set `AUDIT_DEBUG_SNAPSHOTS=1` to write per-page snapshot JSON files under `out/<run>/snapshots/`.
 
 ## Notes on automation
 - Only a subset of criteria can be validated automatically with high confidence.

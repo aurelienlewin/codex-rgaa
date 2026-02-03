@@ -65,7 +65,51 @@ function isValidLangCode(lang) {
 function evaluateImagesAlt(snapshot, i18n) {
   const images = snapshot.images || [];
   if (images.length === 0) {
-    return { status: STATUS.NA, notes: i18n.t('Aucune image (ou role="img") détectée.', 'No images or role="img" found.') };
+    const visual = snapshot.visual || {};
+    const cssBg = Number(visual.cssBackgroundImages || 0);
+    const svg = Number(visual.svg || 0);
+    const canvas = Number(visual.canvas || 0);
+    const picture = Number(visual.picture || 0);
+
+    const hasNonImgVisuals = cssBg > 0 || svg > 0 || canvas > 0 || picture > 0;
+    if (hasNonImgVisuals) {
+      const parts = [
+        cssBg > 0 ? `${cssBg} background-image CSS` : null,
+        svg > 0 ? `${svg} <svg>` : null,
+        canvas > 0 ? `${canvas} <canvas>` : null,
+        picture > 0 ? `${picture} <picture>` : null
+      ].filter(Boolean);
+
+      return {
+        status: STATUS.AI,
+        aiCandidate: true,
+        automated: false,
+        notes: i18n.t(
+          `Aucune balise <img> (ou role="img") détectée, mais des visuels non-<img> existent (${parts.join(
+            ', '
+          )}). Revue requise pour déterminer si des alternatives textuelles sont nécessaires.`,
+          `No <img> (or role="img") found, but non-<img> visuals exist (${parts.join(
+            ', '
+          )}). Review required to determine whether text alternatives are needed.`
+        ),
+        examples: Array.isArray(visual.bgExamples) && visual.bgExamples.length
+          ? takeExamples(
+              visual.bgExamples,
+              (ex) =>
+                `${ex.tag}${ex.id ? `#${ex.id}` : ''}${ex.className ? `.${String(ex.className).split(/\s+/)[0]}` : ''} backgroundImage=${clipText(ex.backgroundImage, 60)}`,
+              3
+            )
+          : []
+      };
+    }
+
+    return {
+      status: STATUS.NA,
+      notes: i18n.t(
+        'Aucune balise <img> (ou role="img") détectée dans le DOM.',
+        'No <img> or role="img" found in the DOM.'
+      )
+    };
   }
 
   const missingAlt = images.filter((img) => img.tag === 'img' && img.alt === null && !img.ariaHidden);
@@ -439,7 +483,12 @@ export function evaluateCriterion(criterion, snapshot, options = {}) {
   const i18n = getI18n(normalizeReportLang(options.lang));
   const rule = RULES.get(criterion.id);
   if (rule) {
-    return { ...rule(snapshot, i18n), automated: true, aiCandidate: false };
+    const res = rule(snapshot, i18n) || {};
+    return {
+      ...res,
+      automated: typeof res.automated === 'boolean' ? res.automated : true,
+      aiCandidate: typeof res.aiCandidate === 'boolean' ? res.aiCandidate : false
+    };
   }
 
   const applies = THEME_APPLICABILITY[criterion.theme]

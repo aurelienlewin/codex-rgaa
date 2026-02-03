@@ -247,6 +247,13 @@ export async function runAudit(options) {
   let mcpConfig = options.mcp || {};
   let pagesFailed = 0;
   let aiFailed = 0;
+  const wantsDebugSnapshots =
+    String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim() === '1' ||
+    String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim().toLowerCase() === 'true';
+  const debugSnapshotsDir =
+    wantsDebugSnapshots && options.outPath
+      ? path.join(path.dirname(path.resolve(options.outPath)), 'snapshots')
+      : '';
 
   const onAbort = () => {
     aborted = true;
@@ -333,6 +340,23 @@ export async function runAudit(options) {
 
       if (page?.error) {
         reporter?.onPageError?.({ url, error: page.error });
+      }
+      if (debugSnapshotsDir && page?.snapshot && !page?.error) {
+        try {
+          await fs.mkdir(debugSnapshotsDir, { recursive: true });
+          const payload = {
+            url,
+            collectedAt: new Date().toISOString(),
+            snapshot: page.snapshot
+          };
+          const filePath = path.join(debugSnapshotsDir, `P${pageIndex + 1}.json`);
+          await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf-8');
+        } catch (err) {
+          reporter?.onAILog?.({
+            criterion: { id: 'snapshot', title: 'Snapshot debug', theme: 'Debug' },
+            message: `Warning: failed to write debug snapshot (${String(err?.message || err)})`
+          });
+        }
       }
 
       const results = [];
