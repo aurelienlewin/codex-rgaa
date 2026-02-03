@@ -231,19 +231,20 @@ function createCodexFeedHumanizer({
   let lastRunAt = 0;
 
   const shouldRewriteKind = (kind) => kind === 'progress' || kind === 'stage' || kind === 'thinking';
-  const looksTechnical = (text) => /mcp|cdp|schema|stderr|spawn|json|chrome-devtools/i.test(String(text || ''));
 
   const summarizeOnce = async (text) => {
     const payload = String(text || '').trim();
     if (!payload) return '';
 
     const prompt =
-      `You rewrite internal technical audit logs into a single friendly status line.\n` +
+      `You rewrite internal audit logs into a single human-friendly status line.\n` +
       `Language: ${lang === 'fr' ? 'French' : 'English'}.\n` +
       `Rules:\n` +
       `- Output ONE short line (max 70 characters).\n` +
       `- No bullets, no box-drawing characters, no emojis.\n` +
-      `- No acronyms or technical jargon (no MCP/CDP/JSON/schema/stderr/spawn).\n` +
+      `- No acronyms or technical jargon (no MCP/CDP/JSON/schema/stderr/spawn/command lines).\n` +
+      `- Focus on what the audit is doing right now.\n` +
+      `- If it is AI-related, say so plainly (e.g., "AI reviewing criteria").\n` +
       `- Be clear and reassuring.\n` +
       `Input: ${JSON.stringify(payload)}\n` +
       `Output:`;
@@ -370,7 +371,6 @@ function createCodexFeedHumanizer({
       const raw = String(text || '').trim();
       if (!raw) return;
       if (!shouldRewriteKind(kind)) return;
-      if (kind === 'progress' && !looksTechnical(raw) && raw.length < 48) return;
       pending.push({ kind, text: raw, onResult });
       while (pending.length > 3) pending.shift();
       drain();
@@ -446,7 +446,7 @@ function createLiveBlockRenderer() {
 }
 
 function createFancyReporter(options = {}) {
-  const i18n = getI18n(normalizeReportLang(options.lang));
+  const i18n = getI18n(normalizeReportLang(options.uiLang || options.lang));
   const isGuided = Boolean(options.guided);
   const spinner = ora({ text: i18n.t('Préparation de l’audit…', 'Preparing audit…'), color: 'cyan' });
   const renderer = createLiveBlockRenderer();
@@ -480,10 +480,15 @@ function createFancyReporter(options = {}) {
   const feedMax = 7;
   const feed = [];
   let feedSeq = 0;
+  const humanizeKinds = new Set(['progress', 'stage', 'thinking']);
+  const placeholderLine = i18n.t('Working…', 'Working…');
   const pushFeed = (kind, message, { replaceLastIfSameKind = false } = {}) => {
     const raw = String(message || '');
     const normalized = sanitizeStatusLine(raw);
-    const cleaned = clipInline(normalized, 240);
+    const cleaned = clipInline(
+      humanizeKinds.has(kind) ? placeholderLine : normalized,
+      240
+    );
     if (!cleaned) return;
     if (replaceLastIfSameKind && feed.length && feed[feed.length - 1].kind === kind) {
       const id = feed[feed.length - 1].id || ++feedSeq;
@@ -540,15 +545,14 @@ function createFancyReporter(options = {}) {
 
   const startStage = (label) => {
     const original = sanitizeStatusLine(label);
-    stageLabel = original;
+    stageLabel = placeholderLine;
     stageStartAt = nowMs();
     lastStageMs = null;
-    if (stageLabel) pushFeed('stage', stageLabel);
+    if (original) pushFeed('stage', original);
     feedHumanizer.request({
       kind: 'stage',
       text: original,
       onResult: (rewritten) => {
-        if (stageLabel !== original) return;
         stageLabel = rewritten;
         render();
       }
@@ -1322,7 +1326,7 @@ function createLegacyReporter(options = {}) {
 }
 
 function createPlainReporter(options = {}) {
-  const i18n = getI18n(normalizeReportLang(options.lang));
+  const i18n = getI18n(normalizeReportLang(options.uiLang || options.lang));
   const feedHumanizer = createCodexFeedHumanizer({
     enabled: Boolean(options.humanizeFeed),
     model: options.humanizeFeedModel || '',
@@ -1420,7 +1424,7 @@ function createPlainReporter(options = {}) {
       const clipped = sanitizeStatusLine(cleaned).slice(0, 120);
       if (clipped !== lastAILog) {
         lastAILog = clipped;
-        line('Codex', clipped);
+        line('Codex', i18n.t('Working…', 'Working…'));
         feedHumanizer.request({
           kind: 'progress',
           text: sanitizeStatusLine(cleaned),

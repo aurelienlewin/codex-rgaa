@@ -814,6 +814,7 @@ async function main() {
   }
   const reporter = createReporter({
     lang: reportLang,
+    uiLang: 'en',
     guided,
     humanizeFeed,
     humanizeFeedModel
