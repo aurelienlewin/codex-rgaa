@@ -66,7 +66,9 @@ const AI_NOISE_PATTERNS = [
   /mcp snapshot/i,
   /mcp list_pages/i,
   /spawning codex/i,
-  /autocomplete.*required.*describedby/i
+  /autocomplete.*required.*describedby/i,
+  /evaluate(?:d)? script response/i,
+  /evaluate_script/i
 ];
 
 function normalizeAiMessage(text) {
