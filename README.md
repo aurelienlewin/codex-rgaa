@@ -129,6 +129,8 @@ The Excel file contains:
 - **Matrix UI**: same matrix but with **✓ / ✗ / – / !** icons for quick reading (also color-coded).
 - **Summary**: global counts + score.
 
+When evidence is still insufficient after MCP tools (a11y tree, targeted DOM, OCR), criteria are marked **Review** and the Matrix UI cell is left blank with a **solid red** background for human review.
+
 ## AI review (mandatory)
 All non-automated criteria are reviewed via the local **Codex CLI** (`codex exec`).
 
