@@ -85,11 +85,22 @@ function createDebugLogger({ logPath }) {
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
   } catch {}
   const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  let closed = false;
+  stream.on('error', () => {
+    closed = true;
+  });
   const log = (event, details = '') => {
+    if (closed || !stream.writable) return;
     const line = `${new Date().toISOString()} ${event}${details ? ` ${details}` : ''}\n`;
-    stream.write(line);
+    try {
+      stream.write(line);
+    } catch {
+      closed = true;
+    }
   };
   const close = () => {
+    if (closed) return;
+    closed = true;
     try {
       stream.end();
     } catch {}
