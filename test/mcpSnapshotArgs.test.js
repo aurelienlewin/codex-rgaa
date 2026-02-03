@@ -64,6 +64,8 @@ if (execIdx !== -1) {
       doctype: 'html',
       title: 'fixture',
       lang: 'fr',
+      href: 'http://example.com/',
+      readyState: 'complete',
       images: [],
       frames: [],
       links: [],
@@ -73,6 +75,7 @@ if (execIdx !== -1) {
       langChanges: [],
       tables: [],
       media: { video: 0, audio: 0, object: 0 },
+      visual: { svg: 0, canvas: 0, picture: 0, cssBackgroundImages: 0, bgExamples: [] },
       scripts: { scriptTags: 0, hasInlineHandlers: false }
     };
     fs.writeFileSync(outFile, JSON.stringify(snapshot));

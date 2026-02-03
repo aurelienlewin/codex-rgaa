@@ -205,11 +205,13 @@ async function promptPages({ tabs, guided = false } = {}) {
           }
         }
       }
+      clearScreen();
     }
   }
 
   if (guided && tabPages.length) {
     rl.close();
+    clearScreen();
     return { urls, pageId: selectedPageId };
   }
 
@@ -240,6 +242,7 @@ async function promptPages({ tabs, guided = false } = {}) {
   }
 
   rl.close();
+  clearScreen();
   return { urls, pageId: selectedPageId };
 }
 
@@ -271,6 +274,7 @@ async function promptYesNo(question, defaultValue = false) {
     .trim()
     .toLowerCase();
   rl.close();
+  clearScreen();
 
   if (!raw) return defaultValue;
   if (raw === 'y' || raw === 'yes') return true;
@@ -315,6 +319,7 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
     : 'Choose a number: ';
   const raw = String(await ask(promptLabel)).trim();
   rl.close();
+  clearScreen();
 
   if (!raw) return defaultIndex;
   const n = Number(raw);
@@ -348,6 +353,7 @@ async function promptOptionalNumber(question) {
   const promptLabel = isFancyTTY() ? promptPalette.primary('→ ') : question;
   const raw = String(await ask(promptLabel)).trim();
   rl.close();
+  clearScreen();
   if (!raw) return undefined;
   const n = Number(raw);
   if (!Number.isFinite(n)) return undefined;
@@ -384,6 +390,7 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
   readline.clearLine(process.stdout, 0);
   readline.cursorTo(process.stdout, 0);
   rl.close();
+  clearScreen();
 }
 
 async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
@@ -414,6 +421,7 @@ async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
 
   await ask(isFancyTTY() ? promptPalette.primary('Press Enter to continue…') : 'Press Enter to continue…');
   rl.close();
+  clearScreen();
 }
 
 async function main() {
@@ -631,6 +639,7 @@ async function main() {
                 await ask(`Chrome debugging URL (default: ${defaultBrowserUrl}): `)
               ).trim();
               rl.close();
+              clearScreen();
               return answer || defaultBrowserUrl;
             })()) || mcpBrowserUrlArg;
         }
@@ -649,6 +658,7 @@ async function main() {
             await ask('Optional Chrome channel (leave empty for stable; e.g. "beta"): ')
           ).trim();
           rl.close();
+          clearScreen();
           return answer;
         })()) || mcpChannelArg;
     }
@@ -765,7 +775,7 @@ async function main() {
   const codexModel =
     argv['codex-model'] ||
     process.env.AUDIT_CODEX_MODEL ||
-    'gpt-5.2-codex-low';
+    '';
   const aiMcpEnv = String(process.env.AUDIT_AI_MCP || '').trim().toLowerCase();
   const aiMcpEnvExplicit = aiMcpEnv.length > 0;
   const aiMcpEnvEnabled =

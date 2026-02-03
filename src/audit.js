@@ -339,6 +339,17 @@ export async function runAudit(options) {
         const batchSize =
           Number.isFinite(batchSizeRaw) && batchSizeRaw > 0 ? Math.floor(batchSizeRaw) : 6;
 
+        const evaluationFromHit = (hit) => {
+          const confidence = Number(hit.confidence || 0);
+          const rationale = String(hit.rationale || '');
+          const evidence = Array.isArray(hit.evidence) ? hit.evidence : [];
+          return {
+            status: hit.status || STATUS.NC,
+            notes: `${i18n.notes.aiReviewLabel()} (${confidence.toFixed(2)}): ${rationale}`,
+            ai: { confidence, rationale, evidence }
+          };
+        };
+
         for (let start = 0; start < pendingAI.length; start += batchSize) {
           if (aborted || signal?.aborted) {
             throw createAbortError();
@@ -360,6 +371,30 @@ export async function runAudit(options) {
               const key = String(r?.criterion_id || '');
               if (key) batchById.set(key, r);
             }
+
+            // Update progress incrementally (avoid "stuck at 22/106 then jump to 100%").
+            for (const pending of chunk) {
+              const { criterion, index } = pending;
+              if (reported.has(index)) continue;
+              const hit = batchById.get(criterion.id);
+              if (!hit) continue;
+              const evaluation = evaluationFromHit(hit);
+              results[index] = { ...criterion, ...evaluation };
+              if (evaluation.status === STATUS.ERR) {
+                aiFailed += 1;
+              }
+              reportCriterion(
+                criterion,
+                {
+                  status: evaluation.status || STATUS.ERR,
+                  notes: evaluation.notes || 'Missing evaluation.',
+                  ai: evaluation.ai || null,
+                  automated: Boolean(evaluation.automated),
+                  aiCandidate: Boolean(evaluation.aiCandidate)
+                },
+                index
+              );
+            }
           } catch (err) {
             reporter?.onAILog?.({
               criterion: pseudoCriterion,
@@ -377,18 +412,12 @@ export async function runAudit(options) {
           }
 
           const { criterion, index } = pending;
+          if (reported.has(index)) continue;
           const hit = batchById ? batchById.get(criterion.id) : null;
 
           let evaluation;
           if (hit) {
-            const confidence = Number(hit.confidence || 0);
-            const rationale = String(hit.rationale || '');
-            const evidence = Array.isArray(hit.evidence) ? hit.evidence : [];
-            evaluation = {
-              status: hit.status || STATUS.NC,
-              notes: `${i18n.notes.aiReviewLabel()} (${confidence.toFixed(2)}): ${rationale}`,
-              ai: { confidence, rationale, evidence }
-            };
+            evaluation = evaluationFromHit(hit);
           } else {
             evaluation = await aiReviewCriterion({
               model: options.ai.model,

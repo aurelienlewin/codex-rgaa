@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { STATUS } from './checks.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
+import { validateStrictOutputSchema } from './schemaValidate.js';
 import {
   buildMcpArgs,
   looksLikeMcpConnectError,
@@ -130,6 +131,35 @@ const SCHEMA_PATH = fileURLToPath(new URL('../data/codex-review-schema.json', im
 const BATCH_SCHEMA_PATH = fileURLToPath(
   new URL('../data/codex-review-batch-schema.json', import.meta.url)
 );
+
+let schemaPreflightDone = false;
+async function preflightSchemas(onLog) {
+  if (schemaPreflightDone) return;
+  schemaPreflightDone = true;
+  const checks = [
+    { label: 'codex review', path: SCHEMA_PATH },
+    { label: 'codex review batch', path: BATCH_SCHEMA_PATH }
+  ];
+  for (const item of checks) {
+    const res = await validateStrictOutputSchema(item.path);
+    if (!res.ok) {
+      onLog?.(`Codex: schema preflight failed for ${item.label}`);
+      const msg =
+        `Invalid structured-output schema (${item.label}):\n` +
+        res.problems.map((p) => `- ${p}`).join('\n');
+      throw new Error(msg);
+    }
+  }
+}
+
+function looksLikeModelNotFound(stderr) {
+  const text = String(stderr || '').toLowerCase();
+  return (
+    text.includes('model_not_found') ||
+    (text.includes('requested model') && text.includes('does not exist')) ||
+    (text.includes('does not exist') && text.includes('model'))
+  );
+}
 
 function normalizeAiStatus(status) {
   const normalized = String(status || '').trim();
@@ -419,13 +449,15 @@ async function runCodexPrompt({
     throw createAbortError();
   }
 
+  await preflightSchemas(onLog);
+
   const outputFile = path.join(
     os.tmpdir(),
     `codex-rgaa-${Date.now()}-${Math.random().toString(16).slice(2)}.json`
   );
 
   const codexPath = process.env.CODEX_PATH || 'codex';
-  const buildArgs = (mcpConfig) => {
+  const buildArgs = (mcpConfig, modelOverride = model) => {
     const args = [];
     if (mcpConfig) {
       // Allow non-interactive MCP startup (no TTY for approvals).
@@ -450,8 +482,8 @@ async function runCodexPrompt({
       '--sandbox',
       'read-only'
     );
-    if (model) {
-      args.push('-m', model);
+    if (modelOverride) {
+      args.push('-m', modelOverride);
     }
     args.push('-');
     return args;
@@ -546,10 +578,15 @@ async function runCodexPrompt({
     await ensureDir(process.env.CODEX_HOME);
   }
 
-  const runWithEnv = async (env, mcpConfig) => {
+  const runWithEnv = async (env, mcpConfig, modelOverride = model) => {
     try {
-      await runOnce(env, buildArgs(mcpConfig));
+      await runOnce(env, buildArgs(mcpConfig, modelOverride));
     } catch (err) {
+      if (modelOverride && looksLikeModelNotFound(err.stderr)) {
+        onLog?.(`Codex: model ${JSON.stringify(modelOverride)} not found; retrying with default model`);
+        await runOnce(env, buildArgs(mcpConfig, ''));
+        return;
+      }
       // Common failure mode in sandboxed/CI environments: ~/.codex isn't writable.
       if (!process.env.CODEX_HOME && looksLikeCodexHomePermissionError(err.stderr)) {
         const fallbackHome = getFallbackCodexHome();
@@ -558,7 +595,7 @@ async function runCodexPrompt({
         await ensureDir(path.join(fallbackHome, 'npm-cache'));
         await seedCodexConfig(fallbackHome, onLog);
         onLog?.(`Codex: retrying with CODEX_HOME=${fallbackHome}`);
-        await runOnce(buildCodexEnv({ codexHome: fallbackHome }), buildArgs(mcpConfig));
+        await runOnce(buildCodexEnv({ codexHome: fallbackHome }), buildArgs(mcpConfig, modelOverride));
         return;
       }
       throw err;
@@ -566,12 +603,12 @@ async function runCodexPrompt({
   };
 
   try {
-    await runWithEnv(buildCodexEnv(), mcp);
+    await runWithEnv(buildCodexEnv(), mcp, model);
   } catch (err) {
     if (mcp && (looksLikeMcpConnectError(err.stderr) || looksLikeMcpInstallOrNetworkError(err.stderr))) {
       onLog?.('Codex: MCP failed, retrying AI review without MCP.');
       try {
-        await runWithEnv(buildCodexEnv(), null);
+        await runWithEnv(buildCodexEnv(), null, model);
       } catch (fallbackErr) {
         const hint = summarizeCodexStderr(fallbackErr.stderr);
         if (hint && fallbackErr && fallbackErr.message && !fallbackErr.message.includes(hint)) {

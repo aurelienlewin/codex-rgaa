@@ -11,11 +11,38 @@ import {
   looksLikeMcpConnectError,
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
+import { validateStrictOutputSchema } from './schemaValidate.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-snapshot-schema.json', import.meta.url));
 const LIST_PAGES_SCHEMA_PATH = fileURLToPath(
   new URL('../data/mcp-list-pages-schema.json', import.meta.url)
 );
+
+let schemaPreflightDone = false;
+async function preflightSchemas(onLog) {
+  if (schemaPreflightDone) return;
+  schemaPreflightDone = true;
+
+  const checks = [
+    { label: 'mcp snapshot', path: SCHEMA_PATH },
+    { label: 'mcp list_pages', path: LIST_PAGES_SCHEMA_PATH }
+  ];
+
+  for (const item of checks) {
+    try {
+      const res = await validateStrictOutputSchema(item.path);
+      if (!res.ok) {
+        const msg =
+          `Invalid structured-output schema (${item.label}):\n` +
+          res.problems.map((p) => `- ${p}`).join('\n');
+        throw new Error(msg);
+      }
+    } catch (err) {
+      onLog?.(`Codex: schema preflight failed for ${item.label}`);
+      throw err;
+    }
+  }
+}
 
 function buildPrompt({ url, pageId } = {}) {
   const expression = getSnapshotExpression();
@@ -67,6 +94,15 @@ function looksLikeCodexHomePermissionError(stderr) {
     (text.includes('permission denied') && (text.includes('.codex') || text.includes('sessions'))) ||
     text.includes('Error finding codex home') ||
     text.includes('CODEX_HOME points to')
+  );
+}
+
+function looksLikeModelNotFound(stderr) {
+  const text = String(stderr || '').toLowerCase();
+  return (
+    text.includes('model_not_found') ||
+    (text.includes('requested model') && text.includes('does not exist')) ||
+    (text.includes('does not exist') && text.includes('model'))
   );
 }
 
@@ -169,13 +205,15 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
     throw createAbortError();
   }
 
+  await preflightSchemas(onLog);
+
   const outputFile = path.join(
     os.tmpdir(),
     `codex-mcp-snapshot-${Date.now()}-${Math.random().toString(16).slice(2)}.json`
   );
 
   const codexPath = process.env.CODEX_PATH || 'codex';
-  const buildArgs = (mcpConfig, schemaPath) => {
+  const buildArgs = (mcpConfig, schemaPath, modelOverride = model) => {
     const args = [
       // MCP servers are launched as local processes (e.g. `npx chrome-devtools-mcp@latest ...`).
       // In non-interactive `codex exec` runs, the default approval policy can block spawning them
@@ -194,7 +232,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
       '--sandbox',
       'read-only'
     ];
-    if (model) args.push('-m', model);
+    if (modelOverride) args.push('-m', modelOverride);
     args.push('-');
     return args;
   };
@@ -292,6 +330,10 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
   try {
     await runOnce(preferredEnv, buildArgs(mcp, SCHEMA_PATH));
   } catch (err) {
+    if (model && looksLikeModelNotFound(err.stderr)) {
+      onLog?.(`Codex: model ${JSON.stringify(model)} not found; retrying with default model`);
+      await runOnce(preferredEnv, buildArgs(mcp, SCHEMA_PATH, ''));
+    } else {
     // Default behavior may point to an existing local DevTools endpoint (127.0.0.1:9222).
     // If that endpoint isn't available, retry using autoConnect (when enabled).
     const providedBrowserUrl = normalizeBrowserUrl(mcp?.browserUrl);
@@ -325,6 +367,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
     } else {
       throw decorateCodexError(err);
     }
+    }
   }
 
   onStage?.('AI: parsing MCP snapshot');
@@ -343,13 +386,15 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
     throw createAbortError();
   }
 
+  await preflightSchemas(onLog);
+
   const outputFile = path.join(
     os.tmpdir(),
     `codex-mcp-list-pages-${Date.now()}-${Math.random().toString(16).slice(2)}.json`
   );
 
   const codexPath = process.env.CODEX_PATH || 'codex';
-  const buildArgs = (mcpConfig) => {
+  const buildArgs = (mcpConfig, modelOverride = model) => {
     const args = [
       '-a',
       'on-failure',
@@ -365,7 +410,7 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       '--sandbox',
       'read-only'
     ];
-    if (model) args.push('-m', model);
+    if (modelOverride) args.push('-m', modelOverride);
     args.push('-');
     return args;
   };
@@ -461,6 +506,10 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
   try {
     await runOnce(preferredEnv, buildArgs(mcp));
   } catch (err) {
+    if (model && looksLikeModelNotFound(err.stderr)) {
+      onLog?.(`Codex: model ${JSON.stringify(model)} not found; retrying with default model`);
+      await runOnce(preferredEnv, buildArgs(mcp, ''));
+    } else {
     const providedBrowserUrl = normalizeBrowserUrl(mcp?.browserUrl);
     const canFallback = Boolean(providedBrowserUrl && mcp?.autoConnect);
     if (canFallback && looksLikeMcpConnectError(err.stderr)) {
@@ -489,6 +538,7 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       }
     } else {
       throw decorateCodexError(err);
+    }
     }
   }
 

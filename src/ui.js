@@ -117,6 +117,42 @@ function renderBar({ value, total, width }) {
   return `${palette.accent(full)}${palette.muted(empty)}`;
 }
 
+function chromeAutomationWarningLines({ i18n, mcpMode }) {
+  if (String(mcpMode || '').trim().toLowerCase() !== 'chrome') return null;
+  const isMac = process.platform === 'darwin';
+  if (isMac) {
+    return [
+      `${palette.warn('⚠')} ${chalk.bold(
+        i18n.t(
+          'macOS peut vous demander plusieurs fois d’autoriser le contrôle à distance de Google Chrome.',
+          'macOS may prompt you several times to allow remote control of Google Chrome.'
+        )
+      )}`,
+      palette.muted(
+        i18n.t(
+          'Cliquez sur Autoriser/OK à chaque fois pour que l’audit continue.',
+          'Click Allow/OK each time so the audit can continue.'
+        )
+      ),
+      palette.muted(
+        i18n.t(
+          'Astuce : Réglages Système → Confidentialité et sécurité → Automatisation.',
+          'Tip: System Settings → Privacy & Security → Automation.'
+        )
+      )
+    ];
+  }
+
+  return [
+    `${palette.warn('⚠')} ${chalk.bold(
+      i18n.t(
+        'Votre système peut demander d’autoriser le contrôle à distance de Chrome pendant l’audit.',
+        'Your OS may ask you to allow remote control of Chrome during the audit.'
+      )
+    )}`
+  ];
+}
+
 function drawPanel({ title, lines, width, borderColor = palette.muted }) {
   const w = Math.max(40, width);
   const inner = w - 2;
@@ -195,13 +231,13 @@ function createFancyReporter(options = {}) {
   let overallDone = 0;
   let pageDone = 0;
   let currentPageIndex = -1;
-  let currentPageIndex = -1;
   let currentUrl = '';
   let stageLabel = '';
   let stageStartAt = 0;
   let lastStageMs = null;
   let pageStartAt = 0;
   let auditMode = 'mcp';
+  let mcpMode = '';
   let lastAILog = '';
   let currentCriterion = null;
   let lastDecision = null;
@@ -348,6 +384,7 @@ function createFancyReporter(options = {}) {
       }
     }
 
+    const chromeWarning = chromeAutomationWarningLines({ i18n, mcpMode });
     const panels = [
       drawPanel({
         title: i18n.t('Progress', 'Progress'),
@@ -355,6 +392,16 @@ function createFancyReporter(options = {}) {
         width,
         borderColor: palette.muted
       }),
+      ...(chromeWarning
+        ? [
+            drawPanel({
+              title: i18n.t('Chrome permissions', 'Chrome permissions'),
+              lines: chromeWarning,
+              width,
+              borderColor: palette.warn
+            })
+          ]
+        : []),
       drawPanel({
         title: i18n.t('Codex feed', 'Codex feed'),
         lines: feedLines,
@@ -377,10 +424,11 @@ function createFancyReporter(options = {}) {
   };
 
   return {
-    async onStart({ pages, criteriaCount, codexModel, mcpMode, auditMode: mode }) {
+    async onStart({ pages, criteriaCount, codexModel, mcpMode: mcpModeFromCli, auditMode: mode }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
       auditMode = mode || 'mcp';
+      mcpMode = mcpModeFromCli || '';
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
       const subtitle = i18n.t(
@@ -405,7 +453,7 @@ function createFancyReporter(options = {}) {
       );
       console.log(title);
       const modelLabel = codexModel ? `Codex model: ${codexModel}` : 'Codex model: (default)';
-      const mcpLabel = mcpMode ? `MCP mode: ${mcpMode}` : 'MCP mode: (default)';
+      const mcpLabel = mcpModeFromCli ? `MCP mode: ${mcpModeFromCli}` : 'MCP mode: (default)';
       const modeLabel = `Snapshot mode: ${auditMode}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
@@ -1002,21 +1050,27 @@ function createPlainReporter(options = {}) {
   let lastAILog = '';
   let pageStartAt = 0;
   let auditMode = 'mcp';
+  let mcpMode = '';
 
   const line = (label, value = '') =>
     console.log(`${palette.muted(label)}${value ? ` ${value}` : ''}`);
 
   return {
-    async onStart({ pages, criteriaCount, codexModel, mcpMode, auditMode: mode }) {
+    async onStart({ pages, criteriaCount, codexModel, mcpMode: mcpModeFromCli, auditMode: mode }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
       auditMode = mode || 'mcp';
+      mcpMode = mcpModeFromCli || '';
       line('RGAA Website Auditor');
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
       line('Codex model:', codexModel || '(default)');
-      line('MCP mode:', mcpMode || '(default)');
+      line('MCP mode:', mcpModeFromCli || '(default)');
       line('Snapshot mode:', auditMode);
+      const chromeWarning = chromeAutomationWarningLines({ i18n, mcpMode });
+      if (chromeWarning) {
+        for (const msg of chromeWarning) line(msg);
+      }
       line(i18n.t('Launching Chrome…', 'Launching Chrome…'));
     },
 
