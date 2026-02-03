@@ -5,7 +5,7 @@ export const STATUS = {
   NC: 'Not conform',
   NA: 'Non applicable',
   ERR: 'Error',
-  AI: 'AI review'
+  AI: 'Review'
 };
 
 const GENERIC_LINK_TEXTS = new Set([
@@ -457,7 +457,7 @@ export function evaluateCriterion(criterion, snapshot, options = {}) {
 
   return {
     status: STATUS.AI,
-    notes: i18n.t('Revue IA requise.', 'AI review required.'),
+    notes: i18n.t('Revue requise.', 'Review required.'),
     automated: false,
     aiCandidate: true
   };

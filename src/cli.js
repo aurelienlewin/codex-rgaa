@@ -25,6 +25,26 @@ function defaultXlsxOutPath() {
   return path.join('out', formatRunId(), 'rgaa-audit.xlsx');
 }
 
+function normalizeHttpBaseUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+}
+
+async function canReachChromeDebugEndpoint(baseUrl) {
+  const url = normalizeHttpBaseUrl(baseUrl);
+  if (!url) return false;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`${url}/json/version`, { signal: controller.signal });
+    clearTimeout(timeout);
+    return Boolean(res && res.ok);
+  } catch {
+    return false;
+  }
+}
+
 function ensureCodexHomeDir() {
   const codexHome = process.env.CODEX_HOME;
   if (!codexHome) return;
@@ -162,6 +182,28 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
   console.log('4) Return here to continue.\n');
 
   await ask('Press Enter when Chrome is ready…');
+  rl.close();
+}
+
+async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const ask = (question) =>
+    new Promise((resolve) => {
+      rl.question(question, (answer) => resolve(answer));
+    });
+
+  const url = normalizeHttpBaseUrl(browserUrl);
+  console.log('\nChrome DevTools endpoint setup:');
+  console.log(`- Target URL: ${url || '(empty)'}`);
+  console.log('- Chrome must be launched with a remote debugging port enabled.');
+  console.log('  Example (Linux): google-chrome --remote-debugging-port=9222');
+  console.log('  Example (macOS): open -a "Google Chrome" --args --remote-debugging-port=9222\n');
+
+  await ask('Press Enter to continue…');
   rl.close();
 }
 
@@ -446,6 +488,17 @@ async function main() {
         ? true
         : Boolean(mcpAutoConnectArg)
       : Boolean(mcpAutoConnectArg);
+
+  if (interactive && guided && snapshotMode === 'mcp' && mcpBrowserUrl) {
+    await promptMcpBrowserUrlSetup({ browserUrl: mcpBrowserUrl });
+    const ok = await canReachChromeDebugEndpoint(mcpBrowserUrl);
+    if (!ok) {
+      console.log(
+        `\nWarning: cannot reach Chrome DevTools at ${normalizeHttpBaseUrl(mcpBrowserUrl)}.\n` +
+          `If MCP fails, either start Chrome with --remote-debugging-port=9222, or use auto-connect, or switch to --snapshot-mode cdp.\n`
+      );
+    }
+  }
 
   if (snapshotMode === 'mcp' && mcpAutoConnect && !mcpBrowserUrl && interactive) {
     await promptMcpAutoConnectSetup({

@@ -517,6 +517,7 @@ export async function runAudit(options) {
   };
 
   if (options.outPath) {
+    const BASE_FONT_SIZE = 14;
     const workbook = new ExcelJS.Workbook();
     const matrixSheet = workbook.addWorksheet('Matrix');
     const uiSheet = workbook.addWorksheet('Matrix UI');
@@ -559,7 +560,7 @@ export async function runAudit(options) {
 
     const styleHeaderRow = (sheet) => {
       sheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 2 }];
-      sheet.getRow(1).font = { bold: true, color: { argb: COLORS.headerFg } };
+      sheet.getRow(1).font = { size: BASE_FONT_SIZE, bold: true, color: { argb: COLORS.headerFg } };
       sheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       for (let col = 1; col <= 3 + pageLabels.length; col += 1) {
         const cell = sheet.getRow(1).getCell(col);
@@ -571,7 +572,7 @@ export async function runAudit(options) {
           right: { style: 'thin', color: { argb: COLORS.grid } }
         };
       }
-      sheet.getRow(2).font = { italic: true, color: { argb: 'FF334155' } };
+      sheet.getRow(2).font = { size: BASE_FONT_SIZE, italic: true, color: { argb: 'FF334155' } };
       sheet.getRow(2).alignment = { vertical: 'middle', wrapText: true };
       sheet.autoFilter = { from: 'A1', to: `${lastCol}1` };
 
@@ -599,7 +600,7 @@ export async function runAudit(options) {
     const applyStatusCellStyle = (cell, status, { centered = true } = {}) => {
       const s = statusStyle(status);
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: s.bg } };
-      cell.font = { bold: true, color: { argb: s.fg } };
+      cell.font = { size: BASE_FONT_SIZE, bold: true, color: { argb: s.fg } };
       cell.alignment = centered
         ? { vertical: 'middle', horizontal: 'center' }
         : { vertical: 'top', horizontal: 'left', wrapText: true };
@@ -669,10 +670,12 @@ export async function runAudit(options) {
       }
       const excelRow = matrixSheet.addRow(row);
       const excelUiRow = uiSheet.addRow(uiRow);
+      excelRow.font = { size: BASE_FONT_SIZE };
+      excelUiRow.font = { size: BASE_FONT_SIZE };
 
       // Left meta columns formatting
       for (const sheetRow of [excelRow, excelUiRow]) {
-        sheetRow.getCell(1).font = { bold: true };
+        sheetRow.getCell(1).font = { size: BASE_FONT_SIZE, bold: true };
         sheetRow.getCell(2).alignment = { vertical: 'top', wrapText: true };
         sheetRow.getCell(3).alignment = { vertical: 'top', wrapText: true };
         for (let c = 1; c <= 3; c += 1) {
@@ -700,12 +703,12 @@ export async function runAudit(options) {
     }
 
     const summarySheet = workbook.addWorksheet('Summary');
-    summarySheet.addRow([i18n.excel.summaryTitle()]);
+    const summaryTitleRow = summarySheet.addRow([i18n.excel.summaryTitle()]);
+    summaryTitleRow.font = { size: 16, bold: true };
     summarySheet.addRow([i18n.excel.generatedAt(), new Date().toISOString()]);
     summarySheet.addRow([i18n.excel.pagesAudited(), options.pages.length]);
     summarySheet.addRow([i18n.excel.globalScore(), globalScore]);
     summarySheet.addRow([i18n.excel.pagesFailed(), pagesFailed]);
-    summarySheet.addRow([i18n.excel.aiFailures(), aiFailed]);
     summarySheet.addRow([]);
     summarySheet.addRow([i18n.excel.globalStatus()]);
     summarySheet.addRow([i18n.excel.conform(), globalCounts.C]);
@@ -725,6 +728,15 @@ export async function runAudit(options) {
     for (const [icon, label] of legend) {
       const r = summarySheet.addRow([icon, label]);
       r.getCell(1).alignment = { horizontal: 'center' };
+    }
+
+    // Ensure a readable base font size across the whole workbook.
+    for (const sheet of [matrixSheet, uiSheet, summarySheet]) {
+      sheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          cell.font = { ...(cell.font || {}), size: Math.max(BASE_FONT_SIZE, cell.font?.size || 0) };
+        });
+      });
     }
 
     await fs.mkdir(path.dirname(outPath), { recursive: true });

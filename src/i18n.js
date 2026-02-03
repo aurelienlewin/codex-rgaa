@@ -9,14 +9,14 @@ const STATUS_LABELS = {
     'Not conform': 'Non conforme',
     'Non applicable': 'Non applicable',
     Error: 'Erreur',
-    'AI review': 'Revue IA'
+    Review: 'Revue'
   },
   en: {
     Conform: 'Conform',
     'Not conform': 'Not conform',
     'Non applicable': 'Non applicable',
     Error: 'Error',
-    'AI review': 'AI review'
+    Review: 'Review'
   }
 };
 
@@ -39,7 +39,7 @@ export function getI18n(lang) {
       pagesAudited: () => t('Pages auditées', 'Pages audited'),
       globalScore: () => t('Score global (C / (C+NC))', 'Global score (C / (C+NC))'),
       pagesFailed: () => t('Pages en échec', 'Pages failed'),
-      aiFailures: () => t('Échecs IA', 'AI failures'),
+      aiFailures: () => t('Échecs de revue', 'Review failures'),
       globalStatus: () => t('Statut global des critères', 'Global criteria status'),
       conform: () => t('Conforme (C)', 'Conform (C)'),
       notConform: () => t('Non conforme (NC)', 'Not conform (NC)'),
@@ -50,12 +50,11 @@ export function getI18n(lang) {
       examplesLabel: () => t('Exemples :', 'Examples:'),
       aiPrefix: (confidence) =>
         t(
-          `IA (${Number(confidence || 0).toFixed(2)})`,
-          `AI (${Number(confidence || 0).toFixed(2)})`
+          `Revue (${Number(confidence || 0).toFixed(2)})`,
+          `Review (${Number(confidence || 0).toFixed(2)})`
         ),
-      aiReviewLabel: () => t('Revue IA', 'AI review'),
-      aiFailed: () => t('Revue IA échouée', 'AI review failed')
+      aiReviewLabel: () => t('Revue', 'Review'),
+      aiFailed: () => t('Revue échouée', 'Review failed')
     }
   };
 }
-

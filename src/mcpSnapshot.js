@@ -200,6 +200,11 @@ function decorateCodexError(err) {
   if (hint && err?.message && !String(err.message).includes(hint)) {
     err.message = `${err.message} (${hint})`;
   }
+  if (looksLikeMcpConnectError(err.stderr) && err?.message) {
+    err.message =
+      `${err.message} ` +
+      `(Cannot connect to Chrome DevTools. If you used http://127.0.0.1:9222, start Chrome with --remote-debugging-port=9222 or switch to MCP auto-connect, or use --snapshot-mode cdp.)`;
+  }
   if (looksLikeMcpInstallOrNetworkError(err.stderr) && err?.message) {
     err.message =
       `${err.message} ` +
