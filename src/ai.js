@@ -636,6 +636,15 @@ async function runCodexPrompt({
       let settled = false;
       let stderrText = '';
       let timeout = null;
+      let heartbeat = null;
+      const startAt = Date.now();
+      let lastActivityAt = startAt;
+      const heartbeatRaw = Number(process.env.AUDIT_CODEX_HEARTBEAT_MS || '');
+      const heartbeatMs =
+        Number.isFinite(heartbeatRaw) && heartbeatRaw > 0 ? Math.floor(heartbeatRaw) : 15000;
+      const stallRaw = Number(process.env.AUDIT_CODEX_STALL_TIMEOUT_MS || '');
+      const stallTimeoutMs =
+        Number.isFinite(stallRaw) && stallRaw > 0 ? Math.floor(stallRaw) : 0;
       const finalize = (err) => {
         if (settled) return;
         settled = true;
@@ -643,6 +652,7 @@ async function runCodexPrompt({
           signal.removeEventListener('abort', abortHandler);
         }
         if (timeout) clearTimeout(timeout);
+        if (heartbeat) clearInterval(heartbeat);
         if (err) {
           err.stderr = stderrText;
           reject(err);
@@ -657,6 +667,23 @@ async function runCodexPrompt({
         finalize(new Error(`codex exec timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       if (typeof timeout.unref === 'function') timeout.unref();
+
+      if (heartbeatMs > 0) {
+        heartbeat = setInterval(() => {
+          const now = Date.now();
+          const silentFor = now - lastActivityAt;
+          if (stallTimeoutMs > 0 && silentFor >= stallTimeoutMs) {
+            onLog?.(`Codex: stalled for ${stallTimeoutMs}ms; terminating.`);
+            terminateChild(child);
+            finalize(new Error(`codex exec stalled after ${stallTimeoutMs}ms`));
+            return;
+          }
+          if (silentFor >= heartbeatMs) {
+            onLog?.(`Codex: still running (${Math.round((now - startAt) / 1000)}s).`);
+          }
+        }, heartbeatMs);
+        if (typeof heartbeat.unref === 'function') heartbeat.unref();
+      }
 
       abortHandler = () => {
         abortRequested = true;
@@ -688,6 +715,7 @@ async function runCodexPrompt({
         child.stderr.on('data', (chunk) => {
           const message = String(chunk);
           stderrText += message;
+          lastActivityAt = Date.now();
           // Avoid unbounded growth if Codex is noisy (keep the tail).
           if (stderrText.length > 64_000) stderrText = stderrText.slice(-64_000);
           const trimmed = message.trim();
