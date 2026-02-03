@@ -131,6 +131,83 @@ function normalizeUrlCandidate(url) {
   }
 }
 
+async function fetchJson(url, { timeoutMs = 3000 } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchText(url, { timeoutMs = 3000 } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    }
+    return await res.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function closePagesDirect({ urls, browserUrl, onLog }) {
+  const base = normalizeBrowserUrl(browserUrl);
+  if (!base) return { closed: [], skipped: [], errors: [] };
+
+  const original = new Set(urls.map((u) => String(u || '').trim()).filter(Boolean));
+  const normalized = new Set(urls.map(normalizeUrlCandidate).filter(Boolean));
+
+  let pages = [];
+  try {
+    pages = await fetchJson(`${base}/json/list`);
+  } catch (err) {
+    return { closed: [], skipped: [], errors: [{ error: String(err?.message || err) }] };
+  }
+
+  const closed = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const page of Array.isArray(pages) ? pages : []) {
+    const url = String(page?.url || '').trim();
+    if (!url) continue;
+    const isHttp = url.startsWith('http://') || url.startsWith('https://');
+    if (!isHttp && !original.has(url)) {
+      skipped.push({ id: page?.id, url, reason: 'non-http url' });
+      continue;
+    }
+    const normalizedUrl = normalizeUrlCandidate(url);
+    const shouldClose =
+      original.has(url) || normalized.has(url) || normalized.has(normalizedUrl);
+    if (!shouldClose) {
+      skipped.push({ id: page?.id, url, reason: 'no match' });
+      continue;
+    }
+    if (!page?.id) {
+      errors.push({ id: page?.id, url, error: 'missing page id' });
+      continue;
+    }
+    try {
+      await fetchText(`${base}/json/close/${page.id}`);
+      closed.push({ id: page.id, url });
+      onLog?.(`Codex: closed page ${page.id} via direct CDP`);
+    } catch (err) {
+      errors.push({ id: page.id, url, error: String(err?.message || err) });
+    }
+  }
+
+  return { closed, skipped, errors };
+}
+
 function buildPrompt({ urls }) {
   const normalized = Array.from(new Set(urls.map(normalizeUrlCandidate).filter(Boolean)));
   const original = Array.from(new Set(urls.map((u) => String(u || '').trim()).filter(Boolean)));
@@ -296,5 +373,28 @@ export async function closeMcpPages({ urls, model, mcp, onLog, onStage, signal }
   if (targetUrls.length === 0) {
     return { closed: [], skipped: [], errors: [] };
   }
-  return runCodexClosePages({ urls: targetUrls, model, mcp, onLog, onStage, signal });
+  let result = await runCodexClosePages({ urls: targetUrls, model, mcp, onLog, onStage, signal });
+  const needsFallback =
+    (result?.closed || []).length === 0 ||
+    (result?.errors || []).length > 0;
+  if (needsFallback) {
+    const direct = await closePagesDirect({
+      urls: targetUrls,
+      browserUrl: mcp?.browserUrl || '',
+      onLog
+    });
+    const closed = new Map();
+    for (const item of result.closed || []) {
+      if (item && item.url) closed.set(item.url, item);
+    }
+    for (const item of direct.closed || []) {
+      if (item && item.url) closed.set(item.url, item);
+    }
+    result = {
+      closed: Array.from(closed.values()),
+      skipped: [...(result.skipped || []), ...(direct.skipped || [])],
+      errors: [...(result.errors || []), ...(direct.errors || [])]
+    };
+  }
+  return result;
 }
