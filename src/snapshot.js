@@ -7,15 +7,25 @@ export function getSnapshotExpression() {
     const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_ITEMS || '');
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 500;
   })();
+  const maxText = (() => {
+    const raw = Number(process.env.AUDIT_SNAPSHOT_MAX_TEXT || '');
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 200;
+  })();
 
   return `(async () => {
     const doc = document;
     const html = doc.documentElement;
 
+    const clip = (value, max = ${maxText}) => {
+      const str = value == null ? '' : String(value);
+      if (!max || str.length <= max) return str;
+      return str.slice(0, max - 1) + '…';
+    };
+
     const doctype = doc.doctype ? doc.doctype.name : '';
-    const title = doc.title || '';
-    const lang = (html && html.getAttribute('lang')) || '';
-    const dir = (html && html.getAttribute('dir')) || '';
+    const title = clip(doc.title || '');
+    const lang = clip((html && html.getAttribute('lang')) || '');
+    const dir = clip((html && html.getAttribute('dir')) || '');
     const href = String(location && location.href ? location.href : '');
     const readyState = doc.readyState || '';
 
@@ -40,32 +50,32 @@ export function getSnapshotExpression() {
 
     const cap = (arr) => (Array.isArray(arr) ? arr.slice(0, ${maxItems}) : arr);
 
-    const getText = (node) => (node ? (node.textContent || '') : '');
+    const getText = (node) => clip(node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
       const ids = (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
-      return ids.map((id) => getText(doc.getElementById(id))).join(' ').trim();
+      return clip(ids.map((id) => getText(doc.getElementById(id))).join(' ').trim());
     };
 
     const getDescribedBy = (el) => {
       const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
-      return ids.map((id) => getText(doc.getElementById(id))).join(' ').trim();
+      return clip(ids.map((id) => getText(doc.getElementById(id))).join(' ').trim());
     };
 
     const getAccessibleName = (el) => {
-      const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+      const ariaLabel = clip((el.getAttribute('aria-label') || '').trim());
       if (ariaLabel) return ariaLabel;
       const labelledBy = getLabelledBy(el);
       if (labelledBy) return labelledBy;
 
       if (el.tagName === 'IMG') {
         const alt = el.getAttribute('alt');
-        if (alt !== null) return alt.trim();
+        if (alt !== null) return clip(alt.trim());
       }
 
-      const text = (el.textContent || '').trim();
+      const text = clip((el.textContent || '').trim());
       if (text) return text;
 
-      const titleAttr = (el.getAttribute('title') || '').trim();
+      const titleAttr = clip((el.getAttribute('title') || '').trim());
       if (titleAttr) return titleAttr;
 
       return '';
@@ -81,16 +91,16 @@ export function getSnapshotExpression() {
         tag,
         role,
         ariaHidden,
-        alt: alt === null ? null : String(alt),
-        name
+        alt: alt === null ? null : clip(alt),
+        name: clip(name)
       };
     });
 
     const frames = Array.from(doc.querySelectorAll('iframe, frame')).map((el) => {
       return {
-        title: (el.getAttribute('title') || '').trim(),
-        ariaLabel: (el.getAttribute('aria-label') || '').trim(),
-        ariaLabelledby: (el.getAttribute('aria-labelledby') || '').trim()
+        title: clip((el.getAttribute('title') || '').trim()),
+        ariaLabel: clip((el.getAttribute('aria-label') || '').trim()),
+        ariaLabelledby: clip((el.getAttribute('aria-labelledby') || '').trim())
       };
     });
 
@@ -98,13 +108,13 @@ export function getSnapshotExpression() {
       const name = getAccessibleName(el);
       return {
         href: el.getAttribute('href') || '',
-        name,
-        rawText: (el.textContent || '').trim(),
-        title: (el.getAttribute('title') || '').trim(),
-        ariaLabel: (el.getAttribute('aria-label') || '').trim(),
-        ariaLabelledby: (el.getAttribute('aria-labelledby') || '').trim(),
-        target: (el.getAttribute('target') || '').trim(),
-        rel: (el.getAttribute('rel') || '').trim()
+        name: clip(name),
+        rawText: clip((el.textContent || '').trim()),
+        title: clip((el.getAttribute('title') || '').trim()),
+        ariaLabel: clip((el.getAttribute('aria-label') || '').trim()),
+        ariaLabelledby: clip((el.getAttribute('aria-labelledby') || '').trim()),
+        target: clip((el.getAttribute('target') || '').trim()),
+        rel: clip((el.getAttribute('rel') || '').trim())
       };
     });
 
@@ -122,17 +132,17 @@ export function getSnapshotExpression() {
       if (id) {
         const selector = 'label[for=\"' + CSS.escape(id) + '\"]';
         const label = doc.querySelector(selector);
-        if (label) return (label.textContent || '').trim();
+        if (label) return clip((label.textContent || '').trim());
       }
       const parentLabel = el.closest('label');
-      if (parentLabel) return (parentLabel.textContent || '').trim();
+      if (parentLabel) return clip((parentLabel.textContent || '').trim());
       return '';
     };
 
     const getFieldsetLegend = (fieldset) => {
       if (!fieldset) return '';
       const legend = fieldset.querySelector('legend');
-      return legend ? (legend.textContent || '').trim() : '';
+      return legend ? clip((legend.textContent || '').trim()) : '';
     };
 
     const formControls = Array.from(doc.querySelectorAll('input, select, textarea, button'))
@@ -142,16 +152,16 @@ export function getSnapshotExpression() {
         const fieldsetLegend = getFieldsetLegend(fieldset);
         return {
           tag: el.tagName.toLowerCase(),
-          type: (el.getAttribute('type') || '').toLowerCase(),
-          id: el.getAttribute('id') || '',
-          name: el.getAttribute('name') || '',
-          label: getControlLabel(el),
+          type: clip((el.getAttribute('type') || '').toLowerCase()),
+          id: clip(el.getAttribute('id') || ''),
+          name: clip(el.getAttribute('name') || ''),
+          label: clip(getControlLabel(el)),
           required: el.hasAttribute('required'),
           ariaRequired: (el.getAttribute('aria-required') || '').toLowerCase() === 'true',
-          autocomplete: (el.getAttribute('autocomplete') || '').trim(),
-          describedBy: getDescribedBy(el),
+          autocomplete: clip((el.getAttribute('autocomplete') || '').trim()),
+          describedBy: clip(getDescribedBy(el)),
           inFieldset: Boolean(fieldset),
-          fieldsetLegend
+          fieldsetLegend: clip(fieldsetLegend)
         };
       });
 
@@ -169,13 +179,13 @@ export function getSnapshotExpression() {
           .filter(isFormControl)
           .map((el) => ({
             tag: el.tagName.toLowerCase(),
-            type: (el.getAttribute('type') || '').toLowerCase(),
-            id: el.getAttribute('id') || '',
-            name: el.getAttribute('name') || '',
-            label: getControlLabel(el),
+            type: clip((el.getAttribute('type') || '').toLowerCase()),
+            id: clip(el.getAttribute('id') || ''),
+            name: clip(el.getAttribute('name') || ''),
+            label: clip(getControlLabel(el)),
             required: el.hasAttribute('required'),
             ariaRequired: (el.getAttribute('aria-required') || '').toLowerCase() === 'true',
-            autocomplete: (el.getAttribute('autocomplete') || '').trim()
+            autocomplete: clip((el.getAttribute('autocomplete') || '').trim())
           }));
         out.push({
           legend,
@@ -189,7 +199,7 @@ export function getSnapshotExpression() {
 
     const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6')).map((el) => ({
       level: Number(el.tagName.replace('H', '')),
-      text: (el.textContent || '').trim()
+      text: clip((el.textContent || '').trim())
     }));
     const headingsSummary = (() => {
       const summary = { total: headings.length, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
@@ -202,15 +212,15 @@ export function getSnapshotExpression() {
 
     const listItems = Array.from(doc.querySelectorAll('li')).map((el) => {
       const parent = el.parentElement ? el.parentElement.tagName.toLowerCase() : '';
-      return { parent };
+      return { parent: clip(parent) };
     });
 
     const langChanges = Array.from(doc.querySelectorAll('[lang]'))
-      .map((el) => (el.getAttribute('lang') || '').trim())
+      .map((el) => clip((el.getAttribute('lang') || '').trim()))
       .filter((val) => val && val !== lang);
 
     const dirChanges = Array.from(doc.querySelectorAll('[dir]'))
-      .map((el) => (el.getAttribute('dir') || '').trim().toLowerCase())
+      .map((el) => clip((el.getAttribute('dir') || '').trim().toLowerCase()))
       .filter((val) => val && val !== dir);
 
     const tables = Array.from(doc.querySelectorAll('table')).map((table) => {
@@ -259,9 +269,9 @@ export function getSnapshotExpression() {
     const buttons = Array.from(doc.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'))
       .map((el) => ({
         tag: el.tagName.toLowerCase(),
-        type: (el.getAttribute('type') || '').toLowerCase(),
-        role: (el.getAttribute('role') || '').toLowerCase(),
-        name: getAccessibleName(el)
+        type: clip((el.getAttribute('type') || '').toLowerCase()),
+        role: clip((el.getAttribute('role') || '').toLowerCase()),
+        name: clip(getAccessibleName(el))
       }))
       .filter((btn) => btn.name || btn.tag || btn.role);
 
@@ -283,8 +293,8 @@ export function getSnapshotExpression() {
       const combined = Array.from(new Set([...nodes, ...roleNodes]));
       return combined.map((el) => ({
         tag: el.tagName.toLowerCase(),
-        role: (el.getAttribute('role') || '').toLowerCase(),
-        label: getAccessibleName(el)
+        role: clip((el.getAttribute('role') || '').toLowerCase()),
+        label: clip(getAccessibleName(el))
       }));
     })();
 
@@ -313,8 +323,8 @@ export function getSnapshotExpression() {
       const viewport = doc.querySelector('meta[name="viewport"]');
       const refresh = doc.querySelector('meta[http-equiv="refresh"]');
       return {
-        viewport: viewport ? (viewport.getAttribute('content') || '').trim() : '',
-        refresh: refresh ? (refresh.getAttribute('content') || '').trim() : ''
+        viewport: viewport ? clip((viewport.getAttribute('content') || '').trim()) : '',
+        refresh: refresh ? clip((refresh.getAttribute('content') || '').trim()) : ''
       };
     })();
 
@@ -407,9 +417,9 @@ export function getSnapshotExpression() {
         if (disabled) continue;
         out.push({
           tag: el.tagName.toLowerCase(),
-          role: (el.getAttribute('role') || '').toLowerCase(),
+          role: clip((el.getAttribute('role') || '').toLowerCase()),
           tabindex: tabIndex,
-          type: (el.getAttribute('type') || '').toLowerCase()
+          type: clip((el.getAttribute('type') || '').toLowerCase())
         });
       }
       return out;
