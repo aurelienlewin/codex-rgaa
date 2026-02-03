@@ -244,6 +244,7 @@ function buildEvidence(snapshot) {
       cssBackgroundImages: 0,
       bgExamples: []
     },
+    enrichment: snapshot.enrichment || null,
     counts,
     truncated
   };
@@ -270,6 +271,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
           'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; langChanges 40.',
           'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
           'Use only the provided evidence; no assumptions or external sources.',
+          'Extra evidence may be provided under enrichment (motion detection, contrast summary, HTML hints).',
           'Always include 1–4 short evidence items (even for Conform/Non applicable), each referencing a specific evidence path/value',
           '(e.g., images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
@@ -315,6 +317,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
           'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; langChanges 40.',
           'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
           'Utilise uniquement les preuves fournies; pas d’hypothèses ni de sources externes.',
+          'Des preuves supplémentaires peuvent être fournies dans enrichment (détection de mouvement, synthèse contraste, indices HTML).',
           'Fournis toujours 1–4 éléments de preuve courts (y compris Conforme/Non applicable), en citant un chemin/valeur précis',
           '(ex: images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
@@ -373,6 +376,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
           'Evidence is capped: headings/links/formControls/images/listItems up to 60; frames 20; tables 40; langChanges 40.',
           'If a list hits its cap or truncated.* is true, treat evidence as partial and avoid "Conform" unless the criterion can still be fully verified.',
           'Use only the provided evidence; no assumptions or external sources.',
+          'Extra evidence may be provided under enrichment (motion detection, contrast summary, HTML hints).',
           'For each item: always include 1–4 short evidence items, each referencing a specific evidence path/value',
           '(e.g., images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp
@@ -422,6 +426,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
           'Les preuves sont tronquées: headings/links/formControls/images/listItems jusqu’à 60; frames 20; tables 40; langChanges 40.',
           'Si une liste atteint son maximum ou si truncated.* est true, considère l’échantillon comme partiel et évite "Conform" sauf si le critère reste entièrement vérifiable.',
           'Utilise uniquement les preuves fournies; pas d’hypothèses ni de sources externes.',
+          'Des preuves supplémentaires peuvent être fournies dans enrichment (détection de mouvement, synthèse contraste, indices HTML).',
           'Pour chaque item: fournis toujours 1–4 éléments de preuve courts, en citant un chemin/valeur précis',
           '(ex: images[2].alt=null, links[5].name="", media.video=0, lang="fr").',
           ...(useMcp

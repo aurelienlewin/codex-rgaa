@@ -4,6 +4,8 @@ import chromeLauncher from 'chrome-launcher';
 import ExcelJS from 'exceljs';
 import { loadCriteria } from './criteria.js';
 import { collectSnapshotWithMcp } from './mcpSnapshot.js';
+import { collectEnrichedEvidenceWithMcp } from './mcpEnrich.js';
+import { buildEnrichment } from './enrichment.js';
 import { evaluateCriterion, STATUS } from './checks.js';
 import { aiReviewCriteriaBatch, aiReviewCriterion } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
@@ -176,6 +178,8 @@ export async function runAudit(options) {
   const mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr } : null;
   let pagesFailed = 0;
   let aiFailed = 0;
+  const wantsEnrichment =
+    String(process.env.AUDIT_ENRICH || '').trim().toLowerCase() !== '0';
   const wantsDebugSnapshots =
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim() === '1' ||
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim().toLowerCase() === 'true';
@@ -242,6 +246,26 @@ export async function runAudit(options) {
           onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
           signal
         });
+        let enrichment = null;
+        if (wantsEnrichment && options.ai?.useMcp) {
+          try {
+            const enriched = await collectEnrichedEvidenceWithMcp({
+              url,
+              model: options.ai?.model,
+              mcp: mcpConfig,
+              onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'enrich' }, message }),
+              onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
+              signal
+            });
+            enrichment = await buildEnrichment(enriched);
+            snapshot.enrichment = enrichment;
+          } catch (err) {
+            reporter?.onAILog?.({
+              criterion: { id: 'enrich', title: 'Enrichment', theme: 'Debug' },
+              message: `Enrichment failed: ${String(err?.message || err)}`
+            });
+          }
+        }
         reporter?.onSnapshotEnd?.({ url, durationMs: Date.now() - snapshotStart });
         reporter?.onPageNetworkIdle?.({
           url,

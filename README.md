@@ -147,6 +147,12 @@ You can also enable OCR (repo-level, no system install required) to extract text
 
 This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks use the built-in OCR tool to extract visible text and include it as evidence.
 
+Extra enrichment (enabled by default) uses MCP screenshots + DOM sampling to reduce NA:
+- Motion detection via screenshot diff
+- Contrast sampling from computed styles
+- HTML hints (marquee/blink/inline animation)
+Disable with `AUDIT_ENRICH=0`.
+
 The CLI shows a **live humanized Codex feed** during progress (table + colors + spinner) to explain what the audit is doing. Technical lines are rewritten into short status messages.
 
 Feed controls:
