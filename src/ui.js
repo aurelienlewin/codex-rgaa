@@ -516,7 +516,6 @@ function createFancyReporter(options = {}) {
     Number.isFinite(aiHeartbeatRaw) && aiHeartbeatRaw > 0 ? Math.floor(aiHeartbeatRaw) : 5000;
   let aiHeartbeatTimer = null;
   let aiHeartbeatActive = false;
-  let aiHeartbeatActive = false;
   let currentCriterion = null;
   let lastDecision = null;
   const decisions = [];
