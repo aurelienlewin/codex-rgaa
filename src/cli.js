@@ -244,11 +244,13 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
   const channelLabel = channel ? ` (${channel})` : '';
   console.log('\nMCP autoConnect setup (Chrome 144+):');
   console.log(`1) Launch Google Chrome${channelLabel} and keep it open.`);
-  console.log('2) Open chrome://inspect/#remote-debugging and enable remote debugging.');
-  console.log('3) In the dialog, click Allow for incoming debugging connections.');
-  console.log('4) Return here to continue.\n');
+  console.log('2) Open the pages you want to audit in separate tabs/windows.');
+  console.log('3) Open chrome://inspect/#remote-debugging and enable remote debugging.');
+  console.log('4) Return here to continue. The Chrome permission prompt will appear after you press Enter.\n');
 
-  await ask('Press Enter when Chrome is ready…');
+  await ask('Press Enter to start auto-connect…');
+  readline.clearLine(process.stdout, 0);
+  readline.cursorTo(process.stdout, 0);
   rl.close();
 }
 
@@ -393,10 +395,9 @@ async function main() {
       );
       process.exit(1);
     }
-    allowRemoteDebug = await promptYesNo(
-      'Allow Chrome remote debugging for this audit?',
-      guided ? true : false
-    );
+    allowRemoteDebug = guided
+      ? true
+      : await promptYesNo('Allow Chrome remote debugging for this audit?', false);
   }
   if (!allowRemoteDebug) {
     console.error('Remote debugging not allowed. Aborting.');
@@ -545,40 +546,32 @@ async function main() {
 
   let mcpTabs = [];
   if (interactive && guided && pages.length === 0) {
-    const shouldListTabs = await promptYesNo(
-      'Check existing Chrome tabs via MCP? (spawns chrome-devtools-mcp)',
-      false
-    );
-    if (!shouldListTabs) {
-      mcpTabs = [];
-    } else {
-      try {
-        console.log('\nChecking existing Chrome tabs (list_pages)…');
-        const list = await listMcpPages({
-          model: argv['codex-model'],
-          mcp: {
-            browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
-            autoConnect: mcpAutoConnect,
-            channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
-          }
-        });
-        const entries = Array.isArray(list?.pages) ? list.pages : [];
-        mcpTabs = entries;
-        if (entries.length) {
-          console.log('Open tabs:');
-          entries.slice(0, 8).forEach((page) => {
-            const title = page?.title ? ` — ${page.title}` : '';
-            console.log(`- [${page?.id}] ${page?.url || '(no url)'}${title}`);
-          });
-          if (entries.length > 8) {
-            console.log(`- (+${entries.length - 8} more)`);
-          }
+    try {
+      console.log('\nChecking existing Chrome tabs (list_pages)…');
+      const list = await listMcpPages({
+        model: argv['codex-model'],
+        mcp: {
+          browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
+          autoConnect: mcpAutoConnect,
+          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
         }
-      } catch (err) {
-        console.log(
-          `\nWarning: unable to list Chrome tabs via MCP (${err?.message || 'unknown error'}).`
-        );
+      });
+      const entries = Array.isArray(list?.pages) ? list.pages : [];
+      mcpTabs = entries;
+      if (entries.length) {
+        console.log('Open tabs:');
+        entries.slice(0, 8).forEach((page) => {
+          const title = page?.title ? ` — ${page.title}` : '';
+          console.log(`- [${page?.id}] ${page?.url || '(no url)'}${title}`);
+        });
+        if (entries.length > 8) {
+          console.log(`- (+${entries.length - 8} more)`);
+        }
       }
+    } catch (err) {
+      console.log(
+        `\nWarning: unable to list Chrome tabs via MCP (${err?.message || 'unknown error'}).`
+      );
     }
   }
 
@@ -607,16 +600,6 @@ async function main() {
   if (guided && !debugSnapshotsEnvExplicit) {
     const defaultEnabled = true;
     let enableDebugSnapshots = defaultEnabled;
-
-    if (interactive) {
-      const targetHint = outPath
-        ? `This writes per-page snapshot JSON under ${path.join(path.dirname(outPath), 'snapshots')}/`
-        : 'XLSX output is disabled, so snapshots will not be written.';
-      enableDebugSnapshots = await promptYesNo(
-        `Export debug snapshots for troubleshooting? (${targetHint})`,
-        defaultEnabled
-      );
-    }
 
     if (enableDebugSnapshots && outPath) {
       process.env.AUDIT_DEBUG_SNAPSHOTS = '1';

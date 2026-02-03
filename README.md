@@ -84,8 +84,9 @@ Note: MCP mode shells out to `chrome-devtools-mcp` (via `npx chrome-devtools-mcp
 #### Recommended (Chrome 144+): autoConnect to your running Chrome (no CLI flags)
 With Chrome 144+, `chrome-devtools-mcp` can auto-connect to your already-open Chrome instance. In guided mode, the auditor **auto-connects by default** and will prompt you to:
 - launch Chrome
+- open the pages you want to audit in separate tabs
 - enable remote debugging in `chrome://inspect/#remote-debugging`
-- click “Allow” for incoming connections
+- press Enter so Chrome can show the “Allow” prompt for incoming connections
 
 Then run:
 ```bash
