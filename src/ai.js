@@ -126,6 +126,40 @@ const BATCH_SCHEMA_PATH = fileURLToPath(
   new URL('../data/codex-review-batch-schema.json', import.meta.url)
 );
 
+function looksLikeNonVerifiable({ rationale, evidence } = {}) {
+  const text = `${rationale || ''} ${(Array.isArray(evidence) ? evidence.join(' ') : '')}`
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('insufficient evidence') ||
+    text.includes('insufficient') ||
+    text.includes('not enough evidence') ||
+    text.includes('missing evidence') ||
+    text.includes('cannot verify') ||
+    text.includes('cannot be verified') ||
+    text.includes('unable to verify') ||
+    text.includes('non-verifiable') ||
+    text.includes('non verifiable') ||
+    text.includes('preuves insuffisantes') ||
+    text.includes('preuve insuffisante') ||
+    text.includes('manque de preuves') ||
+    text.includes('preuve manquante') ||
+    text.includes('non vérifiable') ||
+    text.includes('impossible de vérifier') ||
+    text.includes('impossible a verifier')
+  );
+}
+
+function normalizeAiStatus(status, { rationale, evidence } = {}) {
+  const normalized = String(status || '').trim();
+  if (normalized === STATUS.NC && looksLikeNonVerifiable({ rationale, evidence })) {
+    return STATUS.NA;
+  }
+  return normalized || STATUS.NC;
+}
+
 function buildEvidence(snapshot) {
   const safeSlice = (arr, max) => (Array.isArray(arr) ? arr.slice(0, max) : []);
   return {
@@ -153,7 +187,8 @@ function buildPrompt({ criterion, url, snapshot, reportLang }) {
       ? [
           'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
           'Allowed statuses: "Conform", "Not conform", "Non applicable".',
-          'Use only the provided evidence. If evidence is insufficient, return "Not conform" and explain what is missing.',
+          'Use only the provided evidence. If evidence is insufficient or non-verifiable, return "Non applicable" and explain what is missing.',
+          'Always include 1–4 short evidence items for every result (including Conform and Non applicable).',
           '',
           'Data:',
           JSON.stringify({
@@ -166,7 +201,8 @@ function buildPrompt({ criterion, url, snapshot, reportLang }) {
       : [
           'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
           'Statuts autorisés: "Conform", "Not conform", "Non applicable".',
-          'Utilise uniquement les preuves fournies. Si les preuves sont insuffisantes, réponds "Not conform" en expliquant ce qui manque.',
+          'Utilise uniquement les preuves fournies. Si les preuves sont insuffisantes ou non vérifiables, réponds "Non applicable" en expliquant ce qui manque.',
+          'Fournis toujours 1–4 éléments de preuve courts pour chaque résultat (y compris Conforme et Non applicable).',
           '',
           'Données:',
           JSON.stringify({
@@ -188,8 +224,8 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang }) {
           'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
           'Allowed statuses: "Conform", "Not conform", "Non applicable".',
           'You MUST return a JSON object with a "results" property (array) containing EXACTLY one result per provided criterion.',
-          'Use only the provided evidence. If evidence is insufficient for a criterion, return "Not conform" and explain what is missing.',
-          'For each item: keep "evidence" short (1–4 items).',
+          'Use only the provided evidence. If evidence is insufficient or non-verifiable for a criterion, return "Non applicable" and explain what is missing.',
+          'For each item: always include 1–4 short evidence items (even for Conform and Non applicable).',
           '',
           'Data:',
           JSON.stringify({
@@ -206,8 +242,8 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang }) {
           'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
           'Statuts autorisés: "Conform", "Not conform", "Non applicable".',
           'Tu dois retourner un objet JSON contenant une propriété "results" (tableau) avec EXACTEMENT un résultat par critère fourni.',
-          'Utilise uniquement les preuves fournies. Si les preuves sont insuffisantes pour un critère, réponds "Not conform" en expliquant ce qui manque.',
-          'Pour chaque item: garde "evidence" court (1–4 éléments).',
+          'Utilise uniquement les preuves fournies. Si les preuves sont insuffisantes ou non vérifiables pour un critère, réponds "Non applicable" en expliquant ce qui manque.',
+          'Pour chaque item: fournis toujours 1–4 éléments de preuve courts (y compris Conforme et Non applicable).',
           '',
           'Données:',
           JSON.stringify({
@@ -410,7 +446,7 @@ export async function aiReviewCriterion({
     const evidence = Array.isArray(parsed.evidence) ? parsed.evidence : [];
 
     return {
-      status: parsed.status || STATUS.NC,
+      status: normalizeAiStatus(parsed.status, { rationale, evidence }),
       notes: `${i18n.notes.aiReviewLabel()} (${confidence.toFixed(2)}): ${rationale}`,
       ai: { confidence, rationale, evidence }
     };
@@ -463,7 +499,13 @@ export async function aiReviewCriteriaBatch({
     if (!Array.isArray(results)) {
       throw new Error('Invalid AI batch response (expected {results: [...]}).');
     }
-    return results;
+    return results.map((res) => ({
+      ...res,
+      status: normalizeAiStatus(res?.status, {
+        rationale: res?.rationale,
+        evidence: Array.isArray(res?.evidence) ? res.evidence : []
+      })
+    }));
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {
       throw createAbortError();
