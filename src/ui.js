@@ -913,7 +913,7 @@ function createFancyReporter(options = {}) {
     onAILog({ message }) {
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
-      const clipped = cleaned.slice(0, 64);
+      const clipped = clipInline(cleaned, 64);
       if (clipped) {
         const now = nowMs();
         const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
@@ -1290,7 +1290,7 @@ function createLegacyReporter(options = {}) {
       if (!pageBar) return;
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
-      const clipped = cleaned.slice(0, 64);
+      const clipped = clipInline(cleaned, 64);
       if (clipped) {
         const now = nowMs();
         const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
@@ -1518,7 +1518,7 @@ function createPlainReporter(options = {}) {
     onAILog({ message }) {
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
-      const clipped = sanitizeStatusLine(cleaned).slice(0, 120);
+      const clipped = clipInline(sanitizeStatusLine(cleaned), 120);
       const now = nowMs();
       const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
       if (clipped !== lastAILog || shouldRepeat) {
