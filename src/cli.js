@@ -81,6 +81,7 @@ async function promptPages({ tabs } = {}) {
 
   const urls = [];
   const tabPages = Array.isArray(tabs) ? tabs : [];
+  let selectedPageId;
   if (tabPages.length) {
     console.log('\nOpen tabs detected:');
     tabPages.slice(0, 12).forEach((page, index) => {
@@ -115,6 +116,12 @@ async function promptPages({ tabs } = {}) {
           console.log('Skipped (not http/https):', url);
         }
       }
+      if (picks.length === 1) {
+        const candidateId = tabPages[picks[0]]?.id;
+        if (Number.isFinite(candidateId)) {
+          selectedPageId = candidateId;
+        }
+      }
     }
   }
 
@@ -132,7 +139,7 @@ async function promptPages({ tabs } = {}) {
   }
 
   rl.close();
-  return urls;
+  return { urls, pageId: selectedPageId };
 }
 
 async function promptYesNo(question, defaultValue = false) {
@@ -572,7 +579,11 @@ async function main() {
       console.error('No pages provided. Use --pages or --pages-file in non-interactive mode.');
       process.exit(1);
     }
-    pages = await promptPages({ tabs: mcpTabs });
+    const promptResult = await promptPages({ tabs: mcpTabs });
+    pages = promptResult.urls;
+    if (snapshotMode === 'mcp' && !mcpPageIdArg && Number.isFinite(promptResult.pageId)) {
+      mcpPageIdArg = promptResult.pageId;
+    }
   }
 
   if (pages.length === 0) {
