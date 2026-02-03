@@ -215,12 +215,12 @@ function decorateCodexError(err) {
   if (looksLikeMcpConnectError(err.stderr) && err?.message) {
     err.message =
       `${err.message} ` +
-      `(Cannot connect to Chrome DevTools. If you used http://127.0.0.1:9222, start Chrome with --remote-debugging-port=9222 or switch to MCP auto-connect, or use --snapshot-mode cdp.)`;
+      `(Cannot connect to Chrome DevTools. If you used http://127.0.0.1:9222, start Chrome with --remote-debugging-port=9222 or switch to MCP auto-connect.)`;
   }
   if (looksLikeMcpInstallOrNetworkError(err.stderr) && err?.message) {
     err.message =
       `${err.message} ` +
-      `(MCP server unavailable: use --snapshot-mode cdp, or set AUDIT_MCP_COMMAND to a pre-installed chrome-devtools-mcp)`;
+      `(MCP server unavailable: set AUDIT_MCP_COMMAND to a pre-installed chrome-devtools-mcp)`;
   }
   return err;
 }
@@ -400,7 +400,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
   try {
     await runOnce(preferredEnv, buildArgs(mcp, SCHEMA_PATH));
   } catch (err) {
-    // Default behavior may point to an existing local CDP endpoint (127.0.0.1:9222).
+    // Default behavior may point to an existing local DevTools endpoint (127.0.0.1:9222).
     // If that endpoint isn't available, retry using autoConnect (when enabled).
     const providedBrowserUrl = normalizeBrowserUrl(mcp?.browserUrl);
     const canFallback = Boolean(providedBrowserUrl && mcp?.autoConnect);

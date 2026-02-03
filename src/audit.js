@@ -1,93 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import chromeLauncher from 'chrome-launcher';
-import CDP from 'chrome-remote-interface';
 import ExcelJS from 'exceljs';
 import { loadCriteria } from './criteria.js';
-import { collectSnapshot } from './snapshot.js';
 import { collectSnapshotWithMcp } from './mcpSnapshot.js';
 import { evaluateCriterion, STATUS } from './checks.js';
 import { aiReviewCriteriaBatch, aiReviewCriterion } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
-
-async function waitForIdle(client, timeoutMs, signal) {
-  const { Page, Network } = client;
-  await Promise.all([Page.enable(), Network.enable()]);
-
-  let inflight = 0;
-  let lastActivity = Date.now();
-  let loadFired = false;
-
-  Network.requestWillBeSent(() => {
-    inflight += 1;
-    lastActivity = Date.now();
-  });
-  Network.loadingFinished(() => {
-    inflight = Math.max(0, inflight - 1);
-    lastActivity = Date.now();
-  });
-  Network.loadingFailed(() => {
-    inflight = Math.max(0, inflight - 1);
-    lastActivity = Date.now();
-  });
-  Page.loadEventFired(() => {
-    loadFired = true;
-    lastActivity = Date.now();
-  });
-
-  const idleMs = 500;
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    if (signal?.aborted) {
-      throw createAbortError();
-    }
-    const now = Date.now();
-    if (loadFired && inflight === 0 && now - lastActivity > idleMs) {
-      return { durationMs: now - start, timedOut: false };
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return { durationMs: Date.now() - start, timedOut: true };
-}
-
-async function auditPage(chrome, url, options, signal, reporter) {
-  const target = await CDP.New({ port: chrome.port });
-  const client = await CDP({ port: chrome.port, target });
-  const { Page, Runtime } = client;
-
-  try {
-    if (signal?.aborted) {
-      throw createAbortError();
-    }
-    await Page.enable();
-    await Runtime.enable();
-
-    reporter?.onPageNavigateStart?.({ url });
-    await Page.navigate({ url });
-    const idleStats = await waitForIdle(client, options.timeoutMs, signal);
-    reporter?.onPageNetworkIdle?.({ url, ...idleStats });
-
-    reporter?.onSnapshotStart?.({ url });
-    const snapshotStart = Date.now();
-    const snapshot = await collectSnapshot(client);
-    reporter?.onSnapshotEnd?.({ url, durationMs: Date.now() - snapshotStart });
-    return { snapshot };
-  } catch (err) {
-    if (isAbortError(err)) {
-      throw err;
-    }
-    return { error: err };
-  } finally {
-    try {
-      await client.close();
-    } catch {}
-    try {
-      await CDP.Close({ id: target.id, port: chrome.port });
-    } catch {}
-  }
-}
 
 function sanitizeSheetName(name) {
   const cleaned = name
@@ -175,14 +95,20 @@ function isPortProbePermissionError(err) {
 }
 
 async function waitForCdpReady({ port, timeoutMs = 5000, signal } = {}) {
+  const baseUrl = `http://127.0.0.1:${port}`;
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (signal?.aborted) {
       throw createAbortError();
     }
     try {
-      await CDP.Version({ port });
-      return;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(`${baseUrl}/json/version`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res && res.ok) {
+        return;
+      }
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
@@ -243,7 +169,6 @@ export async function runAudit(options) {
   const signal = options.signal || null;
   let aborted = false;
   let chrome = null;
-  const useMcp = options.snapshotMode === 'mcp';
   let mcpConfig = options.mcp || {};
   let pagesFailed = 0;
   let aiFailed = 0;
@@ -272,25 +197,18 @@ export async function runAudit(options) {
     throw createAbortError();
   }
 
-  if (useMcp) {
-    const providedBrowserUrl = String(mcpConfig?.browserUrl || '').trim();
-    const wantsAutoConnect = Boolean(mcpConfig?.autoConnect);
-    if (!providedBrowserUrl && !wantsAutoConnect) {
-      chrome = await launchChrome({
-        chromePath: options.chromePath,
-        port: options.chromePort
-      });
-      mcpConfig = {
-        ...mcpConfig,
-        browserUrl: `http://127.0.0.1:${chrome.port}`,
-        autoConnect: false
-      };
-    }
-  } else {
+  const providedBrowserUrl = String(mcpConfig?.browserUrl || '').trim();
+  const wantsAutoConnect = Boolean(mcpConfig?.autoConnect);
+  if (!providedBrowserUrl && !wantsAutoConnect) {
     chrome = await launchChrome({
       chromePath: options.chromePath,
       port: options.chromePort
     });
+    mcpConfig = {
+      ...mcpConfig,
+      browserUrl: `http://127.0.0.1:${chrome.port}`,
+      autoConnect: false
+    };
   }
 
   const pageResults = [];
@@ -307,35 +225,31 @@ export async function runAudit(options) {
       const pageIndex = pageResults.length;
       if (reporter && reporter.onPageStart) reporter.onPageStart({ index: pageIndex, url });
       let page = null;
-      if (useMcp) {
-        reporter?.onPageNavigateStart?.({ url });
-        const navStart = Date.now();
-        try {
-          reporter?.onSnapshotStart?.({ url });
-          const snapshotStart = Date.now();
-          const snapshot = await collectSnapshotWithMcp({
-            url,
-            model: options.ai?.model,
-            mcp: mcpConfig,
-            onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
-            onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
-            signal
-          });
-          reporter?.onSnapshotEnd?.({ url, durationMs: Date.now() - snapshotStart });
-          reporter?.onPageNetworkIdle?.({
-            url,
-            durationMs: Date.now() - navStart,
-            timedOut: false
-          });
-          page = { snapshot };
-        } catch (err) {
-          if (isAbortError(err)) {
-            throw err;
-          }
-          page = { error: err };
+      reporter?.onPageNavigateStart?.({ url });
+      const navStart = Date.now();
+      try {
+        reporter?.onSnapshotStart?.({ url });
+        const snapshotStart = Date.now();
+        const snapshot = await collectSnapshotWithMcp({
+          url,
+          model: options.ai?.model,
+          mcp: mcpConfig,
+          onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
+          onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
+          signal
+        });
+        reporter?.onSnapshotEnd?.({ url, durationMs: Date.now() - snapshotStart });
+        reporter?.onPageNetworkIdle?.({
+          url,
+          durationMs: Date.now() - navStart,
+          timedOut: false
+        });
+        page = { snapshot };
+      } catch (err) {
+        if (isAbortError(err)) {
+          throw err;
         }
-      } else {
-        page = await auditPage(chrome, url, options, signal, reporter);
+        page = { error: err };
       }
 
       if (page?.error) {

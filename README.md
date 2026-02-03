@@ -1,12 +1,11 @@
-# RGAA Website Auditor (CDP + MCP)
+# RGAA Website Auditor (MCP)
 
 This project runs an RGAA 4.x audit on a list of pages and produces an Excel report with:
 - per-page results for all **106 criteria**
 - a global summary sheet (a criterion is conform only if it passes on **every** page)
 - a score computed as **C / (C + NC)**
 
-It collects evidence either via:
-- **CDP** (Chrome DevTools Protocol) using `chrome-remote-interface` + `chrome-launcher`
+It collects evidence via:
 - **MCP** (Chrome DevTools MCP) using `chrome-devtools-mcp` started by Codex (useful when you want to drive an existing Chrome session)
 
 ## Requirements
@@ -54,7 +53,7 @@ npm run audit -- --pages https://example.com https://example.com/contact --allow
 ### 4) Non-interactive
 In non-interactive runs (no TTY), the wizard can’t prompt. Provide all required flags:
 ```bash
-npm run audit -- --pages https://example.com --allow-remote-debug --snapshot-mode cdp --report-lang fr
+npm run audit -- --pages https://example.com --allow-remote-debug --report-lang fr
 ```
 
 ### MCP-first (interactive Chrome, recommended)
@@ -73,17 +72,14 @@ If the page is already open in Chrome and you want to target it by tab id (from 
 npm run audit:mcp -- --pages https://example.com --mcp-page-id 2
 ```
 
-### Snapshot mode (default: CDP)
-By default, the auditor collects DOM evidence via **CDP** (`chrome-remote-interface`).
-
-### MCP mode
-MCP snapshot mode collects DOM evidence via the `chrome-devtools-mcp` server (started by Codex).
+### Snapshot collection (MCP)
+The auditor collects DOM evidence via the `chrome-devtools-mcp` server (started by Codex).
 
 In interactive runs, the recommended flow is **autoConnect**: you launch Chrome yourself, enable remote debugging in `chrome://inspect/#remote-debugging`, and approve the incoming connection prompt in Chrome.
 
 If you explicitly disable autoConnect and don’t provide a `--mcp-browser-url`, the auditor will launch Chrome itself and point `chrome-devtools-mcp` at that DevTools endpoint.
 
-Note: MCP mode shells out to `chrome-devtools-mcp` (via `npx chrome-devtools-mcp@latest` unless you provide a local command). If your environment has no npm network access, use `--snapshot-mode cdp` or set `AUDIT_MCP_COMMAND` to a pre-installed `chrome-devtools-mcp` binary.
+Note: MCP mode shells out to `chrome-devtools-mcp` (via `npx chrome-devtools-mcp@latest` unless you provide a local command). If your environment has no npm network access, set `AUDIT_MCP_COMMAND` to a pre-installed `chrome-devtools-mcp` binary.
 
 #### Recommended (Chrome 144+): autoConnect to your running Chrome (no CLI flags)
 With Chrome 144+, `chrome-devtools-mcp` can auto-connect to your already-open Chrome instance. In guided mode, the auditor **auto-connects by default** and will prompt you to:
@@ -93,7 +89,7 @@ With Chrome 144+, `chrome-devtools-mcp` can auto-connect to your already-open Ch
 
 Then run:
 ```bash
-npm run audit -- --snapshot-mode mcp --allow-remote-debug
+npm run audit -- --allow-remote-debug
 ```
 
 Note: in non-interactive runs (no TTY), autoConnect can’t be guided by prompts—either pre-configure Chrome as above or use `--mcp-browser-url`.
@@ -101,17 +97,17 @@ Note: in non-interactive runs (no TTY), autoConnect can’t be guided by prompts
 #### Guided mode + existing tabs (MCP)
 If guided mode detects open Chrome tabs via MCP, it **audits all detected tabs by default** (no selection prompt). To audit specific URLs instead, provide `--pages` or `--pages-file`.
 
-#### Connect to an existing Chrome session (CDP port 9222)
+#### Connect to an existing Chrome session (port 9222)
 If you already have Chrome running with remote debugging (e.g. `--remote-debugging-port=9222`),
 you can tell the auditor to use that endpoint:
 ```bash
-npm run audit -- --snapshot-mode mcp --mcp-browser-url http://127.0.0.1:9222 --allow-remote-debug
+npm run audit -- --mcp-browser-url http://127.0.0.1:9222 --allow-remote-debug
 ```
 
 #### Use chrome-devtools-mcp autoConnect (Chrome 144+)
 If you are on a recent Chrome that supports it, you can let `chrome-devtools-mcp` auto-connect:
 ```bash
-npm run audit -- --snapshot-mode mcp --mcp-auto-connect --allow-remote-debug
+npm run audit -- --mcp-auto-connect --allow-remote-debug
 ```
 
 #### Restricted environments (no random port probing)

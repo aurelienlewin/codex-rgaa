@@ -159,7 +159,7 @@ function createFancyReporter(options = {}) {
   let stageStartAt = 0;
   let lastStageMs = null;
   let pageStartAt = 0;
-  let auditMode = 'cdp';
+  let auditMode = 'mcp';
   let lastAILog = '';
   let currentCriterion = null;
   let lastDecision = null;
@@ -337,19 +337,13 @@ function createFancyReporter(options = {}) {
     async onStart({ pages, criteriaCount, codexModel, mcpMode, auditMode: mode }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
-      auditMode = mode || 'cdp';
+      auditMode = mode || 'mcp';
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
-      const subtitle =
-        auditMode === 'mcp'
-          ? i18n.t(
-              `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
-              `MCP-driven audit • ${criteriaLabel} • French pages`
-            )
-          : i18n.t(
-              `Audit piloté par CDP • ${criteriaLabel} • Pages FR`,
-              `CDP-driven audit • ${criteriaLabel} • French pages`
-            );
+      const subtitle = i18n.t(
+        `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
+        `MCP-driven audit • ${criteriaLabel} • French pages`
+      );
       const credit = 'Aurélien Lewin <aurelien.lewin@osf.digital>';
 
       const animation = chalkAnimation.karaoke(headline, 1.2);
@@ -381,17 +375,14 @@ function createFancyReporter(options = {}) {
       );
       console.log(session);
       spinner.start();
-      spinner.text =
-        auditMode === 'mcp'
-          ? i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…')
-          : i18n.t('Lancement de Chrome…', 'Launching Chrome…');
+      spinner.text = i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…');
     },
 
     onChromeReady() {
-      spinner.text =
-        auditMode === 'mcp'
-          ? i18n.t('Chrome MCP prêt. Audit des pages…', 'MCP Chrome ready. Auditing pages…')
-          : i18n.t('Chrome prêt. Audit des pages…', 'Chrome ready. Auditing pages…');
+      spinner.text = i18n.t(
+        'Chrome MCP prêt. Audit des pages…',
+        'MCP Chrome ready. Auditing pages…'
+      );
       spinner.stop();
       startTicking();
       pushFeed('progress', i18n.t('Chrome ready. Starting pages…', 'Chrome ready. Starting pages…'));
@@ -573,7 +564,7 @@ function createLegacyReporter(options = {}) {
   let pulseDots = 0;
   let pageStartAt = 0;
   let stageStartAt = 0;
-  let auditMode = 'cdp';
+  let auditMode = 'mcp';
 
   const stopPulse = () => {
     if (pulseTimer) clearInterval(pulseTimer);
@@ -620,19 +611,13 @@ function createLegacyReporter(options = {}) {
     async onStart({ pages, criteriaCount, codexModel, mcpMode, auditMode: mode }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
-      auditMode = mode || 'cdp';
+      auditMode = mode || 'mcp';
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
-      const subtitle =
-        auditMode === 'mcp'
-          ? i18n.t(
-              `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
-              `MCP-driven audit • ${criteriaLabel} • French pages`
-            )
-          : i18n.t(
-              `Audit piloté par CDP • ${criteriaLabel} • Pages FR`,
-              `CDP-driven audit • ${criteriaLabel} • French pages`
-            );
+      const subtitle = i18n.t(
+        `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
+        `MCP-driven audit • ${criteriaLabel} • French pages`
+      );
       const credit = 'Aurélien Lewin <aurelien.lewin@osf.digital>';
 
       const animation = chalkAnimation.karaoke(headline, 1.2);
@@ -664,17 +649,14 @@ function createLegacyReporter(options = {}) {
       );
       console.log(session);
       spinner.start();
-      spinner.text =
-        auditMode === 'mcp'
-          ? i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…')
-          : i18n.t('Lancement de Chrome…', 'Launching Chrome…');
+      spinner.text = i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…');
     },
 
     onChromeReady() {
-      spinner.text =
-        auditMode === 'mcp'
-          ? i18n.t('Chrome MCP prêt. Audit des pages…', 'MCP Chrome ready. Auditing pages…')
-          : i18n.t('Chrome prêt. Audit des pages…', 'Chrome ready. Auditing pages…');
+      spinner.text = i18n.t(
+        'Chrome MCP prêt. Audit des pages…',
+        'MCP Chrome ready. Auditing pages…'
+      );
       spinner.stop();
       overallBar = bars.create(totalPages * totalCriteria, 0, {
         label: palette.primary(i18n.t('Global', 'Overall')),
@@ -876,7 +858,7 @@ function createPlainReporter(options = {}) {
   let totalPages = 0;
   let lastAILog = '';
   let pageStartAt = 0;
-  let auditMode = 'cdp';
+  let auditMode = 'mcp';
 
   const line = (label, value = '') =>
     console.log(`${palette.muted(label)}${value ? ` ${value}` : ''}`);
@@ -885,7 +867,7 @@ function createPlainReporter(options = {}) {
     async onStart({ pages, criteriaCount, codexModel, mcpMode, auditMode: mode }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
-      auditMode = mode || 'cdp';
+      auditMode = mode || 'mcp';
       line('RGAA Website Auditor');
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));

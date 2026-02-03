@@ -323,12 +323,6 @@ async function main() {
       default: 45000,
       describe: 'Page load timeout (ms).'
     })
-    .option('snapshot-mode', {
-      type: 'string',
-      default: 'cdp',
-      choices: ['mcp', 'cdp'],
-      describe: 'Snapshot collection mode.'
-    })
     .option('report-lang', {
       alias: 'lang',
       type: 'string',
@@ -339,17 +333,17 @@ async function main() {
     .option('guided', {
       type: 'boolean',
       describe:
-        'Interactive wizard for non-technical users (prompts for common options like snapshot mode, MCP settings, and report language). In TTY, it is enabled by default; pass --no-guided to disable.'
+        'Interactive wizard for non-technical users (prompts for common options like MCP settings and report language). In TTY, it is enabled by default; pass --no-guided to disable.'
     })
     .option('mcp-browser-url', {
       type: 'string',
       describe:
-        'When snapshot-mode=mcp, connect the Chrome DevTools MCP server to an existing Chrome CDP endpoint (e.g. http://127.0.0.1:9222).'
+        'Connect the Chrome DevTools MCP server to an existing Chrome DevTools endpoint (e.g. http://127.0.0.1:9222).'
     })
     .option('mcp-auto-connect', {
       type: 'boolean',
       describe:
-        'When snapshot-mode=mcp and no --mcp-browser-url is provided, let chrome-devtools-mcp use --autoConnect (requires Chrome 144+). If omitted, defaults to true (interactive Chrome).'
+        'When no --mcp-browser-url is provided, let chrome-devtools-mcp use --autoConnect (requires Chrome 144+). If omitted, defaults to true (interactive Chrome).'
     })
     .option('mcp-channel', {
       type: 'string',
@@ -359,7 +353,7 @@ async function main() {
     .option('mcp-page-id', {
       type: 'number',
       describe:
-        'When snapshot-mode=mcp, target an existing Chrome page by id (as shown by chrome-devtools-mcp list_pages). If set, the snapshot is collected from that page (no navigation).'
+        'Target an existing Chrome page by id (as shown by chrome-devtools-mcp list_pages). If set, the snapshot is collected from that page (no navigation).'
     })
     .option('allow-partial', {
       type: 'boolean',
@@ -420,10 +414,6 @@ async function main() {
       arg.startsWith('--lang=')
   );
 
-  const snapshotModeExplicit = rawArgs.some(
-    (arg) => arg === '--snapshot-mode' || arg.startsWith('--snapshot-mode=')
-  );
-
   const mcpBrowserUrlExplicit = rawArgs.some(
     (arg) => arg === '--mcp-browser-url' || arg.startsWith('--mcp-browser-url=')
   );
@@ -440,7 +430,7 @@ async function main() {
     (arg) => arg === '--mcp-page-id' || arg.startsWith('--mcp-page-id=')
   );
 
-  let snapshotMode = argv['snapshot-mode'];
+  const snapshotMode = 'mcp';
   let mcpBrowserUrlArg = argv['mcp-browser-url'];
   let mcpAutoConnectArg = argv['mcp-auto-connect'];
   let mcpChannelArg = argv['mcp-channel'];
@@ -456,117 +446,105 @@ async function main() {
       reportLang = langIndex === 1 ? 'en' : 'fr';
     }
 
-    if (!snapshotModeExplicit) {
-      const modeIndex = await promptChoice(
-        'How should the auditor open/capture pages?',
-        [
-          'Automatic (recommended) — the auditor opens its own Chrome and navigates to each URL.',
-          'Use my existing Chrome window (MCP) — connect to a Chrome session you already have open.'
-        ],
-        { defaultIndex: 1 }
-      );
-      snapshotMode = modeIndex === 1 ? 'mcp' : 'cdp';
-    }
+    const hasBrowserUrl = Boolean(String(mcpBrowserUrlArg || '').trim());
+    const hasAutoConnect = Boolean(mcpAutoConnectArg);
 
-    if (snapshotMode === 'mcp') {
-      const hasBrowserUrl = Boolean(String(mcpBrowserUrlArg || '').trim());
-      const hasAutoConnect = Boolean(mcpAutoConnectArg);
+    if (!mcpBrowserUrlExplicit && !mcpAutoConnectExplicit && !hasBrowserUrl && !hasAutoConnect) {
+      if (guided) {
+        mcpAutoConnectArg = true;
+        mcpBrowserUrlArg = '';
+      } else {
+        const connectIndex = await promptChoice(
+          'How should we connect to Chrome?',
+          [
+            'Auto-connect (recommended) — Chrome 144+ will prompt you to allow debugging connections.',
+            'Use an existing debugging URL (advanced) — e.g. http://127.0.0.1:9222'
+          ],
+          { defaultIndex: 1 }
+        );
 
-      if (!mcpBrowserUrlExplicit && !mcpAutoConnectExplicit && !hasBrowserUrl && !hasAutoConnect) {
-        if (guided) {
+        if (connectIndex === 0) {
           mcpAutoConnectArg = true;
           mcpBrowserUrlArg = '';
         } else {
-          const connectIndex = await promptChoice(
-            'How should we connect to Chrome?',
-            [
-              'Auto-connect (recommended) — Chrome 144+ will prompt you to allow debugging connections.',
-              'Use an existing debugging URL (advanced) — e.g. http://127.0.0.1:9222'
-            ],
-            { defaultIndex: 1 }
-          );
-
-          if (connectIndex === 0) {
-            mcpAutoConnectArg = true;
-            mcpBrowserUrlArg = '';
-          } else {
-            const defaultBrowserUrl = 'http://127.0.0.1:9222';
-            mcpAutoConnectArg = false;
-            mcpBrowserUrlArg =
-              (await (async () => {
-                const rl = readline.createInterface({
-                  input: process.stdin,
-                  output: process.stdout
-                });
-                const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
-                const answer = String(
-                  await ask(`Chrome debugging URL (default: ${defaultBrowserUrl}): `)
-                ).trim();
-                rl.close();
-                return answer || defaultBrowserUrl;
-              })()) || mcpBrowserUrlArg;
-          }
+          const defaultBrowserUrl = 'http://127.0.0.1:9222';
+          mcpAutoConnectArg = false;
+          mcpBrowserUrlArg =
+            (await (async () => {
+              const rl = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout
+              });
+              const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
+              const answer = String(
+                await ask(`Chrome debugging URL (default: ${defaultBrowserUrl}): `)
+              ).trim();
+              rl.close();
+              return answer || defaultBrowserUrl;
+            })()) || mcpBrowserUrlArg;
         }
       }
+    }
 
-      if (!mcpChannelExplicit && (mcpAutoConnectArg || String(mcpBrowserUrlArg || '').trim() === '')) {
-        mcpChannelArg =
-          (await (async () => {
-            const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-            const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
-            const answer = String(
-              await ask('Optional Chrome channel (leave empty for stable; e.g. "beta"): ')
-            ).trim();
-            rl.close();
-            return answer;
-          })()) || mcpChannelArg;
-      }
+    if (
+      !mcpChannelExplicit &&
+      (mcpAutoConnectArg || String(mcpBrowserUrlArg || '').trim() === '')
+    ) {
+      mcpChannelArg =
+        (await (async () => {
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
+          const answer = String(
+            await ask('Optional Chrome channel (leave empty for stable; e.g. "beta"): ')
+          ).trim();
+          rl.close();
+          return answer;
+        })()) || mcpChannelArg;
+    }
 
-      if (!mcpPageIdExplicit) {
-        const wantsPageId = await promptYesNo(
-          'Do you want to target a specific existing tab id (optional)?',
-          false
+    if (!mcpPageIdExplicit) {
+      const wantsPageId = await promptYesNo(
+        'Do you want to target a specific existing tab id (optional)?',
+        false
+      );
+      if (wantsPageId) {
+        const pageId = await promptOptionalNumber(
+          'Tab id (from chrome-devtools list_pages). Leave empty to skip: '
         );
-        if (wantsPageId) {
-          const pageId = await promptOptionalNumber(
-            'Tab id (from chrome-devtools list_pages). Leave empty to skip: '
-          );
-          if (typeof pageId === 'number' && Number.isFinite(pageId)) {
-            mcpPageIdArg = pageId;
-          }
+        if (typeof pageId === 'number' && Number.isFinite(pageId)) {
+          mcpPageIdArg = pageId;
         }
       }
     }
   }
 
-  const mcpBrowserUrl =
-    snapshotMode === 'mcp' ? String(mcpBrowserUrlArg || '').trim() : '';
+  const mcpBrowserUrl = String(mcpBrowserUrlArg || '').trim();
   const mcpAutoConnect =
-    snapshotMode === 'mcp' && !mcpBrowserUrl
+    !mcpBrowserUrl
       ? mcpAutoConnectArg === undefined
         ? true
         : Boolean(mcpAutoConnectArg)
       : Boolean(mcpAutoConnectArg);
 
-  if (interactive && guided && snapshotMode === 'mcp' && mcpBrowserUrl) {
+  if (interactive && guided && mcpBrowserUrl) {
     await promptMcpBrowserUrlSetup({ browserUrl: mcpBrowserUrl });
     const ok = await canReachChromeDebugEndpoint(mcpBrowserUrl);
     if (!ok) {
       console.log(
         `\nWarning: cannot reach Chrome DevTools at ${normalizeHttpBaseUrl(mcpBrowserUrl)}.\n` +
-          `If MCP fails, either start Chrome with --remote-debugging-port=9222, or use auto-connect, or switch to --snapshot-mode cdp.\n`
+          `If MCP fails, either start Chrome with --remote-debugging-port=9222, or use auto-connect.\n`
       );
     }
   }
 
-  if (snapshotMode === 'mcp' && mcpAutoConnect && !mcpBrowserUrl && interactive) {
+  if (mcpAutoConnect && !mcpBrowserUrl && interactive) {
     await promptMcpAutoConnectSetup({
       channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
     });
   }
 
   let mcpTabs = [];
-  if (interactive && guided && snapshotMode === 'mcp' && pages.length === 0) {
+  if (interactive && guided && pages.length === 0) {
     try {
       console.log('\nChecking existing Chrome tabs (list_pages)…');
       const list = await listMcpPages({
@@ -603,7 +581,7 @@ async function main() {
     }
     const promptResult = await promptPages({ tabs: mcpTabs, guided });
     pages = promptResult.urls;
-    if (snapshotMode === 'mcp' && !mcpPageIdArg && Number.isFinite(promptResult.pageId)) {
+    if (!mcpPageIdArg && Number.isFinite(promptResult.pageId)) {
       mcpPageIdArg = promptResult.pageId;
     }
   }
@@ -649,7 +627,7 @@ async function main() {
     process.env.AUDIT_CODEX_MODEL ||
     'gpt-5.2-codex';
   if (!process.env.CODEX_MCP_MODE) {
-    process.env.CODEX_MCP_MODE = snapshotMode === 'mcp' ? 'chrome' : 'none';
+    process.env.CODEX_MCP_MODE = 'chrome';
   }
   const reporter = createReporter({ lang: reportLang });
   const criteriaCount = loadCriteria({ lang: reportLang }).length;
@@ -707,10 +685,10 @@ async function main() {
       signal: abortController.signal,
       snapshotMode,
       mcp: {
-        browserUrl: snapshotMode === 'mcp' ? mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '' : '',
+        browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
         autoConnect: mcpAutoConnect,
         channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || '',
-        pageId: snapshotMode === 'mcp' ? mcpPageIdArg : undefined
+        pageId: mcpPageIdArg
       },
       ai: {
         model: codexModel

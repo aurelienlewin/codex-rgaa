@@ -188,15 +188,3 @@ export function getSnapshotExpression() {
     };
   })();`;
 }
-
-export async function collectSnapshot(client) {
-  const { Runtime } = client;
-  const expression = getSnapshotExpression();
-
-  const { result } = await Runtime.evaluate({
-    expression,
-    returnByValue: true
-  });
-
-  return result.value;
-}
