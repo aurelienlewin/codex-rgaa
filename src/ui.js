@@ -176,6 +176,7 @@ function fallbackHumanizeStatus(text, i18n) {
   const lower = raw.toLowerCase();
   const t = (en) => i18n?.t(en, en) || en;
 
+  if (raw.length <= 2) return t('Processing update');
   if (lower.includes('schema')) return t('Validating schemas');
   if (lower.includes('list_pages') || lower.includes('list pages')) return t('Reading Chrome tabs');
   if (lower.includes('snapshot')) return t('Capturing the page');
@@ -189,6 +190,8 @@ function fallbackHumanizeStatus(text, i18n) {
   if (lower.includes('spawn') || lower.includes('starting')) return t('Starting the audit');
   if (lower.includes('parse') || lower.includes('parsing')) return t('Reading results');
   if (lower.includes('command') || lower.includes('exec')) return t('Running a check');
+  if (lower.includes('evaluate') || lower.includes('script')) return t('Running page checks');
+  if (lower.includes('response') || lower.includes('result')) return t('Processing results');
 
   return raw;
 }
@@ -516,9 +519,10 @@ function createFancyReporter(options = {}) {
         onResult: (rewritten) => {
           const idx = feed.findIndex((r) => r.id === id);
           if (idx < 0) return;
+          const safe = fallbackHumanizeStatus(rewritten, i18n) || fallbackHumanizeStatus(normalized, i18n) || placeholderLine;
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(rewritten, 320)
+            message: clipInline(safe, 320)
           };
           render();
         }
@@ -533,9 +537,10 @@ function createFancyReporter(options = {}) {
         onResult: (rewritten) => {
           const idx = feed.findIndex((r) => r.id === id);
           if (idx < 0) return;
+          const safe = fallbackHumanizeStatus(rewritten, i18n) || fallbackHumanizeStatus(normalized, i18n) || placeholderLine;
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(rewritten, 320)
+            message: clipInline(safe, 320)
           };
           render();
         }
