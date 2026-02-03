@@ -115,13 +115,200 @@ export function analyzeHtmlHints(htmlSnippet = '') {
   };
 }
 
+function getText($el) {
+  return ($el.text() || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeLinkText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\u2019'".,:;!?()\[\]{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const GENERIC_LINK_TEXTS = new Set([
+  'cliquez ici',
+  'ici',
+  'lire la suite',
+  'lire plus',
+  'en savoir plus',
+  'plus',
+  'voir plus',
+  'voir',
+  'découvrir',
+  'decouvrir',
+  'suite',
+  'details',
+  'détails',
+  'accéder',
+  'acceder'
+]);
+
+function getAccessibleName($, $el) {
+    const ariaLabel = ($el.attr('aria-label') || '').trim();
+    if (ariaLabel) return ariaLabel;
+    const labelledBy = ($el.attr('aria-labelledby') || '').trim();
+    if (labelledBy) {
+      const ids = labelledBy.split(/\s+/).filter(Boolean);
+      const text = ids
+        .map((id) => getText($(`[id="${id}"]`)))
+        .join(' ')
+        .trim();
+      if (text) return text;
+    }
+  const text = getText($el);
+  if (text) return text;
+  const title = ($el.attr('title') || '').trim();
+  if (title) return title;
+  return '';
+}
+
+export function analyzeDomHints(htmlSnippet = '') {
+  if (!htmlSnippet) return null;
+  const $ = loadCheerio(htmlSnippet);
+  const html = $('html').first();
+  const title = getText($('title').first());
+  const lang = (html.attr('lang') || '').trim();
+  const dir = (html.attr('dir') || '').trim();
+
+  const imageNodes = $('img, [role="img"]');
+  let missingAltCount = 0;
+  let roleImgMissingNameCount = 0;
+  imageNodes.each((_, el) => {
+    const $el = $(el);
+    const tag = ($el.prop('tagName') || '').toLowerCase();
+    const role = ($el.attr('role') || '').toLowerCase();
+    const ariaHidden = ($el.attr('aria-hidden') || '').toLowerCase() === 'true';
+    const alt = $el.attr('alt');
+    if (tag === 'img' && alt == null && !ariaHidden) missingAltCount += 1;
+    if (tag !== 'img' && role === 'img' && !getAccessibleName($, $el)) {
+      roleImgMissingNameCount += 1;
+    }
+  });
+
+  const frameNodes = $('iframe, frame');
+  let missingTitleCount = 0;
+  frameNodes.each((_, el) => {
+    const $el = $(el);
+    const title = ($el.attr('title') || '').trim();
+    const ariaLabel = ($el.attr('aria-label') || '').trim();
+    const ariaLabelledby = ($el.attr('aria-labelledby') || '').trim();
+    if (!title && !ariaLabel && !ariaLabelledby) missingTitleCount += 1;
+  });
+
+  const linkNodes = $('a[href]');
+  let missingNameCount = 0;
+  let genericCount = 0;
+  let skipLinkFound = false;
+  linkNodes.each((_, el) => {
+    const $el = $(el);
+    const href = ($el.attr('href') || '').trim();
+    const name = getAccessibleName($, $el);
+    if (!name) {
+      missingNameCount += 1;
+      return;
+    }
+    const normalized = normalizeLinkText(name);
+    if (
+      GENERIC_LINK_TEXTS.has(normalized) ||
+      (normalized.length <= 3 && ['+','→','>>','>'].includes(normalized))
+    ) {
+      genericCount += 1;
+    }
+    if (href.startsWith('#')) {
+      if (normalized.includes('contenu') || normalized.includes('skip') || normalized.includes('principal')) {
+        skipLinkFound = true;
+      }
+    }
+  });
+
+  const headingNodes = $('h1, h2, h3, h4, h5, h6');
+  let h1Count = 0;
+  let hasLevelJumps = false;
+  let prevLevel = null;
+  headingNodes.each((_, el) => {
+    const level = Number(String($(el).prop('tagName') || '').replace('H', ''));
+    if (level === 1) h1Count += 1;
+    if (prevLevel !== null && level - prevLevel > 1) hasLevelJumps = true;
+    prevLevel = level;
+  });
+
+  const listNodes = $('li');
+  let invalidListCount = 0;
+  listNodes.each((_, el) => {
+    const parent = (el.parentNode && el.parentNode.tagName) ? el.parentNode.tagName.toLowerCase() : '';
+    if (!['ul', 'ol', 'menu'].includes(parent)) invalidListCount += 1;
+  });
+
+  const controlNodes = $('input, select, textarea').filter((_, el) => {
+    const type = (($(el).attr('type') || '')).toLowerCase();
+    return !['hidden', 'submit', 'reset', 'button'].includes(type);
+  });
+  let missingLabelCount = 0;
+  controlNodes.each((_, el) => {
+    const $el = $(el);
+    const aria = ($el.attr('aria-label') || '').trim();
+    const labelledby = ($el.attr('aria-labelledby') || '').trim();
+    let labelText = '';
+      if (labelledby) {
+        const ids = labelledby.split(/\s+/).filter(Boolean);
+        labelText = ids.map((id) => getText($(`[id="${id}"]`))).join(' ').trim();
+      }
+    if (!labelText) {
+      const id = ($el.attr('id') || '').trim();
+      if (id) labelText = getText($(`label[for="${id}"]`).first());
+    }
+    if (!labelText) {
+      const parentLabel = $el.closest('label');
+      if (parentLabel.length) labelText = getText(parentLabel);
+    }
+    if (!aria && !labelText) missingLabelCount += 1;
+  });
+
+  return {
+    title,
+    lang,
+    dir,
+    imageSummary: {
+      total: imageNodes.length,
+      missingAltCount,
+      roleImgMissingNameCount
+    },
+    frameSummary: {
+      total: frameNodes.length,
+      missingTitleCount
+    },
+    linkSummary: {
+      total: linkNodes.length,
+      missingNameCount,
+      genericCount,
+      skipLinkFound
+    },
+    headingAnalysis: {
+      h1Count,
+      hasLevelJumps
+    },
+    listSummary: {
+      total: listNodes.length,
+      invalidCount: invalidListCount
+    },
+    formSummary: {
+      controlsTotal: controlNodes.length,
+      missingLabel: missingLabelCount
+    }
+  };
+}
+
 export async function buildEnrichment({ screenshot1, screenshot2, styleSamples, htmlSnippet }) {
   const motion = await analyzeMotion({ screenshot1, screenshot2 });
   const contrastSummary = analyzeContrast(styleSamples);
   const htmlHints = analyzeHtmlHints(htmlSnippet);
+  const domHints = analyzeDomHints(htmlSnippet);
   return {
     motion,
     contrast: contrastSummary,
-    htmlHints
+    htmlHints,
+    domHints
   };
 }

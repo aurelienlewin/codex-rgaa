@@ -93,6 +93,7 @@ function isValidLangCode(lang) {
 function evaluateImagesAlt(snapshot, i18n) {
   const images = snapshot.images || [];
   const summary = snapshot.imageSummary || null;
+  const dom = snapshot.enrichment?.domHints?.imageSummary || null;
   if (images.length === 0 && summary && summary.total > 0) {
     if (summary.missingAltCount > 0) {
       return {
@@ -109,6 +110,27 @@ function evaluateImagesAlt(snapshot, i18n) {
         notes: i18n.t(
           `${summary.roleImgMissingNameCount} role="img" sans nom accessible.`,
           `${summary.roleImgMissingNameCount} role="img" without accessible name.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (images.length === 0 && dom && dom.total > 0) {
+    if (dom.missingAltCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.missingAltCount} image(s) sans alt.`,
+          `${dom.missingAltCount} image(s) missing alt.`
+        )
+      };
+    }
+    if (dom.roleImgMissingNameCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.roleImgMissingNameCount} role="img" sans nom accessible.`,
+          `${dom.roleImgMissingNameCount} role="img" without accessible name.`
         )
       };
     }
@@ -229,6 +251,7 @@ function evaluateImagesAlt(snapshot, i18n) {
 function evaluateFramesTitle(snapshot, i18n) {
   const frames = snapshot.frames || [];
   const summary = snapshot.frameSummary || null;
+  const dom = snapshot.enrichment?.domHints?.frameSummary || null;
   if (frames.length === 0 && summary && summary.total > 0) {
     if (summary.missingTitleCount > 0) {
       return {
@@ -236,6 +259,18 @@ function evaluateFramesTitle(snapshot, i18n) {
         notes: i18n.t(
           `${summary.missingTitleCount} frame(s) sans title (ou nom ARIA).`,
           `${summary.missingTitleCount} frame(s) missing title.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (frames.length === 0 && dom && dom.total > 0) {
+    if (dom.missingTitleCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.missingTitleCount} frame(s) sans title (ou nom ARIA).`,
+          `${dom.missingTitleCount} frame(s) missing title.`
         )
       };
     }
@@ -277,6 +312,7 @@ function evaluateFramesTitle(snapshot, i18n) {
 function evaluateLinksHaveName(snapshot, i18n) {
   const links = snapshot.links || [];
   const summary = snapshot.linkSummary || null;
+  const dom = snapshot.enrichment?.domHints?.linkSummary || null;
   if (links.length === 0 && summary && summary.total > 0) {
     if (summary.missingNameCount > 0) {
       return {
@@ -284,6 +320,18 @@ function evaluateLinksHaveName(snapshot, i18n) {
         notes: i18n.t(
           `${summary.missingNameCount} lien(s) sans nom accessible.`,
           `${summary.missingNameCount} link(s) without accessible name.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (links.length === 0 && dom && dom.total > 0) {
+    if (dom.missingNameCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.missingNameCount} lien(s) sans nom accessible.`,
+          `${dom.missingNameCount} link(s) without accessible name.`
         )
       };
     }
@@ -322,6 +370,7 @@ function evaluateLinksHaveName(snapshot, i18n) {
 function evaluateLinksExplicit(snapshot, i18n) {
   const links = snapshot.links || [];
   const summary = snapshot.linkSummary || null;
+  const dom = snapshot.enrichment?.domHints?.linkSummary || null;
   if (links.length === 0 && summary && summary.total > 0) {
     if (summary.genericCount > 0) {
       return {
@@ -329,6 +378,18 @@ function evaluateLinksExplicit(snapshot, i18n) {
         notes: i18n.t(
           `${summary.genericCount} lien(s) avec libellé générique (vérifier explicitation).`,
           `${summary.genericCount} link(s) with generic label (review explicitness).`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (links.length === 0 && dom && dom.total > 0) {
+    if (dom.genericCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.genericCount} lien(s) avec libellé générique (vérifier explicitation).`,
+          `${dom.genericCount} link(s) with generic label (review explicitness).`
         )
       };
     }
@@ -461,6 +522,7 @@ function evaluateHeadingStructure(snapshot, i18n) {
   const headings = snapshot.headings || [];
   const headingSummary = snapshot.headingsSummary || null;
   const headingAnalysis = snapshot.headingAnalysis || null;
+  const dom = snapshot.enrichment?.domHints?.headingAnalysis || null;
   if (headings.length === 0 && headingSummary && headingSummary.total > 0) {
     const h1Count = headingAnalysis?.h1Count ?? headingSummary.h1 ?? 0;
     if (h1Count === 0) {
@@ -476,6 +538,28 @@ function evaluateHeadingStructure(snapshot, i18n) {
       };
     }
     if (headingAnalysis?.hasLevelJumps) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t('Sauts de niveaux de titres détectés.', 'Heading level jumps detected.')
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (headings.length === 0 && dom && (dom.h1Count >= 0)) {
+    const h1Count = dom.h1Count || 0;
+    if (h1Count === 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t('H1 manquant.', 'Missing H1.')
+      };
+    }
+    if (h1Count > 1) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(`Plusieurs H1 (${h1Count}).`, `Multiple H1 (${h1Count}).`)
+      };
+    }
+    if (dom.hasLevelJumps) {
       return {
         status: STATUS.NC,
         notes: i18n.t('Sauts de niveaux de titres détectés.', 'Heading level jumps detected.')
@@ -540,6 +624,7 @@ function evaluateHeadingStructure(snapshot, i18n) {
 function evaluateListStructure(snapshot, i18n) {
   const items = snapshot.listItems || [];
   const listSummary = snapshot.listSummary || null;
+  const dom = snapshot.enrichment?.domHints?.listSummary || null;
   if (items.length === 0 && listSummary && listSummary.total > 0) {
     if (listSummary.invalidCount > 0) {
       return {
@@ -547,6 +632,18 @@ function evaluateListStructure(snapshot, i18n) {
         notes: i18n.t(
           `${listSummary.invalidCount} élément(s) <li> hors liste.`,
           `${listSummary.invalidCount} list item(s) not in a list.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (items.length === 0 && dom && dom.total > 0) {
+    if (dom.invalidCount > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.invalidCount} élément(s) <li> hors liste.`,
+          `${dom.invalidCount} list item(s) not in a list.`
         )
       };
     }
@@ -580,6 +677,7 @@ function evaluateListStructure(snapshot, i18n) {
 function evaluateFormLabels(snapshot, i18n) {
   const controls = snapshot.formControls || [];
   const summary = snapshot.formSummary || null;
+  const dom = snapshot.enrichment?.domHints?.formSummary || null;
   if (controls.length === 0 && summary && summary.controlsTotal > 0) {
     if (summary.missingLabel > 0) {
       return {
@@ -587,6 +685,18 @@ function evaluateFormLabels(snapshot, i18n) {
         notes: i18n.t(
           `${summary.missingLabel} champ(s) sans libellé.`,
           `${summary.missingLabel} form control(s) without label.`
+        )
+      };
+    }
+    return { status: STATUS.C };
+  }
+  if (controls.length === 0 && dom && dom.controlsTotal > 0) {
+    if (dom.missingLabel > 0) {
+      return {
+        status: STATUS.NC,
+        notes: i18n.t(
+          `${dom.missingLabel} champ(s) sans libellé.`,
+          `${dom.missingLabel} form control(s) without label.`
         )
       };
     }
@@ -629,8 +739,16 @@ function evaluateFormLabels(snapshot, i18n) {
 function evaluateSkipLink(snapshot, i18n) {
   const links = snapshot.links || [];
   const summary = snapshot.linkSummary || null;
+  const dom = snapshot.enrichment?.domHints?.linkSummary || null;
   if (links.length === 0 && summary && summary.total > 0) {
     if (summary.skipLinkFound) return { status: STATUS.C };
+    return {
+      status: STATUS.NC,
+      notes: i18n.t('Aucun lien d’évitement vers le contenu principal détecté.', 'No skip link to main content detected.')
+    };
+  }
+  if (links.length === 0 && dom && dom.total > 0) {
+    if (dom.skipLinkFound) return { status: STATUS.C };
     return {
       status: STATUS.NC,
       notes: i18n.t('Aucun lien d’évitement vers le contenu principal détecté.', 'No skip link to main content detected.')
