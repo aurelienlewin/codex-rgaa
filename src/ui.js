@@ -511,11 +511,6 @@ function createFancyReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
-  const aiHeartbeatRaw = Number(process.env.AUDIT_AI_UI_HEARTBEAT_MS || '');
-  const aiHeartbeatMs =
-    Number.isFinite(aiHeartbeatRaw) && aiHeartbeatRaw > 0 ? Math.floor(aiHeartbeatRaw) : 5000;
-  let aiHeartbeatTimer = null;
-  let aiHeartbeatActive = false;
   let currentCriterion = null;
   let lastDecision = null;
   const decisions = [];
@@ -628,21 +623,6 @@ function createFancyReporter(options = {}) {
     });
     render();
   };
-  const stopAiHeartbeat = () => {
-    if (aiHeartbeatTimer) clearInterval(aiHeartbeatTimer);
-    aiHeartbeatTimer = null;
-    aiHeartbeatActive = false;
-  };
-  const startAiHeartbeat = () => {
-    if (!aiHeartbeatMs) return;
-    if (aiHeartbeatTimer) return;
-    aiHeartbeatActive = true;
-    aiHeartbeatTimer = setInterval(() => {
-      const message = lastAILog || placeholderLine;
-      pushFeed('progress', message, { replaceLastIfSameKind: true });
-    }, aiHeartbeatMs);
-    if (typeof aiHeartbeatTimer.unref === 'function') aiHeartbeatTimer.unref();
-  };
 
   const endStage = (label) => {
     const endAt = nowMs();
@@ -679,12 +659,6 @@ function createFancyReporter(options = {}) {
     const stageSpinner = stageStartAt ? spinnerFrames[frame] : ' ';
     const stageAge = stageStartAt ? `${nowMs() - stageStartAt}ms` : lastStageMs ? `${lastStageMs}ms` : '';
     const stageText = stageLabel || (currentUrl ? i18n.t('Audit en cours', 'Audit running') : '');
-    const aiBadge = aiHeartbeatActive
-      ? `${frame % 2 === 0 ? palette.accent('◆ AI') : palette.primary('◇ AI')}`
-      : '';
-    const stageTextWithAi = aiBadge
-      ? `${aiBadge} ${stageText}`.trim()
-      : stageText;
     const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
 
     const urlLine = currentUrl ? clipInline(currentUrl, width - 18) : '';
@@ -702,7 +676,7 @@ function createFancyReporter(options = {}) {
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
       `${padVisibleRight(palette.muted('Stage'), 8)} ${palette.primary(stageSpinner)} ${palette.muted(
-        clipInline(stageTextWithAi, width - 22)
+        clipInline(stageText, width - 22)
       )}${stageAge ? ` ${palette.muted('•')} ${palette.accent(stageAge)}` : ''}`,
       elapsed
         ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)}`
@@ -928,14 +902,12 @@ function createFancyReporter(options = {}) {
       currentCriterion = { id: criterion.id, title: criterion.title };
       startStage(`AI thinking ${critText}`);
       pushFeed('thinking', `${criterion.id} ${criterion.title}`.slice(0, 140));
-      startAiHeartbeat();
     },
 
     onAIStage({ label }) {
       if (!label || isNoiseAiMessage(label)) return;
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
-      startAiHeartbeat();
     },
 
     onAILog({ message }) {
@@ -956,7 +928,6 @@ function createFancyReporter(options = {}) {
     },
 
     onCriterion({ criterion, evaluation }) {
-      stopAiHeartbeat();
       const statusLabel = evaluation.status || '';
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 120);
       const rationale = evaluation.ai?.rationale || '';
@@ -974,7 +945,6 @@ function createFancyReporter(options = {}) {
     },
 
     onPageEnd({ index, url, counts }) {
-      stopAiHeartbeat();
       const totalElapsed = pageStartAt ? nowMs() - pageStartAt : 0;
       const score = counts.C + counts.NC === 0 ? 0 : counts.C / (counts.C + counts.NC);
       pushFeed(
@@ -1083,7 +1053,6 @@ function createFancyReporter(options = {}) {
 
     onShutdown() {
       stopTicking();
-      stopAiHeartbeat();
       if (spinner.isSpinning) spinner.stop();
       renderer.stop({ keepBlock: false });
       if (process.stdout.isTTY) {
@@ -1101,7 +1070,6 @@ function createFancyReporter(options = {}) {
     },
 
     onError(message) {
-      stopAiHeartbeat();
       if (spinner.isSpinning) spinner.fail(message);
       else {
         stopTicking();
@@ -1137,10 +1105,6 @@ function createLegacyReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
-  const aiHeartbeatRaw = Number(process.env.AUDIT_AI_UI_HEARTBEAT_MS || '');
-  const aiHeartbeatMs =
-    Number.isFinite(aiHeartbeatRaw) && aiHeartbeatRaw > 0 ? Math.floor(aiHeartbeatRaw) : 5000;
-  let aiHeartbeatTimer = null;
   let pulseTimer = null;
   let pulseLabel = '';
   let pulseDots = 0;
@@ -1166,22 +1130,6 @@ function createLegacyReporter(options = {}) {
       pageBar.update(null, { crit: `${palette.muted(pulseLabel + dots)}` });
     }, 400);
     if (typeof pulseTimer.unref === 'function') pulseTimer.unref();
-  };
-  const stopAiHeartbeat = () => {
-    if (aiHeartbeatTimer) clearInterval(aiHeartbeatTimer);
-    aiHeartbeatTimer = null;
-  };
-  const startAiHeartbeat = () => {
-    if (!aiHeartbeatMs) return;
-    if (aiHeartbeatTimer) return;
-    const heartbeatLabel = i18n.t('Working…', 'Working…');
-    aiHeartbeatTimer = setInterval(() => {
-      if (!pageBar) return;
-      const message = lastAILog || heartbeatLabel;
-      pageBar.update(null, { crit: `${palette.accent('AI')} ${message}` });
-      logAILine('progress', message);
-    }, aiHeartbeatMs);
-    if (typeof aiHeartbeatTimer.unref === 'function') aiHeartbeatTimer.unref();
   };
 
   const startStage = (label) => {
@@ -1331,7 +1279,6 @@ function createLegacyReporter(options = {}) {
       startStage(`AI thinking ${critText}`);
       pageBar.update(null, { crit: `${palette.accent('AI thinking')} ${critText}` });
       logAILine('thinking', `${criterion.id} ${criterion.title}`.slice(0, 80));
-      startAiHeartbeat();
     },
 
     onAIStage({ label }) {
@@ -1341,7 +1288,6 @@ function createLegacyReporter(options = {}) {
       const line = `${palette.muted('•')} ${palette.muted(label)}`;
       if (typeof bars.log === 'function') bars.log(line);
       else console.log(line);
-      startAiHeartbeat();
     },
 
     onAILog({ message }) {
@@ -1363,7 +1309,6 @@ function createLegacyReporter(options = {}) {
     },
 
     onCriterion({ criterion, evaluation }) {
-      stopAiHeartbeat();
       const statusLabel = evaluation.status || '';
       let statusColor = palette.muted;
       if (statusLabel === 'Conform') statusColor = palette.ok;
@@ -1455,7 +1400,6 @@ function createLegacyReporter(options = {}) {
 
     onShutdown() {
       stopPulse();
-      stopAiHeartbeat();
       if (spinner.isSpinning) spinner.stop();
       if (overallBar) overallBar.update(totalPages * totalCriteria);
       if (pageBar) pageBar.update(totalCriteria);
@@ -1476,7 +1420,6 @@ function createLegacyReporter(options = {}) {
 
     onError(message) {
       stopPulse();
-      stopAiHeartbeat();
       if (spinner.isSpinning) spinner.fail(message);
       else console.error(palette.error(message));
     }
@@ -1500,10 +1443,6 @@ function createPlainReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
-  const aiHeartbeatRaw = Number(process.env.AUDIT_AI_UI_HEARTBEAT_MS || '');
-  const aiHeartbeatMs =
-    Number.isFinite(aiHeartbeatRaw) && aiHeartbeatRaw > 0 ? Math.floor(aiHeartbeatRaw) : 5000;
-  let aiHeartbeatTimer = null;
   let pageStartAt = 0;
   let auditStartAt = 0;
   let auditMode = 'mcp';
@@ -1511,22 +1450,6 @@ function createPlainReporter(options = {}) {
 
   const line = (label, value = '') =>
     console.log(`${palette.muted(label)}${value ? ` ${value}` : ''}`);
-  const stopAiHeartbeat = () => {
-    if (aiHeartbeatTimer) clearInterval(aiHeartbeatTimer);
-    aiHeartbeatTimer = null;
-    aiHeartbeatActive = false;
-  };
-  const startAiHeartbeat = () => {
-    if (!aiHeartbeatMs) return;
-    if (aiHeartbeatTimer) return;
-    aiHeartbeatActive = true;
-    const heartbeatLabel = i18n.t('Working…', 'Working…');
-    aiHeartbeatTimer = setInterval(() => {
-      const message = lastAILog || heartbeatLabel;
-      line('Codex', message);
-    }, aiHeartbeatMs);
-    if (typeof aiHeartbeatTimer.unref === 'function') aiHeartbeatTimer.unref();
-  };
 
   return {
     async onStart({ pages, criteriaCount, codexModel, mcpMode: mcpModeFromCli, auditMode: mode }) {
@@ -1586,7 +1509,6 @@ function createPlainReporter(options = {}) {
 
     onAIStart({ criterion }) {
       line('Codex', `thinking ${criterion.id} ${criterion.title}`);
-      startAiHeartbeat();
     },
 
     onAIStage({ label }) {
@@ -1598,7 +1520,6 @@ function createPlainReporter(options = {}) {
           text: normalized,
           onResult: (rewritten) => line('Codex', rewritten)
         });
-        startAiHeartbeat();
       }
     },
 
@@ -1621,7 +1542,6 @@ function createPlainReporter(options = {}) {
     },
 
     onCriterion({ criterion, evaluation }) {
-      stopAiHeartbeat();
       const status = evaluation.status || '';
       const rationale = evaluation.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
       overallDone += 1;
@@ -1630,7 +1550,6 @@ function createPlainReporter(options = {}) {
     },
 
     onPageEnd({ index, url, counts }) {
-      stopAiHeartbeat();
       const totalElapsed = pageStartAt ? nowMs() - pageStartAt : 0;
       const score = counts.C + counts.NC === 0 ? 0 : counts.C / (counts.C + counts.NC);
       line(
@@ -1665,7 +1584,6 @@ function createPlainReporter(options = {}) {
     },
 
     onShutdown() {
-      stopAiHeartbeat();
       if (process.stdout.isTTY) {
         process.stdout.write('\x1b[2J\x1b[0;0H');
       }
@@ -1681,7 +1599,6 @@ function createPlainReporter(options = {}) {
     },
 
     onError(message) {
-      stopAiHeartbeat();
       console.error(palette.error(String(message || 'Unknown error')));
     }
   };
