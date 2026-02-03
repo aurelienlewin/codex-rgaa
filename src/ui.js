@@ -254,10 +254,10 @@ function createCodexFeedHumanizer({
     if (!payload) return '';
 
     const prompt =
-      `You rewrite internal audit logs into a single human-friendly status line.\n` +
+      `You rewrite internal audit logs into a short, human-friendly status update.\n` +
       `Language: ${lang === 'fr' ? 'French' : 'English'}.\n` +
       `Rules:\n` +
-      `- Output ONE short line (max 70 characters).\n` +
+      `- Output 1–2 short sentences (max 120 characters total).\n` +
       `- No bullets, no box-drawing characters, no emojis.\n` +
       `- No acronyms or technical jargon (no MCP/CDP/JSON/schema/stderr/spawn/command lines).\n` +
       `- Focus on what the audit is doing right now.\n` +
@@ -505,7 +505,7 @@ function createFancyReporter(options = {}) {
     const base = humanizeKinds.has(kind)
       ? fallbackHumanizeStatus(normalized, i18n) || placeholderLine
       : normalized;
-    const cleaned = clipInline(base, 240);
+    const cleaned = clipInline(base, 320);
     if (!cleaned) return;
     if (replaceLastIfSameKind && feed.length && feed[feed.length - 1].kind === kind) {
       const id = feed[feed.length - 1].id || ++feedSeq;
@@ -518,7 +518,7 @@ function createFancyReporter(options = {}) {
           if (idx < 0) return;
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(rewritten, 240)
+            message: clipInline(rewritten, 320)
           };
           render();
         }
@@ -535,7 +535,7 @@ function createFancyReporter(options = {}) {
           if (idx < 0) return;
           feed[idx] = {
             ...feed[idx],
-            message: clipInline(rewritten, 240)
+            message: clipInline(rewritten, 320)
           };
           render();
         }
