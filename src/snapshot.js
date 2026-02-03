@@ -185,6 +185,14 @@ export function getSnapshotExpression() {
       level: Number(el.tagName.replace('H', '')),
       text: (el.textContent || '').trim()
     }));
+    const headingsSummary = (() => {
+      const summary = { total: headings.length, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
+      for (const h of headings) {
+        const key = `h${h.level}`;
+        if (key in summary) summary[key] += 1;
+      }
+      return summary;
+    })();
 
     const listItems = Array.from(doc.querySelectorAll('li')).map((el) => {
       const parent = el.parentElement ? el.parentElement.tagName.toLowerCase() : '';
@@ -221,6 +229,26 @@ export function getSnapshotExpression() {
         hasTfoot
       };
     });
+    const tableSummary = (() => {
+      const summary = {
+        total: tables.length,
+        withCaption: 0,
+        withTh: 0,
+        withScope: 0,
+        withId: 0,
+        withHeadersAttr: 0,
+        withThead: 0
+      };
+      for (const t of tables) {
+        if (t.hasCaption) summary.withCaption += 1;
+        if (t.hasTh) summary.withTh += 1;
+        if (t.thWithScope > 0) summary.withScope += 1;
+        if (t.thWithId > 0) summary.withId += 1;
+        if (t.cellsWithHeaders > 0) summary.withHeadersAttr += 1;
+        if (t.hasThead) summary.withThead += 1;
+      }
+      return summary;
+    })();
 
     const buttons = Array.from(doc.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'))
       .map((el) => ({
@@ -252,6 +280,27 @@ export function getSnapshotExpression() {
         role: (el.getAttribute('role') || '').toLowerCase(),
         label: getAccessibleName(el)
       }));
+    })();
+
+    const linkSummary = (() => {
+      const summary = {
+        total: links.length,
+        targetBlank: 0,
+        targetBlankNoRel: 0,
+        fragmentLinks: 0
+      };
+      for (const link of links) {
+        const target = (link.target || '').toLowerCase();
+        if (target === '_blank') {
+          summary.targetBlank += 1;
+          const rel = (link.rel || '').toLowerCase();
+          if (!rel.includes('noopener') && !rel.includes('noreferrer')) {
+            summary.targetBlankNoRel += 1;
+          }
+        }
+        if ((link.href || '').trim().startsWith('#')) summary.fragmentLinks += 1;
+      }
+      return summary;
     })();
 
     const meta = (() => {
@@ -359,6 +408,20 @@ export function getSnapshotExpression() {
       }
       return out;
     })();
+    const focusableSummary = (() => {
+      const summary = {
+        total: focusables.length,
+        tabindexPositive: 0,
+        tabindexZero: 0,
+        maxTabindex: 0
+      };
+      for (const el of focusables) {
+        if (el.tabindex > 0) summary.tabindexPositive += 1;
+        if (el.tabindex === 0) summary.tabindexZero += 1;
+        if (el.tabindex > summary.maxTabindex) summary.maxTabindex = el.tabindex;
+      }
+      return summary;
+    })();
 
     const ariaLive = (() => {
       const liveNodes = Array.from(doc.querySelectorAll('[aria-live]'));
@@ -385,6 +448,14 @@ export function getSnapshotExpression() {
       };
     })();
 
+    const ariaSummary = (() => {
+      const label = doc.querySelectorAll('[aria-label]').length;
+      const labelledby = doc.querySelectorAll('[aria-labelledby]').length;
+      const describedby = doc.querySelectorAll('[aria-describedby]').length;
+      const hidden = doc.querySelectorAll('[aria-hidden="true"]').length;
+      return { label, labelledby, describedby, hidden };
+    })();
+
     const rolesSummary = (() => {
       const nodes = Array.from(doc.querySelectorAll('[role]'));
       const counts = new Map();
@@ -398,6 +469,27 @@ export function getSnapshotExpression() {
       return entries.slice(0, 30);
     })();
 
+    const formSummary = (() => {
+      const summary = {
+        controlsTotal: formControls.length,
+        missingLabel: 0,
+        requiredCount: 0,
+        autocompleteCount: 0,
+        describedByCount: 0,
+        inFieldsetCount: 0,
+        fieldsetCount: fieldsets.length,
+        fieldsetWithLegendCount: fieldsets.filter((f) => f.hasLegend).length
+      };
+      for (const control of formControls) {
+        if (!control.label) summary.missingLabel += 1;
+        if (control.required || control.ariaRequired) summary.requiredCount += 1;
+        if (control.autocomplete && control.autocomplete !== 'off') summary.autocompleteCount += 1;
+        if (control.describedBy) summary.describedByCount += 1;
+        if (control.inFieldset) summary.inFieldsetCount += 1;
+      }
+      return summary;
+    })();
+
     return {
       doctype,
       title,
@@ -409,18 +501,24 @@ export function getSnapshotExpression() {
       links,
       formControls,
       headings,
+      headingsSummary,
       listItems,
       langChanges,
       dir,
       dirChanges,
       tables,
+      tableSummary,
       fieldsets,
+      formSummary,
       buttons,
       landmarks,
       focusables,
+      focusableSummary,
       ariaLive,
+      ariaSummary,
       rolesSummary,
       meta,
+      linkSummary,
       media,
       mediaDetails,
       visual,

@@ -14,17 +14,23 @@
     "links",
     "formControls",
     "headings",
+    "headingsSummary",
     "listItems",
     "langChanges",
     "dirChanges",
     "tables",
+    "tableSummary",
     "fieldsets",
+    "formSummary",
     "buttons",
     "landmarks",
     "focusables",
+    "focusableSummary",
     "ariaLive",
+    "ariaSummary",
     "rolesSummary",
     "meta",
+    "linkSummary",
     "media",
     "mediaDetails",
     "visual",
@@ -137,6 +143,20 @@
         }
       }
     },
+    "headingsSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "h1", "h2", "h3", "h4", "h5", "h6"],
+      "properties": {
+        "total": { "type": "number" },
+        "h1": { "type": "number" },
+        "h2": { "type": "number" },
+        "h3": { "type": "number" },
+        "h4": { "type": "number" },
+        "h5": { "type": "number" },
+        "h6": { "type": "number" }
+      }
+    },
     "listItems": {
       "type": "array",
       "items": {
@@ -185,6 +205,28 @@
         }
       }
     },
+    "tableSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "withCaption",
+        "withTh",
+        "withScope",
+        "withId",
+        "withHeadersAttr",
+        "withThead"
+      ],
+      "properties": {
+        "total": { "type": "number" },
+        "withCaption": { "type": "number" },
+        "withTh": { "type": "number" },
+        "withScope": { "type": "number" },
+        "withId": { "type": "number" },
+        "withHeadersAttr": { "type": "number" },
+        "withThead": { "type": "number" }
+      }
+    },
     "fieldsets": {
       "type": "array",
       "items": {
@@ -223,6 +265,30 @@
             }
           }
         }
+      }
+    },
+    "formSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controlsTotal",
+        "missingLabel",
+        "requiredCount",
+        "autocompleteCount",
+        "describedByCount",
+        "inFieldsetCount",
+        "fieldsetCount",
+        "fieldsetWithLegendCount"
+      ],
+      "properties": {
+        "controlsTotal": { "type": "number" },
+        "missingLabel": { "type": "number" },
+        "requiredCount": { "type": "number" },
+        "autocompleteCount": { "type": "number" },
+        "describedByCount": { "type": "number" },
+        "inFieldsetCount": { "type": "number" },
+        "fieldsetCount": { "type": "number" },
+        "fieldsetWithLegendCount": { "type": "number" }
       }
     },
     "buttons": {
@@ -266,6 +332,17 @@
         }
       }
     },
+    "focusableSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "tabindexPositive", "tabindexZero", "maxTabindex"],
+      "properties": {
+        "total": { "type": "number" },
+        "tabindexPositive": { "type": "number" },
+        "tabindexZero": { "type": "number" },
+        "maxTabindex": { "type": "number" }
+      }
+    },
     "ariaLive": {
       "type": "object",
       "additionalProperties": false,
@@ -297,6 +374,17 @@
         }
       }
     },
+    "ariaSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "labelledby", "describedby", "hidden"],
+      "properties": {
+        "label": { "type": "number" },
+        "labelledby": { "type": "number" },
+        "describedby": { "type": "number" },
+        "hidden": { "type": "number" }
+      }
+    },
     "rolesSummary": {
       "type": "array",
       "items": {
@@ -316,6 +404,17 @@
       "properties": {
         "viewport": { "type": "string" },
         "refresh": { "type": "string" }
+      }
+    },
+    "linkSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "targetBlank", "targetBlankNoRel", "fragmentLinks"],
+      "properties": {
+        "total": { "type": "number" },
+        "targetBlank": { "type": "number" },
+        "targetBlankNoRel": { "type": "number" },
+        "fragmentLinks": { "type": "number" }
       }
     },
     "media": {

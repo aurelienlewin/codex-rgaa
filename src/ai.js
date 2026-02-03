@@ -253,6 +253,46 @@ function buildEvidence(snapshot) {
     listItems: safeSlice(snapshot.listItems, 60),
     langChanges: safeSlice(snapshot.langChanges, 40),
     dirChanges: safeSlice(snapshot.dirChanges, 40),
+    headingsSummary: snapshot.headingsSummary || {
+      total: 0,
+      h1: 0,
+      h2: 0,
+      h3: 0,
+      h4: 0,
+      h5: 0,
+      h6: 0
+    },
+    tableSummary: snapshot.tableSummary || {
+      total: 0,
+      withCaption: 0,
+      withTh: 0,
+      withScope: 0,
+      withId: 0,
+      withHeadersAttr: 0,
+      withThead: 0
+    },
+    linkSummary: snapshot.linkSummary || {
+      total: 0,
+      targetBlank: 0,
+      targetBlankNoRel: 0,
+      fragmentLinks: 0
+    },
+    formSummary: snapshot.formSummary || {
+      controlsTotal: 0,
+      missingLabel: 0,
+      requiredCount: 0,
+      autocompleteCount: 0,
+      describedByCount: 0,
+      inFieldsetCount: 0,
+      fieldsetCount: 0,
+      fieldsetWithLegendCount: 0
+    },
+    focusableSummary: snapshot.focusableSummary || {
+      total: 0,
+      tabindexPositive: 0,
+      tabindexZero: 0,
+      maxTabindex: 0
+    },
     media: snapshot.media || { video: 0, audio: 0, object: 0 },
     mediaDetails: snapshot.mediaDetails || { videos: [], audios: [] },
     scripts: snapshot.scripts || { scriptTags: 0, hasInlineHandlers: false },
@@ -262,6 +302,12 @@ function buildEvidence(snapshot) {
       rolesCount: 0,
       politeness: { polite: 0, assertive: 0, off: 0 },
       roles: { alert: 0, status: 0, log: 0, marquee: 0, timer: 0 }
+    },
+    ariaSummary: snapshot.ariaSummary || {
+      label: 0,
+      labelledby: 0,
+      describedby: 0,
+      hidden: 0
     },
     rolesSummary: safeSlice(snapshot.rolesSummary, 30),
     visual: snapshot.visual || {
