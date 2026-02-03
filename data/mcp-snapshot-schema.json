@@ -6,6 +6,7 @@
     "doctype",
     "title",
     "lang",
+    "dir",
     "href",
     "readyState",
     "images",
@@ -15,9 +16,17 @@
     "headings",
     "listItems",
     "langChanges",
+    "dirChanges",
     "tables",
     "fieldsets",
+    "buttons",
+    "landmarks",
+    "focusables",
+    "ariaLive",
+    "rolesSummary",
+    "meta",
     "media",
+    "mediaDetails",
     "visual",
     "scripts"
   ],
@@ -25,6 +34,7 @@
     "doctype": { "type": "string" },
     "title": { "type": "string" },
     "lang": { "type": "string" },
+    "dir": { "type": "string" },
     "href": { "type": "string" },
     "readyState": { "type": "string" },
     "images": {
@@ -60,14 +70,25 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["href", "name", "rawText", "title", "ariaLabel", "ariaLabelledby"],
+        "required": [
+          "href",
+          "name",
+          "rawText",
+          "title",
+          "ariaLabel",
+          "ariaLabelledby",
+          "target",
+          "rel"
+        ],
         "properties": {
           "href": { "type": "string" },
           "name": { "type": "string" },
           "rawText": { "type": "string" },
           "title": { "type": "string" },
           "ariaLabel": { "type": "string" },
-          "ariaLabelledby": { "type": "string" }
+          "ariaLabelledby": { "type": "string" },
+          "target": { "type": "string" },
+          "rel": { "type": "string" }
         }
       }
     },
@@ -76,13 +97,29 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["tag", "type", "id", "name", "label", "inFieldset", "fieldsetLegend"],
+        "required": [
+          "tag",
+          "type",
+          "id",
+          "name",
+          "label",
+          "required",
+          "ariaRequired",
+          "autocomplete",
+          "describedBy",
+          "inFieldset",
+          "fieldsetLegend"
+        ],
         "properties": {
           "tag": { "type": "string" },
           "type": { "type": "string" },
           "id": { "type": "string" },
           "name": { "type": "string" },
           "label": { "type": "string" },
+          "required": { "type": "boolean" },
+          "ariaRequired": { "type": "boolean" },
+          "autocomplete": { "type": "string" },
+          "describedBy": { "type": "string" },
           "inFieldset": { "type": "boolean" },
           "fieldsetLegend": { "type": "string" }
         }
@@ -115,15 +152,36 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "dirChanges": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "tables": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["hasTh", "hasCaption"],
+        "required": [
+          "hasTh",
+          "hasCaption",
+          "thCount",
+          "thWithScope",
+          "thWithId",
+          "cellsWithHeaders",
+          "hasThead",
+          "hasTbody",
+          "hasTfoot"
+        ],
         "properties": {
           "hasTh": { "type": "boolean" },
-          "hasCaption": { "type": "boolean" }
+          "hasCaption": { "type": "boolean" },
+          "thCount": { "type": "number" },
+          "thWithScope": { "type": "number" },
+          "thWithId": { "type": "number" },
+          "cellsWithHeaders": { "type": "number" },
+          "hasThead": { "type": "boolean" },
+          "hasTbody": { "type": "boolean" },
+          "hasTfoot": { "type": "boolean" }
         }
       }
     },
@@ -142,17 +200,122 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["tag", "type", "id", "name", "label"],
+              "required": [
+                "tag",
+                "type",
+                "id",
+                "name",
+                "label",
+                "required",
+                "ariaRequired",
+                "autocomplete"
+              ],
               "properties": {
                 "tag": { "type": "string" },
                 "type": { "type": "string" },
                 "id": { "type": "string" },
                 "name": { "type": "string" },
-                "label": { "type": "string" }
+                "label": { "type": "string" },
+                "required": { "type": "boolean" },
+                "ariaRequired": { "type": "boolean" },
+                "autocomplete": { "type": "string" }
               }
             }
           }
         }
+      }
+    },
+    "buttons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tag", "type", "role", "name"],
+        "properties": {
+          "tag": { "type": "string" },
+          "type": { "type": "string" },
+          "role": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "landmarks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tag", "role", "label"],
+        "properties": {
+          "tag": { "type": "string" },
+          "role": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "focusables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tag", "role", "tabindex", "type"],
+        "properties": {
+          "tag": { "type": "string" },
+          "role": { "type": "string" },
+          "tabindex": { "type": "number" },
+          "type": { "type": "string" }
+        }
+      }
+    },
+    "ariaLive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["liveRegions", "rolesCount", "politeness", "roles"],
+      "properties": {
+        "liveRegions": { "type": "number" },
+        "rolesCount": { "type": "number" },
+        "politeness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["polite", "assertive", "off"],
+          "properties": {
+            "polite": { "type": "number" },
+            "assertive": { "type": "number" },
+            "off": { "type": "number" }
+          }
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alert", "status", "log", "marquee", "timer"],
+          "properties": {
+            "alert": { "type": "number" },
+            "status": { "type": "number" },
+            "log": { "type": "number" },
+            "marquee": { "type": "number" },
+            "timer": { "type": "number" }
+          }
+        }
+      }
+    },
+    "rolesSummary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "count"],
+        "properties": {
+          "role": { "type": "string" },
+          "count": { "type": "number" }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["viewport", "refresh"],
+      "properties": {
+        "viewport": { "type": "string" },
+        "refresh": { "type": "string" }
       }
     },
     "media": {
@@ -163,6 +326,71 @@
         "video": { "type": "number" },
         "audio": { "type": "number" },
         "object": { "type": "number" }
+      }
+    },
+    "mediaDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["videos", "audios"],
+      "properties": {
+        "videos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hasControls",
+              "autoplay",
+              "muted",
+              "loop",
+              "hasCaptions",
+              "hasSubtitles",
+              "hasDescriptions",
+              "hasChapters",
+              "hasMetadata"
+            ],
+            "properties": {
+              "hasControls": { "type": "boolean" },
+              "autoplay": { "type": "boolean" },
+              "muted": { "type": "boolean" },
+              "loop": { "type": "boolean" },
+              "hasCaptions": { "type": "boolean" },
+              "hasSubtitles": { "type": "boolean" },
+              "hasDescriptions": { "type": "boolean" },
+              "hasChapters": { "type": "boolean" },
+              "hasMetadata": { "type": "boolean" }
+            }
+          }
+        },
+        "audios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hasControls",
+              "autoplay",
+              "muted",
+              "loop",
+              "hasCaptions",
+              "hasSubtitles",
+              "hasDescriptions",
+              "hasChapters",
+              "hasMetadata"
+            ],
+            "properties": {
+              "hasControls": { "type": "boolean" },
+              "autoplay": { "type": "boolean" },
+              "muted": { "type": "boolean" },
+              "loop": { "type": "boolean" },
+              "hasCaptions": { "type": "boolean" },
+              "hasSubtitles": { "type": "boolean" },
+              "hasDescriptions": { "type": "boolean" },
+              "hasChapters": { "type": "boolean" },
+              "hasMetadata": { "type": "boolean" }
+            }
+          }
+        }
       }
     },
     "visual": {

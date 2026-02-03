@@ -11,6 +11,7 @@ export function getSnapshotExpression() {
     const doctype = doc.doctype ? doc.doctype.name : '';
     const title = doc.title || '';
     const lang = (html && html.getAttribute('lang')) || '';
+    const dir = (html && html.getAttribute('dir')) || '';
     const href = String(location && location.href ? location.href : '');
     const readyState = doc.readyState || '';
 
@@ -36,6 +37,11 @@ export function getSnapshotExpression() {
     const getText = (node) => (node ? (node.textContent || '') : '');
     const getLabelledBy = (el) => {
       const ids = (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+      return ids.map((id) => getText(doc.getElementById(id))).join(' ').trim();
+    };
+
+    const getDescribedBy = (el) => {
+      const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
       return ids.map((id) => getText(doc.getElementById(id))).join(' ').trim();
     };
 
@@ -90,7 +96,9 @@ export function getSnapshotExpression() {
         rawText: (el.textContent || '').trim(),
         title: (el.getAttribute('title') || '').trim(),
         ariaLabel: (el.getAttribute('aria-label') || '').trim(),
-        ariaLabelledby: (el.getAttribute('aria-labelledby') || '').trim()
+        ariaLabelledby: (el.getAttribute('aria-labelledby') || '').trim(),
+        target: (el.getAttribute('target') || '').trim(),
+        rel: (el.getAttribute('rel') || '').trim()
       };
     });
 
@@ -132,6 +140,10 @@ export function getSnapshotExpression() {
           id: el.getAttribute('id') || '',
           name: el.getAttribute('name') || '',
           label: getControlLabel(el),
+          required: el.hasAttribute('required'),
+          ariaRequired: (el.getAttribute('aria-required') || '').toLowerCase() === 'true',
+          autocomplete: (el.getAttribute('autocomplete') || '').trim(),
+          describedBy: getDescribedBy(el),
           inFieldset: Boolean(fieldset),
           fieldsetLegend
         };
@@ -154,7 +166,10 @@ export function getSnapshotExpression() {
             type: (el.getAttribute('type') || '').toLowerCase(),
             id: el.getAttribute('id') || '',
             name: el.getAttribute('name') || '',
-            label: getControlLabel(el)
+            label: getControlLabel(el),
+            required: el.hasAttribute('required'),
+            ariaRequired: (el.getAttribute('aria-required') || '').toLowerCase() === 'true',
+            autocomplete: (el.getAttribute('autocomplete') || '').trim()
           }));
         out.push({
           legend,
@@ -180,11 +195,99 @@ export function getSnapshotExpression() {
       .map((el) => (el.getAttribute('lang') || '').trim())
       .filter((val) => val && val !== lang);
 
+    const dirChanges = Array.from(doc.querySelectorAll('[dir]'))
+      .map((el) => (el.getAttribute('dir') || '').trim().toLowerCase())
+      .filter((val) => val && val !== dir);
+
     const tables = Array.from(doc.querySelectorAll('table')).map((table) => {
       const hasTh = !!table.querySelector('th');
       const hasCaption = !!table.querySelector('caption');
-      return { hasTh, hasCaption };
+      const ths = Array.from(table.querySelectorAll('th'));
+      const thWithScope = ths.filter((th) => th.hasAttribute('scope')).length;
+      const thWithId = ths.filter((th) => th.hasAttribute('id')).length;
+      const cellsWithHeaders = table.querySelectorAll('td[headers]').length;
+      const hasThead = !!table.querySelector('thead');
+      const hasTbody = !!table.querySelector('tbody');
+      const hasTfoot = !!table.querySelector('tfoot');
+      return {
+        hasTh,
+        hasCaption,
+        thCount: ths.length,
+        thWithScope,
+        thWithId,
+        cellsWithHeaders,
+        hasThead,
+        hasTbody,
+        hasTfoot
+      };
     });
+
+    const buttons = Array.from(doc.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'))
+      .map((el) => ({
+        tag: el.tagName.toLowerCase(),
+        type: (el.getAttribute('type') || '').toLowerCase(),
+        role: (el.getAttribute('role') || '').toLowerCase(),
+        name: getAccessibleName(el)
+      }))
+      .filter((btn) => btn.name || btn.tag || btn.role);
+
+    const landmarks = (() => {
+      const landmarkRoles = new Set([
+        'banner',
+        'navigation',
+        'main',
+        'contentinfo',
+        'search',
+        'complementary',
+        'form',
+        'region'
+      ]);
+      const tags = ['header', 'nav', 'main', 'footer', 'aside', 'form', 'section'];
+      const nodes = Array.from(doc.querySelectorAll(tags.join(',')));
+      const roleNodes = Array.from(doc.querySelectorAll('[role]'))
+        .filter((el) => landmarkRoles.has((el.getAttribute('role') || '').toLowerCase()));
+      const combined = Array.from(new Set([...nodes, ...roleNodes]));
+      return combined.map((el) => ({
+        tag: el.tagName.toLowerCase(),
+        role: (el.getAttribute('role') || '').toLowerCase(),
+        label: getAccessibleName(el)
+      }));
+    })();
+
+    const meta = (() => {
+      const viewport = doc.querySelector('meta[name="viewport"]');
+      const refresh = doc.querySelector('meta[http-equiv="refresh"]');
+      return {
+        viewport: viewport ? (viewport.getAttribute('content') || '').trim() : '',
+        refresh: refresh ? (refresh.getAttribute('content') || '').trim() : ''
+      };
+    })();
+
+    const mediaDetails = (() => {
+      const trackKinds = (el) =>
+        Array.from(el.querySelectorAll('track')).map((track) =>
+          (track.getAttribute('kind') || '').toLowerCase()
+        );
+      const summarize = (el) => {
+        const kinds = trackKinds(el);
+        const hasKind = (kind) => kinds.includes(kind);
+        return {
+          hasControls: el.hasAttribute('controls') || Boolean(el.controls),
+          autoplay: el.hasAttribute('autoplay') || Boolean(el.autoplay),
+          muted: el.hasAttribute('muted') || Boolean(el.muted),
+          loop: el.hasAttribute('loop') || Boolean(el.loop),
+          hasCaptions: hasKind('captions'),
+          hasSubtitles: hasKind('subtitles'),
+          hasDescriptions: hasKind('descriptions'),
+          hasChapters: hasKind('chapters'),
+          hasMetadata: hasKind('metadata')
+        };
+      };
+      return {
+        videos: Array.from(doc.querySelectorAll('video')).map(summarize),
+        audios: Array.from(doc.querySelectorAll('audio')).map(summarize)
+      };
+    })();
 
     const media = {
       video: doc.querySelectorAll('video').length,
@@ -233,6 +336,68 @@ export function getSnapshotExpression() {
       hasInlineHandlers: !!doc.querySelector('[onclick],[onkeydown],[onkeyup],[onkeypress],[onmouseover],[onfocus],[onblur]')
     };
 
+    const focusables = (() => {
+      const selector =
+        'a[href], button, input, select, textarea, [tabindex], [role="button"], [role="link"]';
+      const nodes = Array.from(doc.querySelectorAll(selector));
+      const out = [];
+      const maxItems = 80;
+      for (const el of nodes) {
+        if (out.length >= maxItems) break;
+        const tabindexAttr = el.getAttribute('tabindex');
+        const tabIndex = tabindexAttr !== null ? Number(tabindexAttr) : el.tabIndex;
+        if (Number.isNaN(tabIndex)) continue;
+        if (tabIndex < 0) continue;
+        const disabled = 'disabled' in el ? Boolean(el.disabled) : el.hasAttribute('disabled');
+        if (disabled) continue;
+        out.push({
+          tag: el.tagName.toLowerCase(),
+          role: (el.getAttribute('role') || '').toLowerCase(),
+          tabindex: tabIndex,
+          type: (el.getAttribute('type') || '').toLowerCase()
+        });
+      }
+      return out;
+    })();
+
+    const ariaLive = (() => {
+      const liveNodes = Array.from(doc.querySelectorAll('[aria-live]'));
+      const roleNodes = Array.from(
+        doc.querySelectorAll('[role="alert"],[role="status"],[role="log"],[role="marquee"],[role="timer"]')
+      );
+      const politeness = { polite: 0, assertive: 0, off: 0 };
+      for (const el of liveNodes) {
+        const value = (el.getAttribute('aria-live') || '').trim().toLowerCase();
+        if (value === 'polite') politeness.polite += 1;
+        else if (value === 'assertive') politeness.assertive += 1;
+        else if (value === 'off') politeness.off += 1;
+      }
+      const roles = { alert: 0, status: 0, log: 0, marquee: 0, timer: 0 };
+      for (const el of roleNodes) {
+        const role = (el.getAttribute('role') || '').trim().toLowerCase();
+        if (role in roles) roles[role] += 1;
+      }
+      return {
+        liveRegions: liveNodes.length,
+        rolesCount: roleNodes.length,
+        politeness,
+        roles
+      };
+    })();
+
+    const rolesSummary = (() => {
+      const nodes = Array.from(doc.querySelectorAll('[role]'));
+      const counts = new Map();
+      for (const el of nodes) {
+        const role = (el.getAttribute('role') || '').trim().toLowerCase();
+        if (!role) continue;
+        counts.set(role, (counts.get(role) || 0) + 1);
+      }
+      const entries = Array.from(counts.entries()).map(([role, count]) => ({ role, count }));
+      entries.sort((a, b) => b.count - a.count);
+      return entries.slice(0, 30);
+    })();
+
     return {
       doctype,
       title,
@@ -246,9 +411,18 @@ export function getSnapshotExpression() {
       headings,
       listItems,
       langChanges,
+      dir,
+      dirChanges,
       tables,
       fieldsets,
+      buttons,
+      landmarks,
+      focusables,
+      ariaLive,
+      rolesSummary,
+      meta,
       media,
+      mediaDetails,
       visual,
       scripts
     };

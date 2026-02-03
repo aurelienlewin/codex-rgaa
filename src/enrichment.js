@@ -102,10 +102,16 @@ export function analyzeHtmlHints(htmlSnippet = '') {
   const marqueeCount = $('marquee').length;
   const blinkCount = $('blink').length;
   const styleAnimCount = $('[style*="animation"],[style*="transition"]').length;
+  const targetBlankLinks = $('a[target="_blank"]').length;
+  const downloadLinks = $('a[download]').length;
+  const autoplayMedia = $('video[autoplay], audio[autoplay]').length;
   return {
     marqueeCount,
     blinkCount,
-    inlineAnimationCount: styleAnimCount
+    inlineAnimationCount: styleAnimCount,
+    targetBlankLinks,
+    downloadLinks,
+    autoplayMedia
   };
 }
 
