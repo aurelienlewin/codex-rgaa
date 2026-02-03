@@ -57,6 +57,46 @@ function clipFixed(text, width) {
   return `${str.slice(0, width - 1)}…`;
 }
 
+const AI_NOISE_PATTERNS = [
+  /mcp snapshot/i,
+  /mcp list_pages/i,
+  /spawning codex/i
+];
+
+function normalizeAiMessage(text) {
+  return String(text || '')
+    .replace(/^Codex:\s*/i, '')
+    .replace(/^AI:\s*/i, '')
+    .trim();
+}
+
+function isNoiseAiMessage(text) {
+  const cleaned = normalizeAiMessage(text).toLowerCase();
+  if (!cleaned) return false;
+  if (/^[}\]]+,?$/.test(cleaned)) return true;
+  return AI_NOISE_PATTERNS.some((pattern) => pattern.test(cleaned));
+}
+
+function formatProgressStatus({
+  totalPages,
+  totalCriteria,
+  overallDone,
+  pageDone,
+  currentPageIndex,
+  i18n
+}) {
+  const overallTotal = totalPages * totalCriteria;
+  const overallPct = overallTotal ? Math.round((overallDone / overallTotal) * 100) : 0;
+  const pagePct = totalCriteria ? Math.round((pageDone / totalCriteria) * 100) : 0;
+  const pageLabel = totalPages ? `${Math.max(0, currentPageIndex + 1)}/${totalPages}` : '-/-';
+  const prefix = i18n?.t('Progression à l’arrêt', 'Progress at shutdown') || 'Progress at shutdown';
+  const overallLabel = i18n?.t('Global', 'Overall') || 'Overall';
+  const pageLabelText = i18n?.t('Page', 'Page') || 'Page';
+  const overallCounts = `${overallDone}/${overallTotal || 0}`;
+  const pageCounts = `${pageDone}/${totalCriteria || 0}`;
+  return `${prefix}: ${overallLabel} ${overallPct}% (${overallCounts}) • ${pageLabelText} ${pageLabel} ${pagePct}% (${pageCounts})`;
+}
+
 function nowMs() {
   if (typeof process.hrtime === 'function' && process.hrtime.bigint) {
     return Number(process.hrtime.bigint() / 1000000n);
@@ -154,6 +194,7 @@ function createFancyReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
+  let currentPageIndex = -1;
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageLabel = '';
@@ -445,16 +486,14 @@ function createFancyReporter(options = {}) {
     },
 
     onAIStage({ label }) {
-      if (!label) return;
+      if (!label || isNoiseAiMessage(label)) return;
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
     },
 
     onAILog({ message }) {
-      const cleaned = String(message || '')
-        .replace(/^Codex:\s*/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
+      if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = cleaned.slice(0, 64);
       if (clipped) {
         if (clipped !== lastAILog) {
@@ -588,6 +627,24 @@ function createFancyReporter(options = {}) {
       }
     },
 
+    onShutdown() {
+      stopTicking();
+      if (spinner.isSpinning) spinner.stop();
+      renderer.stop({ keepBlock: false });
+      if (process.stdout.isTTY) {
+        process.stdout.write('\x1b[2J\x1b[0;0H');
+      }
+      const line = formatProgressStatus({
+        totalPages,
+        totalCriteria,
+        overallDone,
+        pageDone,
+        currentPageIndex,
+        i18n
+      });
+      process.stdout.write(`${line}\n`);
+    },
+
     onError(message) {
       if (spinner.isSpinning) spinner.fail(message);
       else {
@@ -617,6 +674,8 @@ function createLegacyReporter(options = {}) {
   let pageBar = null;
   let totalCriteria = 0;
   let totalPages = 0;
+  let overallDone = 0;
+  let pageDone = 0;
   let lastAILog = '';
   let pulseTimer = null;
   let pulseLabel = '';
@@ -728,7 +787,9 @@ function createLegacyReporter(options = {}) {
     },
 
     onPageStart({ index, url }) {
+      currentPageIndex = index;
       if (pageBar) pageBar.update(0, { crit: '' });
+      pageDone = 0;
       pageStartAt = nowMs();
       stageStartAt = pageStartAt;
       const pageLabel = `${index + 1}/${totalPages}`;
@@ -793,7 +854,7 @@ function createLegacyReporter(options = {}) {
     },
 
     onAIStage({ label }) {
-      if (!label) return;
+      if (!label || isNoiseAiMessage(label)) return;
       startStage(label);
       if (pageBar) pageBar.update(null, { crit: palette.muted(label) });
       const line = `${palette.muted('•')} ${palette.muted(label)}`;
@@ -803,10 +864,8 @@ function createLegacyReporter(options = {}) {
 
     onAILog({ message }) {
       if (!pageBar) return;
-      const cleaned = String(message || '')
-        .replace(/^Codex:\s*/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
+      if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = cleaned.slice(0, 64);
       if (clipped) {
         stopPulse();
@@ -829,6 +888,8 @@ function createLegacyReporter(options = {}) {
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 56);
       const rationale = evaluation.ai?.rationale || '';
       const snippet = rationale ? ` • ${rationale.slice(0, 48)}…` : '';
+      overallDone += 1;
+      pageDone += 1;
       if (overallBar) overallBar.increment(1, { crit: '' });
       if (pageBar) pageBar.increment(1, { crit: `${statusColor(statusLabel)} ${critText}${snippet}` });
 
@@ -903,6 +964,26 @@ function createLegacyReporter(options = {}) {
       }
     },
 
+    onShutdown() {
+      stopPulse();
+      if (spinner.isSpinning) spinner.stop();
+      if (overallBar) overallBar.update(totalPages * totalCriteria);
+      if (pageBar) pageBar.update(totalCriteria);
+      bars.stop();
+      if (process.stdout.isTTY) {
+        process.stdout.write('\x1b[2J\x1b[0;0H');
+      }
+      const line = formatProgressStatus({
+        totalPages,
+        totalCriteria,
+        overallDone,
+        pageDone,
+        currentPageIndex,
+        i18n
+      });
+      process.stdout.write(`${line}\n`);
+    },
+
     onError(message) {
       stopPulse();
       if (spinner.isSpinning) spinner.fail(message);
@@ -915,6 +996,9 @@ function createPlainReporter(options = {}) {
   const i18n = getI18n(normalizeReportLang(options.lang));
   let totalCriteria = 0;
   let totalPages = 0;
+  let overallDone = 0;
+  let pageDone = 0;
+  let currentPageIndex = -1;
   let lastAILog = '';
   let pageStartAt = 0;
   let auditMode = 'mcp';
@@ -941,6 +1025,8 @@ function createPlainReporter(options = {}) {
     },
 
     onPageStart({ index, url }) {
+      currentPageIndex = index;
+      pageDone = 0;
       pageStartAt = nowMs();
       line(i18n.t('Page', 'Page'), `${index + 1}/${totalPages} ${url}`);
     },
@@ -975,16 +1061,14 @@ function createPlainReporter(options = {}) {
     },
 
     onAIStage({ label }) {
-      if (label) line('Codex', label);
+      if (label && !isNoiseAiMessage(label)) line('Codex', label);
     },
 
     onAILog({ message }) {
-      const cleaned = String(message || '')
-        .replace(/^Codex:\s*/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
+      if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = cleaned.slice(0, 120);
-      if (clipped && clipped !== lastAILog) {
+      if (clipped !== lastAILog) {
         lastAILog = clipped;
         line('Codex', clipped);
       }
@@ -993,6 +1077,8 @@ function createPlainReporter(options = {}) {
     onCriterion({ criterion, evaluation }) {
       const status = evaluation.status || '';
       const rationale = evaluation.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
+      overallDone += 1;
+      pageDone += 1;
       line(i18n.t('Result:', 'Result:'), `${criterion.id} ${status}${rationale}`);
     },
 
@@ -1025,6 +1111,21 @@ function createPlainReporter(options = {}) {
       }
       if (outPath) line(i18n.t('Report saved to:', 'Report saved to:'), outPath);
       else line(i18n.t('Report export skipped.', 'Report export skipped.'));
+    },
+
+    onShutdown() {
+      if (process.stdout.isTTY) {
+        process.stdout.write('\x1b[2J\x1b[0;0H');
+      }
+      const lineText = formatProgressStatus({
+        totalPages,
+        totalCriteria,
+        overallDone,
+        pageDone,
+        currentPageIndex,
+        i18n
+      });
+      console.log(lineText);
     },
 
     onError(message) {

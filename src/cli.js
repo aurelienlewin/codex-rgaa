@@ -11,6 +11,8 @@ import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { listMcpPages } from './mcpSnapshot.js';
 
+let lastShutdownSignal = null;
+
 function formatRunId(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   const y = date.getFullYear();
@@ -30,6 +32,11 @@ function normalizeHttpBaseUrl(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+}
+
+function clearScreen() {
+  if (!process.stdout.isTTY || process.env.TERM === 'dumb') return;
+  process.stdout.write('\x1b[2J\x1b[0;0H');
 }
 
 async function canReachChromeDebugEndpoint(baseUrl) {
@@ -614,14 +621,16 @@ async function main() {
 
   const codexModel =
     argv['codex-model'] ||
-    process.env.CODEX_MODEL ||
     process.env.AUDIT_CODEX_MODEL ||
-    'gpt-5.2-codex';
+    'gpt-5.2-codex-low';
   if (!process.env.CODEX_MCP_MODE) {
     process.env.CODEX_MCP_MODE = 'chrome';
   }
   const reporter = createReporter({ lang: reportLang, guided });
   const criteriaCount = loadCriteria({ lang: reportLang }).length;
+  if (interactive && guided) {
+    clearScreen();
+  }
   if (reporter.onStart) {
     await reporter.onStart({
       pages: pages.length,
@@ -638,8 +647,18 @@ async function main() {
   const shutdown = (signal) => {
     if (shutdownRequested) return;
     shutdownRequested = true;
+    lastShutdownSignal = signal;
     const exitCode = signal === 'SIGINT' ? 130 : 143;
-    reporter.onError?.(`Received ${signal}. Shutting down…`);
+    if (signal === 'SIGTERM') {
+      if (reporter.onShutdown) {
+        reporter.onShutdown({ signal });
+      } else {
+        clearScreen();
+        console.log('Progress at shutdown.');
+      }
+    } else {
+      reporter.onError?.(`Received ${signal}. Shutting down…`);
+    }
     abortController.abort();
     terminateCodexChildren();
     process.exitCode = exitCode;
@@ -717,6 +736,10 @@ async function main() {
 
 main().catch((err) => {
   if (isAbortError(err)) {
+    if (lastShutdownSignal === 'SIGTERM') {
+      process.exit(process.exitCode || 143);
+      return;
+    }
     console.error('Audit aborted. Shutdown complete.');
     process.exit(130);
     return;
