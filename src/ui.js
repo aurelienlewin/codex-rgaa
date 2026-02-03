@@ -104,6 +104,17 @@ function nowMs() {
   return Date.now();
 }
 
+function formatElapsed(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const hh = Math.floor(totalSeconds / 3600);
+  const mm = Math.floor((totalSeconds % 3600) / 60);
+  const ss = totalSeconds % 60;
+  if (hh > 0) {
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  }
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
 function isFancyTTY() {
   return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
 }
@@ -151,6 +162,39 @@ function chromeAutomationWarningLines({ i18n, mcpMode }) {
       )
     )}`
   ];
+}
+
+function humanizeCodexFeedMessage(message, i18n) {
+  const raw = normalizeInline(String(message || '').replace(/^Codex:\s*/i, ''));
+  if (!raw) return '';
+
+  const lower = raw.toLowerCase();
+  const t = (fr, en) => i18n?.t(fr, en) || en;
+
+  if (lower.includes('schema preflight')) {
+    return t('Vérification des schémas…', 'Validating schemas…');
+  }
+  if (lower.includes('parsing mcp snapshot')) {
+    return t('Lecture de la capture de page…', 'Reading page snapshot…');
+  }
+  if (lower.includes('running mcp snapshot') || lower.includes('mcp snapshot')) {
+    return t('Capture de la page…', 'Capturing page…');
+  }
+  if (lower.includes('list_pages')) {
+    return t('Récupération des onglets Chrome…', 'Fetching Chrome tabs…');
+  }
+  if (lower.includes('chrome-devtools-mcp')) {
+    return t('Connexion à Chrome…', 'Connecting to Chrome…');
+  }
+  if (lower.includes('retrying') && lower.includes('default model')) {
+    return t('Modèle introuvable, nouvel essai…', 'Model not found, retrying…');
+  }
+
+  return raw
+    .replace(/\bMCP\b/g, 'Chrome')
+    .replace(/\bCDP\b/g, 'DevTools')
+    .replace(/^AI:\s*/i, '')
+    .trim();
 }
 
 function drawPanel({ title, lines, width, borderColor = palette.muted }) {
@@ -236,6 +280,7 @@ function createFancyReporter(options = {}) {
   let stageStartAt = 0;
   let lastStageMs = null;
   let pageStartAt = 0;
+  let auditStartAt = 0;
   let auditMode = 'mcp';
   let mcpMode = '';
   let lastAILog = '';
@@ -246,7 +291,9 @@ function createFancyReporter(options = {}) {
   const feedMax = 7;
   const feed = [];
   const pushFeed = (kind, message, { replaceLastIfSameKind = false } = {}) => {
-    const cleaned = clipInline(String(message || '').replace(/^Codex:\s*/i, ''), 240);
+    const raw = String(message || '');
+    const normalized = kind === 'progress' ? humanizeCodexFeedMessage(raw, i18n) : normalizeInline(raw);
+    const cleaned = clipInline(normalized, 240);
     if (!cleaned) return;
     if (replaceLastIfSameKind && feed.length && feed[feed.length - 1].kind === kind) {
       feed[feed.length - 1] = { at: nowMs(), kind, message: cleaned };
@@ -315,6 +362,7 @@ function createFancyReporter(options = {}) {
     const stageSpinner = stageStartAt ? spinnerFrames[frame] : ' ';
     const stageAge = stageStartAt ? `${nowMs() - stageStartAt}ms` : lastStageMs ? `${lastStageMs}ms` : '';
     const stageText = stageLabel || (currentUrl ? i18n.t('Audit en cours', 'Audit running') : '');
+    const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
 
     const urlLine = currentUrl ? clipInline(currentUrl, width - 18) : '';
     const criterionLine = currentCriterion
@@ -332,7 +380,10 @@ function createFancyReporter(options = {}) {
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
       `${padVisibleRight(palette.muted('Stage'), 8)} ${palette.primary(stageSpinner)} ${palette.muted(
         clipInline(stageText, width - 22)
-      )}${stageAge ? ` ${palette.muted('•')} ${palette.accent(stageAge)}` : ''}`
+      )}${stageAge ? ` ${palette.muted('•')} ${palette.accent(stageAge)}` : ''}`,
+      elapsed
+        ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)}`
+        : ''
     ].filter(Boolean);
 
     const timeW = 6;
@@ -429,6 +480,7 @@ function createFancyReporter(options = {}) {
       totalCriteria = criteriaCount;
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
+      auditStartAt = nowMs();
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
       const subtitle = i18n.t(
@@ -1049,6 +1101,7 @@ function createPlainReporter(options = {}) {
   let currentPageIndex = -1;
   let lastAILog = '';
   let pageStartAt = 0;
+  let auditStartAt = 0;
   let auditMode = 'mcp';
   let mcpMode = '';
 
@@ -1061,6 +1114,7 @@ function createPlainReporter(options = {}) {
       totalCriteria = criteriaCount;
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
+      auditStartAt = nowMs();
       line('RGAA Website Auditor');
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
@@ -1121,7 +1175,8 @@ function createPlainReporter(options = {}) {
     onAILog({ message }) {
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
-      const clipped = cleaned.slice(0, 120);
+      const friendly = humanizeCodexFeedMessage(cleaned, i18n);
+      const clipped = friendly.slice(0, 120);
       if (clipped !== lastAILog) {
         lastAILog = clipped;
         line('Codex', clipped);
@@ -1154,6 +1209,8 @@ function createPlainReporter(options = {}) {
       line('Non applicable:', String(counts.NA));
       line('Errors:', String(counts.ERR || 0));
       line('Score:', formatPercent(globalScore));
+      const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
+      if (elapsed) line(i18n.t('Elapsed:', 'Elapsed:'), elapsed);
       if (errors && (errors.pagesFailed || errors.aiFailed)) {
         const details = [
           errors.pagesFailed ? `Pages failed: ${errors.pagesFailed}` : null,
