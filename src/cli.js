@@ -332,6 +332,11 @@ async function main() {
       describe:
         'Allow the AI reviewer to use chrome-devtools MCP tools for additional evidence (slower, but can reduce NA).'
     })
+    .option('ai-ocr', {
+      type: 'boolean',
+      describe:
+        'Enable OCR tool for AI+MCP (text in images). Defaults to true when --ai-mcp is enabled.'
+    })
     .option('timeout', {
       type: 'number',
       default: 45000,
@@ -633,6 +638,12 @@ async function main() {
     aiMcpEnv === '1' || aiMcpEnv === 'true' || aiMcpEnv === 'yes';
   const aiMcp =
     typeof argv['ai-mcp'] === 'boolean' ? argv['ai-mcp'] : aiMcpEnvEnabled;
+  const aiOcrEnv = String(process.env.AUDIT_AI_OCR || '').trim().toLowerCase();
+  const aiOcrEnvExplicit = aiOcrEnv.length > 0;
+  const aiOcrEnvEnabled =
+    aiOcrEnv === '1' || aiOcrEnv === 'true' || aiOcrEnv === 'yes';
+  const aiOcrDefault = aiMcp ? (!aiOcrEnvExplicit || aiOcrEnvEnabled) : false;
+  const aiOcr = typeof argv['ai-ocr'] === 'boolean' ? argv['ai-ocr'] : aiOcrDefault;
   if (!process.env.CODEX_MCP_MODE) {
     process.env.CODEX_MCP_MODE = 'chrome';
   }
@@ -712,7 +723,8 @@ async function main() {
       },
       ai: {
         model: codexModel,
-        useMcp: aiMcp
+        useMcp: aiMcp,
+        ocr: aiOcr
       }
     });
 

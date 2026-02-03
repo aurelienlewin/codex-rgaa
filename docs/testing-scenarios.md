@@ -18,6 +18,7 @@
 - AI review failures are reported as Error with a failure note
 - Global score computed as C / (C + NC)
 - AI+MCP mode (`--ai-mcp` / `AUDIT_AI_MCP=1`) can collect extra evidence via MCP tools
+- OCR tool (`--ai-ocr` / `AUDIT_AI_OCR=1`) extracts text from screenshots when needed
 
 ## Output correctness
 - Matrix sheet exists when `--out` provided
@@ -35,3 +36,4 @@
 - Network errors: page load fail should mark criteria Error with note
 - Large pages: ensure snapshot sampling caps array sizes
 - AI+MCP fallback: if MCP tooling fails, AI review retries without MCP
+- OCR fallback: if OCR fails, AI continues without OCR evidence

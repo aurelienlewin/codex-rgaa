@@ -138,7 +138,12 @@ Optional: enable **AI+MCP** to let the reviewer call chrome-devtools MCP tools f
 - CLI: `--ai-mcp`
 - Env: `AUDIT_AI_MCP=1`
 
-This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks depend on the model’s visual capabilities; otherwise it will only use textual tool outputs.
+You can also enable OCR (repo-level, no system install required) to extract text from screenshots:
+- CLI: `--ai-ocr` (default: on when `--ai-mcp` is enabled)
+- Env: `AUDIT_AI_OCR=1` (set to `0` to force-disable)
+- OCR languages: `AUDIT_OCR_LANGS=fra+eng`
+
+This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks use the built-in OCR tool to extract visible text and include it as evidence.
 
 The CLI shows a **live Codex feed** during progress (table + colors + spinner), with a short rationale snippet for each criterion.
 

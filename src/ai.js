@@ -197,6 +197,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   const evidence = buildEvidence(snapshot);
   const useMcp = Boolean(mcp);
+  const useOcr = Boolean(mcp?.ocr);
   const pageId =
     typeof mcp?.pageId === 'number' && Number.isFinite(mcp.pageId) ? mcp.pageId : null;
   const lines =
@@ -227,6 +228,12 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
                 '- Do NOT submit forms or change data/state.',
                 'If you used MCP tools, include the relevant tool outputs in evidence items.',
+                ...(useOcr
+                  ? [
+                      'OCR tool available: rgaa_ocr. Recommended flow: take_screenshot with filePath under /tmp, then call rgaa_ocr {path, lang?}.',
+                      'Use OCR only to extract visible text from images; cite the OCR output in evidence.'
+                    ]
+                  : []),
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -266,6 +273,12 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp }) {
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
                 '- Ne soumets pas de formulaires et ne modifie pas l’état.',
                 'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                ...(useOcr
+                  ? [
+                      'Outil OCR disponible : rgaa_ocr. Flux recommandé : take_screenshot avec filePath sous /tmp, puis rgaa_ocr {path, lang?}.',
+                      'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.'
+                    ]
+                  : []),
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -286,6 +299,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
   const i18n = getI18n(normalizeReportLang(reportLang));
   const evidence = buildEvidence(snapshot);
   const useMcp = Boolean(mcp);
+  const useOcr = Boolean(mcp?.ocr);
   const pageId =
     typeof mcp?.pageId === 'number' && Number.isFinite(mcp.pageId) ? mcp.pageId : null;
   const lines =
@@ -317,6 +331,12 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
                 '- Do NOT submit forms or change data/state.',
                 'If you used MCP tools, include the relevant tool outputs in evidence items.',
+                ...(useOcr
+                  ? [
+                      'OCR tool available: rgaa_ocr. Recommended flow: take_screenshot with filePath under /tmp, then call rgaa_ocr {path, lang?}.',
+                      'Use OCR only to extract visible text from images; cite the OCR output in evidence.'
+                    ]
+                  : []),
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -360,6 +380,12 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
                 '- Ne soumets pas de formulaires et ne modifie pas l’état.',
                 'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                ...(useOcr
+                  ? [
+                      'Outil OCR disponible : rgaa_ocr. Flux recommandé : take_screenshot avec filePath sous /tmp, puis rgaa_ocr {path, lang?}.',
+                      'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.'
+                    ]
+                  : []),
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)

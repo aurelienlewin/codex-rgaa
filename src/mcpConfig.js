@@ -57,7 +57,7 @@ function resolveMcpCommand() {
   return { command: resolveNpxCommand(), baseArgs: ['-y', 'chrome-devtools-mcp@latest'] };
 }
 
-export function buildMcpArgs({ browserUrl, autoConnect, channel } = {}) {
+export function buildMcpArgs({ browserUrl, autoConnect, channel, ocr } = {}) {
   if (process.env.CODEX_MCP_MODE === 'none') {
     return ['-c', 'mcp_servers={}'];
   }
@@ -79,7 +79,7 @@ export function buildMcpArgs({ browserUrl, autoConnect, channel } = {}) {
   }
 
   // Codex `-c` values are parsed as TOML. Use dotted paths so values are valid TOML scalars/arrays.
-  return [
+  const configs = [
     '-c',
     'mcp_servers={}',
     '-c',
@@ -89,6 +89,24 @@ export function buildMcpArgs({ browserUrl, autoConnect, channel } = {}) {
     '-c',
     'mcp_servers.chrome-devtools.startup_timeout_sec=30'
   ];
+
+  if (ocr) {
+    const ocrCommand = String(process.env.AUDIT_OCR_COMMAND || process.execPath || 'node');
+    const ocrScript = String(
+      process.env.AUDIT_OCR_SCRIPT || path.join(PROJECT_ROOT, 'src', 'mcpOcrServer.js')
+    );
+    const ocrArgs = [ocrScript];
+    configs.push(
+      '-c',
+      `mcp_servers.rgaa-ocr.command=${JSON.stringify(ocrCommand)}`,
+      '-c',
+      `mcp_servers.rgaa-ocr.args=${JSON.stringify(ocrArgs)}`,
+      '-c',
+      'mcp_servers.rgaa-ocr.startup_timeout_sec=30'
+    );
+  }
+
+  return configs;
 }
 
 export function looksLikeMcpConnectError(stderr) {
@@ -114,6 +132,10 @@ export function looksLikeMcpInstallOrNetworkError(stderr) {
         text.includes('eai_again') ||
         text.includes('self signed certificate') ||
         text.includes('unable to get local issuer certificate'))) ||
-    (text.includes('npx') && text.includes('network'))
+    (text.includes('npx') && text.includes('network')) ||
+    (text.includes('rgaa-ocr') &&
+      (text.includes('spawn') || text.includes('error') || text.includes('failed'))) ||
+    text.includes('mcp startup') ||
+    text.includes('mcp server') && text.includes('failed')
   );
 }
