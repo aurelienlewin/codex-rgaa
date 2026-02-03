@@ -115,15 +115,56 @@ export function getSnapshotExpression() {
       return '';
     };
 
+    const getFieldsetLegend = (fieldset) => {
+      if (!fieldset) return '';
+      const legend = fieldset.querySelector('legend');
+      return legend ? (legend.textContent || '').trim() : '';
+    };
+
     const formControls = Array.from(doc.querySelectorAll('input, select, textarea, button'))
       .filter(isFormControl)
-      .map((el) => ({
-        tag: el.tagName.toLowerCase(),
-        type: (el.getAttribute('type') || '').toLowerCase(),
-        id: el.getAttribute('id') || '',
-        name: el.getAttribute('name') || '',
-        label: getControlLabel(el)
-      }));
+      .map((el) => {
+        const fieldset = el.closest('fieldset');
+        const fieldsetLegend = getFieldsetLegend(fieldset);
+        return {
+          tag: el.tagName.toLowerCase(),
+          type: (el.getAttribute('type') || '').toLowerCase(),
+          id: el.getAttribute('id') || '',
+          name: el.getAttribute('name') || '',
+          label: getControlLabel(el),
+          inFieldset: Boolean(fieldset),
+          fieldsetLegend
+        };
+      });
+
+    const fieldsets = (() => {
+      const maxFieldsets = 30;
+      const maxControls = 12;
+      const out = [];
+      const nodes = Array.from(doc.querySelectorAll('fieldset'));
+      for (const fieldset of nodes) {
+        if (out.length >= maxFieldsets) break;
+        const legend = getFieldsetLegend(fieldset);
+        const controls = Array.from(
+          fieldset.querySelectorAll('input, select, textarea, button')
+        )
+          .filter(isFormControl)
+          .map((el) => ({
+            tag: el.tagName.toLowerCase(),
+            type: (el.getAttribute('type') || '').toLowerCase(),
+            id: el.getAttribute('id') || '',
+            name: el.getAttribute('name') || '',
+            label: getControlLabel(el)
+          }));
+        out.push({
+          legend,
+          hasLegend: Boolean(legend),
+          controlCount: controls.length,
+          controls: controls.slice(0, maxControls)
+        });
+      }
+      return out;
+    })();
 
     const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6')).map((el) => ({
       level: Number(el.tagName.replace('H', '')),
@@ -206,6 +247,7 @@ export function getSnapshotExpression() {
       listItems,
       langChanges,
       tables,
+      fieldsets,
       media,
       visual,
       scripts

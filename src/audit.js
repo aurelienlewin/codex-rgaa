@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 import { loadCriteria } from './criteria.js';
 import { collectSnapshotWithMcp } from './mcpSnapshot.js';
 import { collectEnrichedEvidenceWithMcp } from './mcpEnrich.js';
+import { closeMcpPages } from './mcpClosePages.js';
 import { buildEnrichment } from './enrichment.js';
 import { evaluateCriterion, STATUS } from './checks.js';
 import { aiReviewCriteriaBatch, aiReviewCriterion } from './ai.js';
@@ -791,6 +792,36 @@ export async function runAudit(options) {
     }
   } else if (reporter && reporter.onDone) {
     reporter.onDone({ outPath: null, globalScore, counts: globalCounts, errors: errorSummary });
+  }
+
+  const closeTabsEnv = String(process.env.AUDIT_CLOSE_TABS || '').trim().toLowerCase();
+  const shouldCloseTabs = closeTabsEnv !== '0' && closeTabsEnv !== 'false' && closeTabsEnv !== 'no';
+  if (shouldCloseTabs && !aborted && !signal?.aborted) {
+    try {
+      const urlsToClose = Array.isArray(options.pages) ? options.pages : [];
+      const result = await closeMcpPages({
+        urls: urlsToClose,
+        model: options.ai?.model,
+        mcp: mcpConfig,
+        onLog: (message) =>
+          reporter?.onAILog?.({ criterion: { id: 'cleanup', title: 'Close tabs', theme: 'Debug' }, message }),
+        onStage: (label) =>
+          reporter?.onAIStage?.({ criterion: { id: 'cleanup', title: 'Close tabs', theme: 'Debug' }, label }),
+        signal
+      });
+      const closedCount = Array.isArray(result?.closed) ? result.closed.length : 0;
+      if (closedCount > 0) {
+        reporter?.onAILog?.({
+          criterion: { id: 'cleanup', title: 'Close tabs', theme: 'Debug' },
+          message: `Closed ${closedCount} audited tab(s).`
+        });
+      }
+    } catch (err) {
+      reporter?.onAILog?.({
+        criterion: { id: 'cleanup', title: 'Close tabs', theme: 'Debug' },
+        message: `Warning: failed to close audited tabs (${String(err?.message || err)})`
+      });
+    }
   }
 
   return { outPath, globalScore, counts: globalCounts, errors: errorSummary };

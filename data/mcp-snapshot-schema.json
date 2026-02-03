@@ -16,6 +16,7 @@
     "listItems",
     "langChanges",
     "tables",
+    "fieldsets",
     "media",
     "visual",
     "scripts"
@@ -75,13 +76,15 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["tag", "type", "id", "name", "label"],
+        "required": ["tag", "type", "id", "name", "label", "inFieldset", "fieldsetLegend"],
         "properties": {
           "tag": { "type": "string" },
           "type": { "type": "string" },
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "label": { "type": "string" }
+          "label": { "type": "string" },
+          "inFieldset": { "type": "boolean" },
+          "fieldsetLegend": { "type": "string" }
         }
       }
     },
@@ -121,6 +124,34 @@
         "properties": {
           "hasTh": { "type": "boolean" },
           "hasCaption": { "type": "boolean" }
+        }
+      }
+    },
+    "fieldsets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["legend", "hasLegend", "controlCount", "controls"],
+        "properties": {
+          "legend": { "type": "string" },
+          "hasLegend": { "type": "boolean" },
+          "controlCount": { "type": "number" },
+          "controls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tag", "type", "id", "name", "label"],
+              "properties": {
+                "tag": { "type": "string" },
+                "type": { "type": "string" },
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "label": { "type": "string" }
+              }
+            }
+          }
         }
       }
     },
