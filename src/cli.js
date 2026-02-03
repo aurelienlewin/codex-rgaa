@@ -495,6 +495,16 @@ async function main() {
       describe:
         'Interactive wizard for non-technical users (prompts for common options like MCP settings and report language). In TTY, it is enabled by default; pass --no-guided to disable.'
     })
+    .option('humanize-feed', {
+      type: 'boolean',
+      describe:
+        'Rewrite technical Codex progress logs into short, user-friendly status updates (uses extra codex exec calls). In TTY, enabled by default; pass --no-humanize-feed to disable.'
+    })
+    .option('humanize-feed-model', {
+      type: 'string',
+      describe:
+        'Optional Codex model to use for feed humanization (leave empty for default).'
+    })
     .option('mcp-browser-url', {
       type: 'string',
       describe:
@@ -525,6 +535,16 @@ async function main() {
     .parse();
 
   const guided = interactive ? argv.guided !== false : Boolean(argv.guided);
+  const humanizeFeedDefault =
+    String(process.env.AUDIT_HUMANIZE_FEED || '').trim().length > 0
+      ? ['1', 'true', 'yes'].includes(String(process.env.AUDIT_HUMANIZE_FEED || '').trim().toLowerCase())
+      : interactive;
+  const humanizeFeed =
+    typeof argv['humanize-feed'] === 'boolean' ? argv['humanize-feed'] : humanizeFeedDefault;
+  const humanizeFeedModel =
+    argv['humanize-feed-model'] ||
+    process.env.AUDIT_HUMANIZE_FEED_MODEL ||
+    '';
 
   if (argv.xlsx === false) {
     argv.out = null;
@@ -792,7 +812,12 @@ async function main() {
   if (!process.env.CODEX_MCP_MODE) {
     process.env.CODEX_MCP_MODE = 'chrome';
   }
-  const reporter = createReporter({ lang: reportLang, guided });
+  const reporter = createReporter({
+    lang: reportLang,
+    guided,
+    humanizeFeed,
+    humanizeFeedModel
+  });
   const criteriaCount = loadCriteria({ lang: reportLang }).length;
   if (interactive && guided) {
     clearScreen();

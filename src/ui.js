@@ -6,6 +6,10 @@ import gradientString from 'gradient-string';
 import { MultiBar, Presets } from 'cli-progress';
 import { getI18n, normalizeReportLang } from './i18n.js';
 import readline from 'node:readline';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
 const palette = {
   primary: chalk.hex('#22d3ee'),
@@ -164,37 +168,217 @@ function chromeAutomationWarningLines({ i18n, mcpMode }) {
   ];
 }
 
-function humanizeCodexFeedMessage(message, i18n) {
-  const raw = normalizeInline(String(message || '').replace(/^Codex:\s*/i, ''));
-  if (!raw) return '';
-
-  const lower = raw.toLowerCase();
-  const t = (fr, en) => i18n?.t(fr, en) || en;
-
-  if (lower.includes('schema preflight')) {
-    return t('Vérification des schémas…', 'Validating schemas…');
-  }
-  if (lower.includes('parsing mcp snapshot')) {
-    return t('Lecture de la capture de page…', 'Reading page snapshot…');
-  }
-  if (lower.includes('running mcp snapshot') || lower.includes('mcp snapshot')) {
-    return t('Capture de la page…', 'Capturing page…');
-  }
-  if (lower.includes('list_pages')) {
-    return t('Récupération des onglets Chrome…', 'Fetching Chrome tabs…');
-  }
-  if (lower.includes('chrome-devtools-mcp')) {
-    return t('Connexion à Chrome…', 'Connecting to Chrome…');
-  }
-  if (lower.includes('retrying') && lower.includes('default model')) {
-    return t('Modèle introuvable, nouvel essai…', 'Model not found, retrying…');
-  }
-
-  return raw
-    .replace(/\bMCP\b/g, 'Chrome')
-    .replace(/\bCDP\b/g, 'DevTools')
-    .replace(/^AI:\s*/i, '')
+function sanitizeStatusLine(text) {
+  return normalizeInline(String(text || ''))
+    .replace(/[•◆◇■□▪▫]/g, ' ')
+    .replace(/[┌┐└┘├┤┬┴┼│─━]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
+}
+
+function looksLikeCodexHomePermissionError(stderr) {
+  const text = String(stderr || '');
+  return (
+    text.includes('Codex cannot access session files') ||
+    text.includes('permission denied') ||
+    text.includes('Operation not permitted') ||
+    text.includes('Error finding codex home') ||
+    text.includes('CODEX_HOME points to')
+  );
+}
+
+function buildCodexEnv({ codexHome } = {}) {
+  const env = { ...process.env };
+  if (codexHome) env.CODEX_HOME = codexHome;
+  env.CODEX_SANDBOX_NETWORK_DISABLED = '0';
+
+  const cacheRoot = codexHome || env.CODEX_HOME || os.tmpdir();
+  env.npm_config_cache = env.npm_config_cache || path.join(cacheRoot, 'npm-cache');
+  env.npm_config_yes = env.npm_config_yes || 'true';
+  env.npm_config_update_notifier = env.npm_config_update_notifier || 'false';
+  env.npm_config_fund = env.npm_config_fund || 'false';
+  env.npm_config_audit = env.npm_config_audit || 'false';
+  return env;
+}
+
+function getFallbackCodexHome() {
+  return path.join(os.tmpdir(), 'rgaa-auditor-codex-home');
+}
+
+async function ensureDir(dirPath) {
+  if (!dirPath) return;
+  await fs.mkdir(dirPath, { recursive: true });
+}
+
+function createCodexFeedHumanizer({
+  enabled,
+  model,
+  lang,
+  minIntervalMs = 1100,
+  timeoutMs = 2600
+} = {}) {
+  if (!enabled) {
+    return {
+      request() {},
+      stop() {}
+    };
+  }
+
+  const codexPath = process.env.CODEX_PATH || 'codex';
+  const useProcessGroup = process.platform !== 'win32';
+  const pending = [];
+  let running = null;
+  let lastRunAt = 0;
+
+  const shouldRewriteKind = (kind) => kind === 'progress' || kind === 'stage' || kind === 'thinking';
+  const looksTechnical = (text) => /mcp|cdp|schema|stderr|spawn|json|chrome-devtools/i.test(String(text || ''));
+
+  const summarizeOnce = async (text) => {
+    const payload = String(text || '').trim();
+    if (!payload) return '';
+
+    const prompt =
+      `You rewrite internal technical audit logs into a single friendly status line.\n` +
+      `Language: ${lang === 'fr' ? 'French' : 'English'}.\n` +
+      `Rules:\n` +
+      `- Output ONE short line (max 70 characters).\n` +
+      `- No bullets, no box-drawing characters, no emojis.\n` +
+      `- No acronyms or technical jargon (no MCP/CDP/JSON/schema/stderr/spawn).\n` +
+      `- Be clear and reassuring.\n` +
+      `Input: ${JSON.stringify(payload)}\n` +
+      `Output:`;
+
+    const buildArgs = (modelOverride = model) => {
+      const args = [
+        'exec',
+        '--non-interactive',
+        '--full-auto',
+        '--color',
+        'never',
+        '--sandbox',
+        'read-only'
+      ];
+      if (modelOverride) args.push('-m', modelOverride);
+      args.push('-');
+      return args;
+    };
+
+    const runWithEnv = async (env, modelOverride = model) =>
+      new Promise((resolve, reject) => {
+        const child = spawn(codexPath, buildArgs(modelOverride), {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          detached: useProcessGroup,
+          env
+        });
+
+        let stdoutText = '';
+        let stderrText = '';
+        let settled = false;
+        let timeout = null;
+
+        const finalize = (err, out) => {
+          if (settled) return;
+          settled = true;
+          if (timeout) clearTimeout(timeout);
+          try {
+            if (!child.killed) {
+              if (useProcessGroup && child.pid) process.kill(-child.pid, 'SIGTERM');
+              else child.kill('SIGTERM');
+            }
+          } catch {}
+          if (err) {
+            err.stderr = stderrText;
+            reject(err);
+          } else {
+            resolve(out);
+          }
+        };
+
+        timeout = setTimeout(() => {
+          finalize(new Error(`codex exec timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        if (typeof timeout.unref === 'function') timeout.unref();
+
+        child.on('error', (err) => finalize(err));
+        child.on('exit', (code) => {
+          if (code === 0) finalize(null, stdoutText);
+          else finalize(new Error(`codex exec exited with code ${code}`));
+        });
+
+        child.stdout?.on?.('data', (chunk) => {
+          stdoutText += String(chunk);
+          if (stdoutText.length > 32_000) stdoutText = stdoutText.slice(-32_000);
+        });
+        child.stderr?.on?.('data', (chunk) => {
+          stderrText += String(chunk);
+          if (stderrText.length > 64_000) stderrText = stderrText.slice(-64_000);
+        });
+
+        child.stdin.write(prompt);
+        child.stdin.end();
+      });
+
+    // Ensure a user-provided CODEX_HOME exists; Codex exits early if it doesn't.
+    if (process.env.CODEX_HOME) {
+      await ensureDir(process.env.CODEX_HOME);
+    }
+
+    try {
+      return await runWithEnv(buildCodexEnv(), model);
+    } catch (err) {
+      if (!process.env.CODEX_HOME && looksLikeCodexHomePermissionError(err?.stderr)) {
+        const fallbackHome = getFallbackCodexHome();
+        await ensureDir(fallbackHome);
+        await ensureDir(path.join(fallbackHome, 'sessions'));
+        await ensureDir(path.join(fallbackHome, 'npm-cache'));
+        return await runWithEnv(buildCodexEnv({ codexHome: fallbackHome }), model);
+      }
+      throw err;
+    }
+  };
+
+  const drain = async () => {
+    if (running) return;
+    running = (async () => {
+      while (pending.length) {
+        const now = nowMs();
+        const wait = Math.max(0, minIntervalMs - (now - lastRunAt));
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        const job = pending.shift();
+        if (!job) continue;
+        lastRunAt = nowMs();
+
+        try {
+          const out = await summarizeOnce(job.text);
+          const cleaned = String(out || '')
+            .replace(/```[\s\S]*?```/g, '')
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)[0];
+          if (cleaned) job.onResult(cleaned);
+        } catch {
+          // Best-effort; keep existing line.
+        }
+      }
+    })().finally(() => {
+      running = null;
+    });
+  };
+
+  return {
+    request({ kind, text, onResult }) {
+      const raw = String(text || '').trim();
+      if (!raw) return;
+      if (!shouldRewriteKind(kind)) return;
+      if (kind === 'progress' && !looksTechnical(raw) && raw.length < 48) return;
+      pending.push({ kind, text: raw, onResult });
+      while (pending.length > 3) pending.shift();
+      drain();
+    },
+    stop() {
+      pending.length = 0;
+    }
+  };
 }
 
 function drawPanel({ title, lines, width, borderColor = palette.muted }) {
@@ -266,6 +450,11 @@ function createFancyReporter(options = {}) {
   const isGuided = Boolean(options.guided);
   const spinner = ora({ text: i18n.t('Préparation de l’audit…', 'Preparing audit…'), color: 'cyan' });
   const renderer = createLiveBlockRenderer();
+  const feedHumanizer = createCodexFeedHumanizer({
+    enabled: Boolean(options.humanizeFeed),
+    model: options.humanizeFeedModel || '',
+    lang: i18n.lang || options.lang || 'fr'
+  });
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let frame = 0;
   let tickTimer = null;
@@ -290,16 +479,45 @@ function createFancyReporter(options = {}) {
 
   const feedMax = 7;
   const feed = [];
+  let feedSeq = 0;
   const pushFeed = (kind, message, { replaceLastIfSameKind = false } = {}) => {
     const raw = String(message || '');
-    const normalized = kind === 'progress' ? humanizeCodexFeedMessage(raw, i18n) : normalizeInline(raw);
+    const normalized = sanitizeStatusLine(raw);
     const cleaned = clipInline(normalized, 240);
     if (!cleaned) return;
     if (replaceLastIfSameKind && feed.length && feed[feed.length - 1].kind === kind) {
-      feed[feed.length - 1] = { at: nowMs(), kind, message: cleaned };
+      const id = feed[feed.length - 1].id || ++feedSeq;
+      feed[feed.length - 1] = { id, at: nowMs(), kind, message: cleaned };
+      feedHumanizer.request({
+        kind,
+        text: normalized,
+        onResult: (rewritten) => {
+          const idx = feed.findIndex((r) => r.id === id);
+          if (idx < 0) return;
+          feed[idx] = {
+            ...feed[idx],
+            message: clipInline(rewritten, 240)
+          };
+          render();
+        }
+      });
     } else {
-      feed.push({ at: nowMs(), kind, message: cleaned });
+      const id = ++feedSeq;
+      feed.push({ id, at: nowMs(), kind, message: cleaned });
       while (feed.length > feedMax) feed.shift();
+      feedHumanizer.request({
+        kind,
+        text: normalized,
+        onResult: (rewritten) => {
+          const idx = feed.findIndex((r) => r.id === id);
+          if (idx < 0) return;
+          feed[idx] = {
+            ...feed[idx],
+            message: clipInline(rewritten, 240)
+          };
+          render();
+        }
+      });
     }
   };
 
@@ -317,13 +535,24 @@ function createFancyReporter(options = {}) {
   const stopTicking = () => {
     if (tickTimer) clearInterval(tickTimer);
     tickTimer = null;
+    feedHumanizer.stop();
   };
 
   const startStage = (label) => {
-    stageLabel = String(label || '').trim();
+    const original = sanitizeStatusLine(label);
+    stageLabel = original;
     stageStartAt = nowMs();
     lastStageMs = null;
     if (stageLabel) pushFeed('stage', stageLabel);
+    feedHumanizer.request({
+      kind: 'stage',
+      text: original,
+      onResult: (rewritten) => {
+        if (stageLabel !== original) return;
+        stageLabel = rewritten;
+        render();
+      }
+    });
     render();
   };
 
@@ -1094,6 +1323,11 @@ function createLegacyReporter(options = {}) {
 
 function createPlainReporter(options = {}) {
   const i18n = getI18n(normalizeReportLang(options.lang));
+  const feedHumanizer = createCodexFeedHumanizer({
+    enabled: Boolean(options.humanizeFeed),
+    model: options.humanizeFeedModel || '',
+    lang: i18n.lang || options.lang || 'fr'
+  });
   let totalCriteria = 0;
   let totalPages = 0;
   let overallDone = 0;
@@ -1169,17 +1403,29 @@ function createPlainReporter(options = {}) {
     },
 
     onAIStage({ label }) {
-      if (label && !isNoiseAiMessage(label)) line('Codex', label);
+      if (label && !isNoiseAiMessage(label)) {
+        const normalized = sanitizeStatusLine(label);
+        line('Codex', normalized);
+        feedHumanizer.request({
+          kind: 'stage',
+          text: normalized,
+          onResult: (rewritten) => line('Codex', rewritten)
+        });
+      }
     },
 
     onAILog({ message }) {
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
-      const friendly = humanizeCodexFeedMessage(cleaned, i18n);
-      const clipped = friendly.slice(0, 120);
+      const clipped = sanitizeStatusLine(cleaned).slice(0, 120);
       if (clipped !== lastAILog) {
         lastAILog = clipped;
         line('Codex', clipped);
+        feedHumanizer.request({
+          kind: 'progress',
+          text: sanitizeStatusLine(cleaned),
+          onResult: (rewritten) => line('Codex', rewritten)
+        });
       }
     },
 
