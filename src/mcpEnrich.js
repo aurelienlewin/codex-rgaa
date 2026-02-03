@@ -63,8 +63,9 @@ function buildPrompt({ url, pageId, paths }) {
       : `URL ${url}`;
   return [
     'You are a technical tool runner. Use ONLY chrome-devtools MCP tools.',
-    'Do not add narration, explanations, or confirmations (no free text).',
-    'Only output MCP tool calls and the final JSON response.',
+    'Write a brief narration on ONE line.',
+    'On the next line, output only the MCP tool call (or the final JSON response).',
+    'Repeat this two-line format for each action.',
     'Required steps:',
     '1) Determine the target page:',
     typeof pageId === 'number' && Number.isFinite(pageId)
