@@ -72,26 +72,6 @@ async function promptPages() {
   return urls;
 }
 
-async function promptRemoteDebug() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const ask = (question) =>
-    new Promise((resolve) => {
-      rl.question(question, (answer) => resolve(answer));
-    });
-
-  const answer = String(
-    await ask('Allow Chrome remote debugging for this audit? (y/N) ')
-  )
-    .trim()
-    .toLowerCase();
-  rl.close();
-  return answer === 'y' || answer === 'yes';
-}
-
 async function promptYesNo(question, defaultValue = false) {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -281,6 +261,8 @@ async function main() {
     .help()
     .parse();
 
+  const guided = interactive ? argv.guided !== false : Boolean(argv.guided);
+
   if (argv.xlsx === false) {
     argv.out = null;
   } else if (!argv.out) {
@@ -321,7 +303,10 @@ async function main() {
       );
       process.exit(1);
     }
-    allowRemoteDebug = await promptRemoteDebug();
+    allowRemoteDebug = await promptYesNo(
+      'Allow Chrome remote debugging for this audit?',
+      guided ? true : false
+    );
   }
   if (!allowRemoteDebug) {
     console.error('Remote debugging not allowed. Aborting.');
@@ -359,8 +344,6 @@ async function main() {
     (arg) => arg === '--mcp-page-id' || arg.startsWith('--mcp-page-id=')
   );
 
-  const guided = interactive ? argv.guided !== false : Boolean(argv.guided);
-
   let snapshotMode = argv['snapshot-mode'];
   let mcpBrowserUrlArg = argv['mcp-browser-url'];
   let mcpAutoConnectArg = argv['mcp-auto-connect'];
@@ -384,7 +367,7 @@ async function main() {
           'Automatic (recommended) — the auditor opens its own Chrome and navigates to each URL.',
           'Use my existing Chrome window (MCP) — connect to a Chrome session you already have open.'
         ],
-        { defaultIndex: snapshotMode === 'mcp' ? 1 : 0 }
+        { defaultIndex: 1 }
       );
       snapshotMode = modeIndex === 1 ? 'mcp' : 'cdp';
     }
@@ -400,13 +383,14 @@ async function main() {
             'Auto-connect (recommended) — Chrome 144+ will prompt you to allow debugging connections.',
             'Use an existing debugging URL (advanced) — e.g. http://127.0.0.1:9222'
           ],
-          { defaultIndex: 0 }
+          { defaultIndex: 1 }
         );
 
         if (connectIndex === 0) {
           mcpAutoConnectArg = true;
           mcpBrowserUrlArg = '';
         } else {
+          const defaultBrowserUrl = 'http://127.0.0.1:9222';
           mcpAutoConnectArg = false;
           mcpBrowserUrlArg =
             (await (async () => {
@@ -416,10 +400,10 @@ async function main() {
               });
               const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a)));
               const answer = String(
-                await ask('Chrome debugging URL (example: http://127.0.0.1:9222): ')
+                await ask(`Chrome debugging URL (default: ${defaultBrowserUrl}): `)
               ).trim();
               rl.close();
-              return answer;
+              return answer || defaultBrowserUrl;
             })()) || mcpBrowserUrlArg;
         }
       }
