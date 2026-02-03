@@ -79,6 +79,91 @@ function formatRunId(date = new Date()) {
   return `${y}${m}${d}-${hh}${mm}${ss}`;
 }
 
+function createAiWatchdog({ reporter, abortController, stallTimeoutMs, stageTimeoutMs }) {
+  if (!stallTimeoutMs && !stageTimeoutMs) {
+    return { reporter, stop: () => {} };
+  }
+  let lastActivityAt = Date.now();
+  let stageLabel = '';
+  let stageStartAt = 0;
+  let timer = null;
+  const bump = () => {
+    lastActivityAt = Date.now();
+  };
+  const startStage = (label) => {
+    stageLabel = String(label || '');
+    stageStartAt = Date.now();
+    bump();
+  };
+  const stop = () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+  };
+  timer = setInterval(() => {
+    const now = Date.now();
+    if (stallTimeoutMs && now - lastActivityAt >= stallTimeoutMs) {
+      const seconds = Math.round(stallTimeoutMs / 1000);
+      reporter.onError?.(`AI/MCP stalled for ${seconds}s. Aborting audit.`);
+      abortController.abort();
+      terminateCodexChildren();
+      stop();
+      return;
+    }
+    if (stageTimeoutMs && stageStartAt && now - stageStartAt >= stageTimeoutMs) {
+      const seconds = Math.round(stageTimeoutMs / 1000);
+      const label = stageLabel ? ` (${stageLabel})` : '';
+      reporter.onError?.(`AI stage exceeded ${seconds}s${label}. Aborting audit.`);
+      abortController.abort();
+      terminateCodexChildren();
+      stop();
+    }
+  }, 1000);
+  if (typeof timer.unref === 'function') timer.unref();
+
+  const wrapped = {
+    ...reporter,
+    onAIStart(payload) {
+      bump();
+      reporter.onAIStart?.(payload);
+    },
+    onAIStage(payload) {
+      startStage(payload?.label);
+      reporter.onAIStage?.(payload);
+    },
+    onAILog(payload) {
+      bump();
+      reporter.onAILog?.(payload);
+    },
+    onCriterion(payload) {
+      bump();
+      stageStartAt = 0;
+      stageLabel = '';
+      reporter.onCriterion?.(payload);
+    },
+    onPageStart(payload) {
+      bump();
+      reporter.onPageStart?.(payload);
+    },
+    onPageEnd(payload) {
+      bump();
+      reporter.onPageEnd?.(payload);
+    },
+    onShutdown(payload) {
+      stop();
+      reporter.onShutdown?.(payload);
+    },
+    onError(payload) {
+      stop();
+      reporter.onError?.(payload);
+    },
+    onDone(payload) {
+      stop();
+      reporter.onDone?.(payload);
+    }
+  };
+  return { reporter: wrapped, stop };
+}
+
 function defaultXlsxOutPath() {
   return path.join('out', formatRunId(), 'rgaa-audit.xlsx');
 }
@@ -806,6 +891,12 @@ async function main() {
     humanizeFeed,
     humanizeFeedModel
   });
+  const aiStallRaw = Number(process.env.AUDIT_AI_STALL_TIMEOUT_MS || '');
+  const aiStallTimeoutMs =
+    Number.isFinite(aiStallRaw) && aiStallRaw > 0 ? Math.floor(aiStallRaw) : 0;
+  const aiStageRaw = Number(process.env.AUDIT_AI_STAGE_TIMEOUT_MS || '');
+  const aiStageTimeoutMs =
+    Number.isFinite(aiStageRaw) && aiStageRaw > 0 ? Math.floor(aiStageRaw) : 0;
   const criteriaCount = loadCriteria({ lang: reportLang }).length;
   if (interactive && guided) {
     clearScreen();
@@ -821,6 +912,12 @@ async function main() {
   }
 
   const abortController = new AbortController();
+  const watchdog = createAiWatchdog({
+    reporter,
+    abortController,
+    stallTimeoutMs: aiStallTimeoutMs,
+    stageTimeoutMs: aiStageTimeoutMs
+  });
   let shutdownRequested = false;
   let forceExitTimer = null;
   const shutdown = (signal) => {
@@ -829,6 +926,7 @@ async function main() {
     lastShutdownSignal = signal;
     const exitCode = signal === 'SIGINT' ? 130 : 143;
     if (signal === 'SIGTERM') {
+      watchdog.stop();
       if (reporter.onShutdown) {
         reporter.onShutdown({ signal });
       } else {
@@ -836,6 +934,7 @@ async function main() {
         console.log('Progress at shutdown.');
       }
     } else {
+      watchdog.stop();
       reporter.onError?.(`Received ${signal}. Shutting down…`);
     }
     abortController.abort();
@@ -870,7 +969,7 @@ async function main() {
       chromePath: argv['chrome-path'],
       chromePort: argv['chrome-port'],
       timeoutMs: argv.timeout,
-      reporter,
+      reporter: watchdog.reporter,
       signal: abortController.signal,
       snapshotMode,
       mcp: {
@@ -899,11 +998,13 @@ async function main() {
       return;
     }
   } catch (err) {
+    watchdog.stop();
     if (isAbortError(err) || abortController.signal.aborted) {
       throw createAbortError();
     }
     throw err;
   } finally {
+    watchdog.stop();
     terminateCodexChildren();
     if (forceExitTimer) clearTimeout(forceExitTimer);
   }
