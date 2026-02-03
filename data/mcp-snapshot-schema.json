@@ -9,6 +9,13 @@
     "dir",
     "href",
     "readyState",
+    "counts",
+    "partial",
+    "imageSummary",
+    "frameSummary",
+    "linkSummary",
+    "listSummary",
+    "headingAnalysis",
     "images",
     "frames",
     "links",
@@ -43,6 +50,78 @@
     "dir": { "type": "string" },
     "href": { "type": "string" },
     "readyState": { "type": "string" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "images",
+        "frames",
+        "links",
+        "formControls",
+        "headings",
+        "listItems",
+        "langChanges",
+        "dirChanges",
+        "tables",
+        "fieldsets",
+        "buttons",
+        "landmarks",
+        "focusables"
+      ],
+      "properties": {
+        "images": { "type": "number" },
+        "frames": { "type": "number" },
+        "links": { "type": "number" },
+        "formControls": { "type": "number" },
+        "headings": { "type": "number" },
+        "listItems": { "type": "number" },
+        "langChanges": { "type": "number" },
+        "dirChanges": { "type": "number" },
+        "tables": { "type": "number" },
+        "fieldsets": { "type": "number" },
+        "buttons": { "type": "number" },
+        "landmarks": { "type": "number" },
+        "focusables": { "type": "number" }
+      }
+    },
+    "partial": { "type": "boolean" },
+    "imageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "missingAltCount", "roleImgMissingNameCount"],
+      "properties": {
+        "total": { "type": "number" },
+        "missingAltCount": { "type": "number" },
+        "roleImgMissingNameCount": { "type": "number" }
+      }
+    },
+    "frameSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "missingTitleCount"],
+      "properties": {
+        "total": { "type": "number" },
+        "missingTitleCount": { "type": "number" }
+      }
+    },
+    "listSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "invalidCount"],
+      "properties": {
+        "total": { "type": "number" },
+        "invalidCount": { "type": "number" }
+      }
+    },
+    "headingAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["h1Count", "hasLevelJumps"],
+      "properties": {
+        "h1Count": { "type": "number" },
+        "hasLevelJumps": { "type": "boolean" }
+      }
+    },
     "images": {
       "type": "array",
       "items": {
@@ -409,12 +488,23 @@
     "linkSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "targetBlank", "targetBlankNoRel", "fragmentLinks"],
+      "required": [
+        "total",
+        "targetBlank",
+        "targetBlankNoRel",
+        "fragmentLinks",
+        "missingNameCount",
+        "genericCount",
+        "skipLinkFound"
+      ],
       "properties": {
         "total": { "type": "number" },
         "targetBlank": { "type": "number" },
         "targetBlankNoRel": { "type": "number" },
-        "fragmentLinks": { "type": "number" }
+        "fragmentLinks": { "type": "number" },
+        "missingNameCount": { "type": "number" },
+        "genericCount": { "type": "number" },
+        "skipLinkFound": { "type": "boolean" }
       }
     },
     "media": {

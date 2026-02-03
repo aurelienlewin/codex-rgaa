@@ -467,27 +467,6 @@ export function getSnapshotExpression() {
       }));
     })();
 
-    const linkSummary = (() => {
-      const summary = {
-        total: links.length,
-        targetBlank: 0,
-        targetBlankNoRel: 0,
-        fragmentLinks: 0
-      };
-      for (const link of links) {
-        const target = (link.target || '').toLowerCase();
-        if (target === '_blank') {
-          summary.targetBlank += 1;
-          const rel = (link.rel || '').toLowerCase();
-          if (!rel.includes('noopener') && !rel.includes('noreferrer')) {
-            summary.targetBlankNoRel += 1;
-          }
-        }
-        if ((link.href || '').trim().startsWith('#')) summary.fragmentLinks += 1;
-      }
-      return summary;
-    })();
-
     const meta = (() => {
       const viewport = doc.querySelector('meta[name="viewport"]');
       const refresh = doc.querySelector('meta[http-equiv="refresh"]');
