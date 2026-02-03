@@ -275,6 +275,13 @@ export async function runAudit(options) {
 
       const results = [];
       let criterionIndex = 0;
+      const reported = new Set();
+      const reportCriterion = (criterion, evaluation, resultIndex) => {
+        if (reported.has(resultIndex)) return;
+        reporter?.onCriterion?.({ index: criterionIndex, criterion, evaluation });
+        criterionIndex += 1;
+        reported.add(resultIndex);
+      };
       reporter?.onChecksStart?.({ index: pageIndex, url });
       const pendingAI = [];
       for (const criterion of criteria) {
@@ -283,11 +290,20 @@ export async function runAudit(options) {
         }
 
         if (page.error) {
-          results.push({
+          const evaluation = {
             ...criterion,
             status: STATUS.ERR,
             notes: formatPageFailure(page.error)
-          });
+          };
+          const index = results.length;
+          results.push(evaluation);
+          reportCriterion(criterion, {
+            status: evaluation.status,
+            notes: evaluation.notes,
+            ai: evaluation.ai || null,
+            automated: Boolean(evaluation.automated),
+            aiCandidate: Boolean(evaluation.aiCandidate)
+          }, index);
           continue;
         }
 
@@ -296,6 +312,14 @@ export async function runAudit(options) {
         results.push({ ...criterion, ...evaluation });
         if (evaluation.aiCandidate) {
           pendingAI.push({ criterion, index });
+        } else {
+          reportCriterion(criterion, {
+            status: evaluation.status || STATUS.ERR,
+            notes: evaluation.notes || 'Missing evaluation.',
+            ai: evaluation.ai || null,
+            automated: Boolean(evaluation.automated),
+            aiCandidate: Boolean(evaluation.aiCandidate)
+          }, index);
         }
       }
 
@@ -379,6 +403,13 @@ export async function runAudit(options) {
           }
 
           results[index] = { ...criterion, ...evaluation };
+          reportCriterion(criterion, {
+            status: evaluation.status || STATUS.ERR,
+            notes: evaluation.notes || 'Missing evaluation.',
+            ai: evaluation.ai || null,
+            automated: Boolean(evaluation.automated),
+            aiCandidate: Boolean(evaluation.aiCandidate)
+          }, index);
         }
       }
 
@@ -389,15 +420,16 @@ export async function runAudit(options) {
         }
         const criterion = criteria[i];
         const res = results[i];
-        const evaluation = {
-          status: res?.status || STATUS.ERR,
-          notes: res?.notes || 'Missing evaluation.',
-          ai: res?.ai || null,
-          automated: Boolean(res?.automated),
-          aiCandidate: Boolean(res?.aiCandidate)
-        };
-        reporter?.onCriterion?.({ index: criterionIndex, criterion, evaluation });
-        criterionIndex += 1;
+        if (!reported.has(i)) {
+          const evaluation = {
+            status: res?.status || STATUS.ERR,
+            notes: res?.notes || 'Missing evaluation.',
+            ai: res?.ai || null,
+            automated: Boolean(res?.automated),
+            aiCandidate: Boolean(res?.aiCandidate)
+          };
+          reportCriterion(criterion, evaluation, i);
+        }
       }
       reporter?.onChecksEnd?.({ index: pageIndex, url });
       if (page.error) pagesFailed += 1;
@@ -571,6 +603,14 @@ export async function runAudit(options) {
           ? `${i18n.notes.aiPrefix(aiConfidence)}: ${aiRationale}`
           : collapse(res.notes || '');
 
+      const evidence = [];
+      if (Array.isArray(res.ai?.evidence)) {
+        for (const ex of res.ai.evidence) {
+          const line = collapse(ex);
+          if (line) evidence.push(line);
+        }
+      }
+
       const examples = [];
       if (Array.isArray(res.examples)) {
         for (const ex of res.examples) {
@@ -578,15 +618,15 @@ export async function runAudit(options) {
           if (line) examples.push(line);
         }
       }
-      if (examples.length === 0 && Array.isArray(res.ai?.evidence)) {
-        for (const ex of res.ai.evidence) {
-          const line = collapse(ex);
-          if (line) examples.push(line);
-        }
-      }
 
       const lines = [];
       lines.push(`${status}${summary ? `: ${summary}` : ''}`);
+      if (evidence.length > 0) {
+        lines.push(i18n.notes.evidenceLabel());
+        for (const ex of evidence) {
+          lines.push(`- ${ex}`);
+        }
+      }
       if (examples.length > 0) {
         lines.push(i18n.notes.examplesLabel());
         for (const ex of examples.slice(0, 3)) {

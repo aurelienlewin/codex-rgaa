@@ -545,32 +545,40 @@ async function main() {
 
   let mcpTabs = [];
   if (interactive && guided && pages.length === 0) {
-    try {
-      console.log('\nChecking existing Chrome tabs (list_pages)…');
-      const list = await listMcpPages({
-        model: argv['codex-model'],
-        mcp: {
-          browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
-          autoConnect: mcpAutoConnect,
-          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
-        }
-      });
-      const entries = Array.isArray(list?.pages) ? list.pages : [];
-      mcpTabs = entries;
-      if (entries.length) {
-        console.log('Open tabs:');
-        entries.slice(0, 8).forEach((page) => {
-          const title = page?.title ? ` — ${page.title}` : '';
-          console.log(`- [${page?.id}] ${page?.url || '(no url)'}${title}`);
+    const shouldListTabs = await promptYesNo(
+      'Check existing Chrome tabs via MCP? (spawns chrome-devtools-mcp)',
+      false
+    );
+    if (!shouldListTabs) {
+      mcpTabs = [];
+    } else {
+      try {
+        console.log('\nChecking existing Chrome tabs (list_pages)…');
+        const list = await listMcpPages({
+          model: argv['codex-model'],
+          mcp: {
+            browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
+            autoConnect: mcpAutoConnect,
+            channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
+          }
         });
-        if (entries.length > 8) {
-          console.log(`- (+${entries.length - 8} more)`);
+        const entries = Array.isArray(list?.pages) ? list.pages : [];
+        mcpTabs = entries;
+        if (entries.length) {
+          console.log('Open tabs:');
+          entries.slice(0, 8).forEach((page) => {
+            const title = page?.title ? ` — ${page.title}` : '';
+            console.log(`- [${page?.id}] ${page?.url || '(no url)'}${title}`);
+          });
+          if (entries.length > 8) {
+            console.log(`- (+${entries.length - 8} more)`);
+          }
         }
+      } catch (err) {
+        console.log(
+          `\nWarning: unable to list Chrome tabs via MCP (${err?.message || 'unknown error'}).`
+        );
       }
-    } catch (err) {
-      console.log(
-        `\nWarning: unable to list Chrome tabs via MCP (${err?.message || 'unknown error'}).`
-      );
     }
   }
 

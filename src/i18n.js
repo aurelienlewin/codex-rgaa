@@ -47,6 +47,7 @@ export function getI18n(lang) {
       errors: () => t('Erreurs (ERR)', 'Errors (ERR)')
     },
     notes: {
+      evidenceLabel: () => t('Preuves :', 'Evidence:'),
       examplesLabel: () => t('Exemples :', 'Examples:'),
       aiPrefix: (confidence) =>
         t(
