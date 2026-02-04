@@ -164,11 +164,16 @@ In guided mode, the live UI is cleared at the end and replaced with a final **de
 To inspect what the tool actually captured per page, set `AUDIT_DEBUG_SNAPSHOTS=1` to write per-page snapshot JSON files under `out/<run>/snapshots/`.
 To help with lazy-loaded content (images/cards loaded on scroll), set `AUDIT_SNAPSHOT_SCROLL=1` to scroll during snapshot capture.
 
+If Codex is missing OpenAI credentials, the CLI prints a **red alert** (once) and, by default, the audit **fails fast**.
+You can disable fail-fast with `AUDIT_FAIL_FAST=0` (or `false`/`no`) to continue and mark failed criteria/pages as **Error**.
+
 ## Notes on automation
 - Only a subset of criteria can be validated automatically with high confidence.
 - All remaining criteria are evaluated by the AI reviewer using the collected DOM evidence.
 - If the evidence is insufficient, the AI returns **Not conform** and notes what is missing.
-- If the audit tool encounters a technical failure (page load/snapshot/AI runner), the criterion is marked **Error** and the CLI exits with code 1 (use `--allow-partial` to keep exit code 0).
+- If the audit tool encounters a technical failure (page load/snapshot/AI runner), the criterion is marked **Error**.
+- By default, missing AI auth or MCP snapshot/enrichment failures **stop the audit** (fail-fast). Disable with `AUDIT_FAIL_FAST=0`.
+- The CLI exits with code 1 on errors (use `--allow-partial` to keep exit code 0).
 
 ## Tests
 ```bash
