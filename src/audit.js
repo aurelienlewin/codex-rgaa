@@ -55,6 +55,24 @@ function stripToolReferences(value) {
     .trim();
 }
 
+function humanizeEnrichmentEvidence(text) {
+  const raw = String(text || '');
+  if (!raw) return '';
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  if (!normalized.toLowerCase().includes('enrichment.')) return normalized;
+  return normalized
+    .replace(/enrichment\.contrast\./gi, 'Contraste ')
+    .replace(/enrichment\.motion\./gi, 'Mouvement ')
+    .replace(/enrichment\.htmlHints\./gi, 'Indice HTML ')
+    .replace(/enrichment\.domHints\./gi, 'Indice DOM ')
+    .replace(/\bcontrast\./gi, 'Contraste ')
+    .replace(/\bmotion\./gi, 'Mouvement ')
+    .replace(/\bhtmlHints\./gi, 'Indice HTML ')
+    .replace(/\bdomHints\./gi, 'Indice DOM ')
+    .replace(/\s+([:;,.)])/g, '$1')
+    .trim();
+}
+
 async function fetchChromeVersion(baseUrl) {
   const url = String(baseUrl || '').trim();
   if (!url) return null;
@@ -1014,8 +1032,10 @@ export async function runAudit(options) {
     const buildCellNote = (res) => {
       if (!res) return '';
 
-      const collapse = (value) =>
-        stripToolReferences(String(value || '').replace(/\s+/g, ' ').trim());
+      const collapse = (value) => {
+        const cleaned = stripToolReferences(String(value || '').replace(/\s+/g, ' ').trim());
+        return humanizeEnrichmentEvidence(cleaned);
+      };
       const status = i18n.statusLabel(res.status);
       const aiConfidence = Number(res.ai?.confidence || 0);
       const aiRationale = collapse(res.ai?.rationale || '');
