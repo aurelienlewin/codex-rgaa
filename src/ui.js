@@ -791,11 +791,6 @@ function createFancyReporter(options = {}) {
       enrichmentActive && enrichmentStartedAt ? formatElapsed(nowMs() - enrichmentStartedAt) : '';
 
     const progressLines = [
-      `${padVisibleRight(palette.muted('Reasoning'), 8)} ${
-        codexReasoning
-          ? palette.accent(codexReasoning)
-          : palette.muted(reasoningPlaceholder)
-      }`,
       ...(secondPassActive
         ? [
             secondPassNotice
