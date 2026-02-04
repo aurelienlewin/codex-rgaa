@@ -41,6 +41,15 @@ class EnrichmentCache {
   }
 }
 
+function compactSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot;
+  return {
+    title: snapshot.title || '',
+    lang: snapshot.lang || '',
+    enrichmentMeta: snapshot.enrichmentMeta || null
+  };
+}
+
 async function writeResumeState(statePath, state) {
   if (!statePath) return;
   try {
@@ -916,6 +925,7 @@ export async function runAudit(options) {
               pauseController,
               reporter,
               label: 'AI batch',
+              retryOnAny: true,
               fn: () =>
                 aiReviewCriteriaBatch({
                   model: options.ai.model,
@@ -989,6 +999,7 @@ export async function runAudit(options) {
               pauseController,
               reporter,
               label: `AI criterion ${criterion.id}`,
+              retryOnAny: true,
               fn: () =>
                 aiReviewCriterion({
                   model: options.ai.model,
@@ -1039,6 +1050,7 @@ export async function runAudit(options) {
             pauseController,
             reporter,
             label: `AI retry ${criterion.id}`,
+            retryOnAny: true,
             fn: () =>
               aiReviewCriterion({
                 model: options.ai.model,
@@ -1101,7 +1113,7 @@ export async function runAudit(options) {
           lang: page.snapshot.lang || ''
         });
       }
-      pageResults.push({ url, snapshot: page.snapshot, results });
+      pageResults.push({ url, snapshot: compactSnapshot(page.snapshot), results });
       if (options.resumeStatePath) {
         const completedPages = pageResults.map((item) => ({
           url: item.url,
@@ -1162,6 +1174,7 @@ export async function runAudit(options) {
           pauseController,
           reporter,
           label: `AI cross-page ${criterion.id}`,
+          retryOnAny: true,
           fn: () =>
             aiReviewCrossPageCriterion({
               model: options.ai?.model,
