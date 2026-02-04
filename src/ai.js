@@ -406,13 +406,18 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 ...(useOcr
                   ? [
                       'OCR tool available: rgaa_ocr. Recommended flow: take_screenshot with filePath under /tmp, then call rgaa_ocr {path, lang?}.',
-                      'Use OCR only to extract visible text from images; cite the OCR output in evidence.'
+                      'Use OCR only to extract visible text from images; cite the OCR output in evidence.',
+                      'If images are missing alt or role="img" has no accessible name and the criterion is about text alternatives (1.x), run OCR on representative images.'
                     ]
                   : []),
                 'Local analysis tools available:',
                 '- rgaa_html_analyze {html|path} for DOM/HTML accessibility hints (links/images/forms/structure).',
                 '- rgaa_contrast_samples {samples[]} to compute contrast ratios from style samples.',
                 '- rgaa_motion_diff {screenshot1,screenshot2} to detect motion between screenshots.',
+                'If enrichment.htmlSnippet exists and htmlHints/domHints are missing, call rgaa_html_analyze {html: enrichment.htmlSnippet}.',
+                'If enrichment.styleSamples exists and enrichment.contrast is missing, call rgaa_contrast_samples {samples: enrichment.styleSamples}.',
+                'If enrichment.uiSamples exists and the criterion is UI contrast (3.3), map uiSamples to samples {color: borderColor||backgroundColor||color, backgroundColor: parentBackgroundColor, fontSize, fontWeight} then call rgaa_contrast_samples.',
+                'If enrichmentMeta.screenshot1/screenshot2 exists and the criterion is motion/animation (10.x), call rgaa_motion_diff.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -473,13 +478,18 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 ...(useOcr
                   ? [
                       'Outil OCR disponible : rgaa_ocr. Flux recommandé : take_screenshot avec filePath sous /tmp, puis rgaa_ocr {path, lang?}.',
-                      'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.'
+                      'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.',
+                      'Si des images n’ont pas d’alt ou des role=\"img\" sans nom accessible et que le critère porte sur les alternatives textuelles (1.x), fais un OCR sur des images représentatives.'
                     ]
                   : []),
                 'Outils locaux disponibles :',
                 '- rgaa_html_analyze {html|path} pour des indices d’accessibilité DOM/HTML.',
                 '- rgaa_contrast_samples {samples[]} pour calculer les ratios de contraste.',
                 '- rgaa_motion_diff {screenshot1,screenshot2} pour détecter du mouvement.',
+                'Si enrichment.htmlSnippet existe et que htmlHints/domHints manquent, lance rgaa_html_analyze {html: enrichment.htmlSnippet}.',
+                'Si enrichment.styleSamples existe et que enrichment.contrast manque, lance rgaa_contrast_samples {samples: enrichment.styleSamples}.',
+                'Si enrichment.uiSamples existe et que le critère porte sur le contraste UI (3.3), mappe uiSamples vers samples {color: borderColor||backgroundColor||color, backgroundColor: parentBackgroundColor, fontSize, fontWeight} puis lance rgaa_contrast_samples.',
+                'Si enrichmentMeta.screenshot1/screenshot2 existe et que le critère porte sur le mouvement/animation (10.x), lance rgaa_motion_diff.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -546,13 +556,18 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 ...(useOcr
                   ? [
                       'OCR tool available: rgaa_ocr. Recommended flow: take_screenshot with filePath under /tmp, then call rgaa_ocr {path, lang?}.',
-                      'Use OCR only to extract visible text from images; cite the OCR output in evidence.'
+                      'Use OCR only to extract visible text from images; cite the OCR output in evidence.',
+                      'If images are missing alt or role="img" has no accessible name and the criterion is about text alternatives (1.x), run OCR on representative images.'
                     ]
                   : []),
                 'Local analysis tools available:',
                 '- rgaa_html_analyze {html|path} for DOM/HTML accessibility hints (links/images/forms/structure).',
                 '- rgaa_contrast_samples {samples[]} to compute contrast ratios from style samples.',
                 '- rgaa_motion_diff {screenshot1,screenshot2} to detect motion between screenshots.',
+                'If enrichment.htmlSnippet exists and htmlHints/domHints are missing, call rgaa_html_analyze {html: enrichment.htmlSnippet}.',
+                'If enrichment.styleSamples exists and enrichment.contrast is missing, call rgaa_contrast_samples {samples: enrichment.styleSamples}.',
+                'If enrichment.uiSamples exists and the criterion is UI contrast (3.3), map uiSamples to samples {color: borderColor||backgroundColor||color, backgroundColor: parentBackgroundColor, fontSize, fontWeight} then call rgaa_contrast_samples.',
+                'If enrichmentMeta.screenshot1/screenshot2 exists and the criterion is motion/animation (10.x), call rgaa_motion_diff.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)
@@ -610,13 +625,18 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 ...(useOcr
                   ? [
                       'Outil OCR disponible : rgaa_ocr. Flux recommandé : take_screenshot avec filePath sous /tmp, puis rgaa_ocr {path, lang?}.',
-                      'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.'
+                      'Utilise l’OCR uniquement pour extraire du texte visible; cite la sortie OCR dans les preuves.',
+                      'Si des images n’ont pas d’alt ou des role="img" sans nom accessible et que le critère porte sur les alternatives textuelles (1.x), fais un OCR sur des images représentatives.'
                     ]
                   : []),
                 'Outils locaux disponibles :',
                 '- rgaa_html_analyze {html|path} pour des indices d’accessibilité DOM/HTML.',
                 '- rgaa_contrast_samples {samples[]} pour calculer les ratios de contraste.',
                 '- rgaa_motion_diff {screenshot1,screenshot2} pour détecter du mouvement.',
+                'Si enrichment.htmlSnippet existe et que htmlHints/domHints manquent, lance rgaa_html_analyze {html: enrichment.htmlSnippet}.',
+                'Si enrichment.styleSamples existe et que enrichment.contrast manque, lance rgaa_contrast_samples {samples: enrichment.styleSamples}.',
+                'Si enrichment.uiSamples existe et que le critère porte sur le contraste UI (3.3), mappe uiSamples vers samples {color: borderColor||backgroundColor||color, backgroundColor: parentBackgroundColor, fontSize, fontWeight} puis lance rgaa_contrast_samples.',
+                'Si enrichmentMeta.screenshot1/screenshot2 existe et que le critère porte sur le mouvement/animation (10.x), lance rgaa_motion_diff.',
                 `MCP_TARGET_URL: ${url}`,
                 pageId !== null ? `MCP_PAGE_ID: ${pageId}` : ''
               ].filter(Boolean)

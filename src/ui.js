@@ -1177,10 +1177,15 @@ function createFancyReporter(options = {}) {
     },
 
     onAIStart({ criterion }) {
-      const critText = `${criterion.id} ${criterion.title}`.slice(0, 60);
+      const isBatch = typeof criterion?.id === 'string' && /^AI\\(\\d+\\)$/.test(criterion.id);
+      const critText = isBatch
+        ? `${criterion.title}`.slice(0, 60)
+        : `${criterion.id} ${criterion.title}`.slice(0, 60);
       currentCriterion = { id: criterion.id, title: criterion.title };
       startStage(`AI thinking ${critText}`);
-      pushFeed('thinking', `${criterion.id} ${criterion.title}`.slice(0, 140));
+      if (!isBatch) {
+        pushFeed('thinking', `${criterion.id} ${criterion.title}`.slice(0, 140));
+      }
     },
 
     onAIStage({ label, criterion }) {
@@ -1752,10 +1757,15 @@ function createLegacyReporter(options = {}) {
 
     onAIStart({ criterion }) {
       if (!pageBar) return;
-      const critText = `${criterion.id} ${criterion.title}`.slice(0, 60);
+      const isBatch = typeof criterion?.id === 'string' && /^AI\\(\\d+\\)$/.test(criterion.id);
+      const critText = isBatch
+        ? `${criterion.title}`.slice(0, 60)
+        : `${criterion.id} ${criterion.title}`.slice(0, 60);
       startStage(`AI thinking ${critText}`);
       pageBar.update(null, { crit: `${palette.accent('AI thinking')} ${critText}` });
-      logAILine('thinking', `${criterion.id} ${criterion.title}`.slice(0, 80));
+      if (!isBatch) {
+        logAILine('thinking', `${criterion.id} ${criterion.title}`.slice(0, 80));
+      }
     },
 
     onAIStage({ label }) {
@@ -2133,7 +2143,9 @@ function createPlainReporter(options = {}) {
     },
 
     onAIStart({ criterion }) {
-      line('Codex', `thinking ${criterion.id} ${criterion.title}`);
+      const isBatch = typeof criterion?.id === 'string' && /^AI\\(\\d+\\)$/.test(criterion.id);
+      const label = isBatch ? criterion.title : `${criterion.id} ${criterion.title}`;
+      line('Codex', `thinking ${label}`);
     },
 
     onAIStage({ label }) {
