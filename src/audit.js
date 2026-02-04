@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import chromeLauncher from 'chrome-launcher';
 import ExcelJS from 'exceljs';
 import { loadCriteria } from './criteria.js';
-import { collectSnapshotWithMcp } from './mcpSnapshot.js';
+import { collectSnapshotWithMcp, listMcpPages } from './mcpSnapshot.js';
 import { collectEnrichedEvidenceWithMcp } from './mcpEnrich.js';
 import { closeMcpPages } from './mcpClosePages.js';
 import { buildEnrichment } from './enrichment.js';
@@ -530,6 +530,29 @@ export async function runAudit(options) {
       throw createAbortError();
     }
     if (reporter && reporter.onChromeReady) reporter.onChromeReady();
+    if (
+      mcpConfig &&
+      !mcpConfig?.pageId &&
+      (!Array.isArray(mcpConfig?.cachedPages) || mcpConfig.cachedPages.length === 0)
+    ) {
+      try {
+        const list = await listMcpPages({
+          model: options.ai?.model,
+          mcp: mcpConfig,
+          onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
+          onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
+          signal
+        });
+        if (Array.isArray(list?.pages) && list.pages.length) {
+          mcpConfig.cachedPages = list.pages;
+        }
+      } catch (err) {
+        reporter?.onAILog?.({
+          criterion: { id: 'snapshot', title: 'MCP', theme: 'Debug' },
+          message: `Cached list_pages failed: ${String(err?.message || err)}`
+        });
+      }
+    }
     for (const url of options.pages) {
       if (aborted || signal?.aborted) {
         throw createAbortError();
@@ -584,6 +607,12 @@ export async function runAudit(options) {
               screenshot1: enriched?.screenshot1 || '',
               screenshot2: enriched?.screenshot2 || ''
             };
+            const criteriaSample = criteria.slice(0, 6).map((item) => item.id);
+            reporter?.onEnrichmentReady?.({
+              url,
+              criteriaCount: criteria.length,
+              criteriaSample
+            });
           } catch (err) {
             enrichmentOk = false;
             if (failFast) throw err;
@@ -642,6 +671,11 @@ export async function runAudit(options) {
         criterionIndex += 1;
         reported.add(resultIndex);
       };
+      reporter?.onInferenceStart?.({
+        url,
+        criteriaCount: criteria.length,
+        criteriaSample: criteria.slice(0, 6).map((item) => item.id)
+      });
       reporter?.onChecksStart?.({ index: pageIndex, url });
       const pendingAI = [];
       const reviewRetry = [];
@@ -921,6 +955,9 @@ export async function runAudit(options) {
           reportCriterion(criterion, evaluation, i);
         }
       }
+      const inferenceCounts = summarizeCounts(results);
+      reporter?.onInferenceSummary?.({ url, counts: inferenceCounts });
+      reporter?.onInferenceEnd?.({ url });
       reporter?.onChecksEnd?.({ index: pageIndex, url });
       if (page.error) pagesFailed += 1;
       const searchEvidence = page?.snapshot ? extractSearchEvidence(page.snapshot) : null;

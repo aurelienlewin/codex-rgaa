@@ -22,7 +22,7 @@ const LIST_PAGES_SCHEMA_PATH = fileURLToPath(
 
 const LIST_PAGES_CACHE_TTL_MS = (() => {
   const raw = Number(process.env.AUDIT_MCP_LIST_PAGES_CACHE_TTL_MS || '');
-  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 5000;
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 60 * 60 * 1000;
 })();
 
 const CACHED_PAGES_MAX = (() => {

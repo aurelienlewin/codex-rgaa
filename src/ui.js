@@ -583,6 +583,7 @@ function createFancyReporter(options = {}) {
   let ticking = false;
   let resizeHandler = null;
   let exitHandler = null;
+  let elapsedTimer = null;
 
   let totalCriteria = 0;
   let totalPages = 0;
@@ -598,6 +599,8 @@ function createFancyReporter(options = {}) {
   let codexReasoning = '';
   let enrichmentEnabled = false;
   let enrichmentDone = 0;
+  let enrichmentStatus = 'idle';
+  let showEnrichmentSummary = false;
   let lastAILog = '';
   let lastAILogAt = 0;
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
@@ -702,6 +705,12 @@ function createFancyReporter(options = {}) {
     exitHandler = () => renderer.stop({ keepBlock: true });
     process.on('exit', exitHandler);
     process.stdout?.on?.('resize', resizeHandler);
+    elapsedTimer = setInterval(() => {
+      if (!process.stdout.isTTY) return;
+      frame = frame ? 0 : 1;
+      render();
+    }, 1000);
+    if (typeof elapsedTimer.unref === 'function') elapsedTimer.unref();
   };
 
   const stopTicking = () => {
@@ -709,8 +718,10 @@ function createFancyReporter(options = {}) {
     ticking = false;
     if (resizeHandler) process.stdout?.off?.('resize', resizeHandler);
     if (exitHandler) process.off?.('exit', exitHandler);
+    if (elapsedTimer) clearInterval(elapsedTimer);
     resizeHandler = null;
     exitHandler = null;
+    elapsedTimer = null;
     feedHumanizer.stop();
   };
 
@@ -762,9 +773,7 @@ function createFancyReporter(options = {}) {
 
     const overallTotal = totalPages * totalCriteria;
     const overallPct = overallTotal ? Math.round((overallDone / overallTotal) * 100) : 0;
-    const pageTotal = totalCriteria + (enrichmentEnabled ? 1 : 0);
-    const pageDoneWithEnrich = pageDone + (enrichmentEnabled ? enrichmentDone : 0);
-    const pagePct = pageTotal ? Math.round((pageDoneWithEnrich / pageTotal) * 100) : 0;
+    const pagePct = totalCriteria ? Math.round((pageDone / totalCriteria) * 100) : 0;
     const pageLabel = totalPages ? `${Math.max(0, currentPageIndex + 1)}/${totalPages}` : '-/-';
 
     const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
@@ -799,13 +808,27 @@ function createFancyReporter(options = {}) {
       `${padVisibleRight(palette.primary('Overall'), 8)} ${renderBar({ value: overallDone, total: overallTotal, width: barW })} ${palette.muted(
         `${overallPct}% • ${overallDone}/${overallTotal || 0}`
       )}`,
-      `${padVisibleRight(palette.accent('Page'), 8)} ${renderBar({
-        value: pageDoneWithEnrich,
-        total: pageTotal,
-        width: barW
-      })} ${palette.muted(
-        `${pagePct}% • ${pageDoneWithEnrich}/${pageTotal || 0}`
-      )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
+      showEnrichmentSummary && enrichmentEnabled
+        ? `${padVisibleRight(palette.glow('Enrich'), 8)} ${renderBar({
+            value: enrichmentDone,
+            total: 1,
+            width: barW
+          })} ${palette.muted(
+            `${enrichmentDone}/1`
+          )} ${palette.muted('•')} ${
+            enrichmentStatus === 'failed'
+              ? palette.warn('failed')
+              : enrichmentStatus === 'done'
+                ? palette.ok('done')
+                : palette.muted('pending')
+          }`
+        : `${padVisibleRight(palette.accent('Page'), 8)} ${renderBar({
+            value: pageDone,
+            total: totalCriteria,
+            width: barW
+          })} ${palette.muted(
+            `${pagePct}% • ${pageDone}/${totalCriteria || 0}`
+          )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
       enrichmentActive
@@ -817,7 +840,9 @@ function createFancyReporter(options = {}) {
           )}${enrichmentAge ? ` ${palette.muted('•')} ${palette.accent(enrichmentAge)}` : ''}`
         : '',
       elapsed
-        ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)}`
+        ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)} ${palette.muted(
+            frame ? '•' : '·'
+          )}`
         : ''
     ].filter(Boolean);
 
@@ -981,10 +1006,6 @@ function createFancyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelien.lewin@osf.digital>';
 
-      const animation = chalkAnimation.karaoke(headline, 1.2);
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      animation.stop();
-
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(42)
       );
@@ -1027,6 +1048,8 @@ function createFancyReporter(options = {}) {
       currentUrl = url;
       pageDone = 0;
       enrichmentDone = 0;
+      enrichmentStatus = 'idle';
+      showEnrichmentSummary = false;
       pageStartAt = nowMs();
       stageStartAt = 0;
       enrichmentActive = false;
@@ -1056,9 +1079,13 @@ function createFancyReporter(options = {}) {
     },
 
     onEnrichmentStart() {
+      const pageLabel = totalPages
+        ? `Page ${Math.max(0, currentPageIndex + 1)}/${totalPages}`
+        : '';
       enrichmentActive = true;
-      enrichmentLabel = 'Enrichment';
+      enrichmentLabel = pageLabel ? `Enrichment • ${pageLabel}` : 'Enrichment';
       enrichmentStartedAt = nowMs();
+      enrichmentStatus = 'running';
       render();
     },
 
@@ -1067,8 +1094,41 @@ function createFancyReporter(options = {}) {
         enrichmentDone = 1;
       }
       enrichmentActive = false;
+      enrichmentStatus = ok === false ? 'failed' : 'done';
       enrichmentLabel = ok === false ? 'Enrichment failed' : '';
       render();
+    },
+
+    onEnrichmentReady({ criteriaCount = 0, criteriaSample = [] } = {}) {
+      if (!enrichmentEnabled) return;
+      const sample = Array.isArray(criteriaSample) && criteriaSample.length
+        ? ` • ${criteriaSample.join(', ')}`
+        : '';
+      pushFeed('stage', `Enrichment ready • affects ${criteriaCount} criteria${sample}`);
+      render();
+    },
+
+    onInferenceStart({ criteriaCount = 0, criteriaSample = [] } = {}) {
+      const sample = Array.isArray(criteriaSample) && criteriaSample.length
+        ? ` • ${criteriaSample.join(', ')}`
+        : '';
+      startStage('Inference');
+      pushFeed('stage', `Inference running • ${criteriaCount} criteria${sample}`);
+      render();
+    },
+
+    onInferenceSummary({ counts } = {}) {
+      if (!counts) return;
+      pushFeed(
+        'progress',
+        `Inference summary • OK ${counts.OK || 0} • NC ${counts.NC || 0} • NA ${counts.NA || 0} • Review ${counts.REV || 0} • Error ${counts.ERR || 0}`
+      );
+      render();
+    },
+
+    onInferenceEnd() {
+      if (!codexReasoning) codexReasoning = 'n/a';
+      endStage('Inference');
     },
 
     onPageError({ url, error }) {
@@ -1087,6 +1147,8 @@ function createFancyReporter(options = {}) {
 
     onChecksEnd() {
       endStage('Checks');
+      showEnrichmentSummary = enrichmentEnabled;
+      render();
     },
 
     onAIStart({ criterion }) {
@@ -1390,6 +1452,7 @@ function createLegacyReporter(options = {}) {
   let auditMode = 'mcp';
   let secondPassTotal = 0;
   let secondPassDone = 0;
+  let enrichmentStatus = 'idle';
 
   const stopPulse = () => {
     if (pulseTimer) clearInterval(pulseTimer);
@@ -1465,10 +1528,6 @@ function createLegacyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelien.lewin@osf.digital>';
 
-      const animation = chalkAnimation.karaoke(headline, 1.2);
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      animation.stop();
-
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(42)
       );
@@ -1501,12 +1560,11 @@ function createLegacyReporter(options = {}) {
         'MCP Chrome ready. Auditing pages…'
       );
       spinner.stop();
-      const pageTotal = totalCriteria + (enrichmentEnabled ? 1 : 0);
       overallBar = bars.create(totalPages * totalCriteria, 0, {
         label: palette.primary(i18n.t('Global', 'Overall')),
         crit: ''
       });
-      pageBar = bars.create(pageTotal || 1, 0, {
+      pageBar = bars.create(totalCriteria || 1, 0, {
         label: palette.accent(i18n.t('Page', 'Page')),
         crit: ''
       });
@@ -1514,13 +1572,13 @@ function createLegacyReporter(options = {}) {
 
     onPageStart({ index, url }) {
       currentPageIndex = index;
-      const pageTotal = totalCriteria + (enrichmentEnabled ? 1 : 0);
       if (pageBar) {
-        pageBar.setTotal(pageTotal || 1);
-        pageBar.update(0, { crit: '' });
+        pageBar.setTotal(totalCriteria || 1);
+        pageBar.update(0, { label: palette.accent(i18n.t('Page', 'Page')), crit: '' });
       }
       pageDone = 0;
       enrichmentDone = 0;
+      enrichmentStatus = 'idle';
       pageStartAt = nowMs();
       stageStartAt = pageStartAt;
       const pageLabel = `${index + 1}/${totalPages}`;
@@ -1555,20 +1613,56 @@ function createLegacyReporter(options = {}) {
     },
 
     onEnrichmentStart() {
-      if (!pageBar) return;
-      pageBar.update(null, { crit: palette.muted('Enrichment in progress') });
+      const pageLabel = totalPages
+        ? `Page ${Math.max(0, currentPageIndex + 1)}/${totalPages}`
+        : '';
+      const label = pageLabel ? `Enrichment • ${pageLabel}` : 'Enrichment';
+      enrichmentStatus = 'running';
       pulseOnce();
     },
 
     onEnrichmentEnd({ ok } = {}) {
-      if (!pageBar) return;
-      if (enrichmentEnabled && enrichmentDone === 0) {
+      if (enrichmentDone === 0) {
         enrichmentDone = 1;
-        pageBar.increment(1, { crit: '' });
       }
-      if (ok === false) {
-        pageBar.update(null, { crit: palette.warn('Enrichment failed') });
-      }
+      enrichmentStatus = ok === false ? 'failed' : 'done';
+    },
+
+    onEnrichmentReady({ criteriaCount = 0, criteriaSample = [] } = {}) {
+      const sample = Array.isArray(criteriaSample) && criteriaSample.length
+        ? ` • ${criteriaSample.join(', ')}`
+        : '';
+      const lineText = `${palette.muted('Enrichment ready')} ${palette.accent(
+        `${criteriaCount} criteria${sample}`
+      )}`;
+      if (typeof bars.log === 'function') bars.log(lineText);
+      else console.log(lineText);
+    },
+
+    onInferenceStart({ criteriaCount = 0, criteriaSample = [] } = {}) {
+      const sample = Array.isArray(criteriaSample) && criteriaSample.length
+        ? ` • ${criteriaSample.join(', ')}`
+        : '';
+      startStage('Inference');
+      const lineText = `${palette.muted('Inference running')} ${palette.accent(
+        `${criteriaCount} criteria${sample}`
+      )}`;
+      if (typeof bars.log === 'function') bars.log(lineText);
+      else console.log(lineText);
+    },
+
+    onInferenceSummary({ counts } = {}) {
+      if (!counts) return;
+      const lineText = `${palette.muted('Inference summary')} ${palette.accent(
+        `OK ${counts.OK || 0} • NC ${counts.NC || 0} • NA ${counts.NA || 0} • Review ${counts.REV || 0} • Error ${counts.ERR || 0}`
+      )}`;
+      if (typeof bars.log === 'function') bars.log(lineText);
+      else console.log(lineText);
+    },
+
+    onInferenceEnd() {
+      if (!codexReasoning) codexReasoning = 'n/a';
+      endStage('Inference');
     },
 
     onPageError({ url, error }) {
@@ -1591,6 +1685,21 @@ function createLegacyReporter(options = {}) {
 
     onChecksEnd() {
       endStage('Checks');
+      if (enrichmentEnabled) {
+        const critLabel =
+          enrichmentStatus === 'failed'
+            ? palette.warn('failed')
+            : enrichmentStatus === 'done'
+              ? palette.ok('done')
+              : palette.muted('pending');
+        if (pageBar) {
+          pageBar.setTotal(1);
+          pageBar.update(enrichmentDone, {
+            label: palette.glow(i18n.t('Enrich', 'Enrich')),
+            crit: critLabel
+          });
+        }
+      }
     },
 
     onAIStart({ criterion }) {
@@ -1868,7 +1977,6 @@ function createPlainReporter(options = {}) {
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
       auditStartAt = nowMs();
-      line('RGAA Website Auditor');
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
       line('Codex reasoning:', codexReasoning || '(detecting…)');
@@ -1907,6 +2015,50 @@ function createPlainReporter(options = {}) {
 
     onSnapshotEnd({ durationMs }) {
       line(i18n.t('Stage:', 'Stage:'), `Snapshot collected ${durationMs}ms`);
+    },
+
+    onEnrichmentStart() {
+      const pageLabel = totalPages
+        ? `Page ${Math.max(0, currentPageIndex + 1)}/${totalPages}`
+        : '';
+      const label = pageLabel ? `Enrichment • ${pageLabel}` : 'Enrichment';
+      line(i18n.t('Stage:', 'Stage:'), label);
+    },
+
+    onEnrichmentEnd({ ok } = {}) {
+      line(i18n.t('Stage:', 'Stage:'), ok === false ? 'Enrichment failed' : 'Enrichment done');
+    },
+
+    onEnrichmentReady({ criteriaCount = 0, criteriaSample = [] } = {}) {
+      const sample = Array.isArray(criteriaSample) && criteriaSample.length
+        ? ` • ${criteriaSample.join(', ')}`
+        : '';
+      line(
+        i18n.t('Stage:', 'Stage:'),
+        `Enrichment ready • affects ${criteriaCount} criteria${sample}`
+      );
+    },
+
+    onInferenceStart({ criteriaCount = 0, criteriaSample = [] } = {}) {
+      const sample = Array.isArray(criteriaSample) && criteriaSample.length
+        ? ` • ${criteriaSample.join(', ')}`
+        : '';
+      line(
+        i18n.t('Stage:', 'Stage:'),
+        `Inference running • ${criteriaCount} criteria${sample}`
+      );
+    },
+
+    onInferenceSummary({ counts } = {}) {
+      if (!counts) return;
+      line(
+        i18n.t('Stage:', 'Stage:'),
+        `Inference summary • OK ${counts.OK || 0} • NC ${counts.NC || 0} • NA ${counts.NA || 0} • Review ${counts.REV || 0} • Error ${counts.ERR || 0}`
+      );
+    },
+
+    onInferenceEnd() {
+      if (!codexReasoning) codexReasoning = 'n/a';
     },
 
     onChecksStart() {

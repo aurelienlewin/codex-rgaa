@@ -166,6 +166,31 @@ function wrapReporterWithDebug({ reporter, logger }) {
       logger.log('enrich-end', payload?.ok === false ? 'error' : 'ok');
       reporter.onEnrichmentEnd?.(payload);
     },
+    onEnrichmentReady(payload) {
+      const sample = Array.isArray(payload?.criteriaSample)
+        ? payload.criteriaSample.join(',')
+        : '';
+      logger.log('enrich-ready', `${payload?.criteriaCount || 0}${sample ? ` ${sample}` : ''}`);
+      reporter.onEnrichmentReady?.(payload);
+    },
+    onInferenceStart(payload) {
+      const sample = Array.isArray(payload?.criteriaSample)
+        ? payload.criteriaSample.join(',')
+        : '';
+      logger.log('inference-start', `${payload?.criteriaCount || 0}${sample ? ` ${sample}` : ''}`);
+      reporter.onInferenceStart?.(payload);
+    },
+    onInferenceSummary(payload) {
+      const counts = payload?.counts
+        ? `${payload.counts.OK || 0}/${payload.counts.NC || 0}/${payload.counts.NA || 0}/${payload.counts.REV || 0}/${payload.counts.ERR || 0}`
+        : '';
+      logger.log('inference-summary', counts);
+      reporter.onInferenceSummary?.(payload);
+    },
+    onInferenceEnd(payload) {
+      logger.log('inference-end');
+      reporter.onInferenceEnd?.(payload);
+    },
     onSnapshotEnd(payload) {
       logger.log('snapshot-end', `${payload?.durationMs || 0}ms`);
       reporter.onSnapshotEnd?.(payload);
