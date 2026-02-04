@@ -667,10 +667,10 @@ function createFancyReporter(options = {}) {
             message: clipInline(cleanedRewrite || normalized, 320),
             humanizeStatus: cleanedRewrite ? 'done' : 'failed'
           };
-          render();
+          scheduleRender();
         }
       });
-      render();
+      scheduleRender();
     } else {
       const id = ++feedSeq;
       feed.push({
@@ -694,24 +694,24 @@ function createFancyReporter(options = {}) {
             message: clipInline(cleanedRewrite || normalized, 320),
             humanizeStatus: cleanedRewrite ? 'done' : 'failed'
           };
-          render();
+          scheduleRender();
         }
       });
-      render();
+      scheduleRender();
     }
   };
 
   const startTicking = () => {
     if (ticking) return;
     ticking = true;
-    resizeHandler = () => render();
+    resizeHandler = () => scheduleRender();
     exitHandler = () => renderer.stop({ keepBlock: true });
     process.on('exit', exitHandler);
     process.stdout?.on?.('resize', resizeHandler);
     elapsedTimer = setInterval(() => {
       if (!process.stdout.isTTY) return;
       frame = frame ? 0 : 1;
-      render();
+      scheduleRender();
     }, 1000);
     if (typeof elapsedTimer.unref === 'function') elapsedTimer.unref();
   };
@@ -732,7 +732,7 @@ function createFancyReporter(options = {}) {
     const original = sanitizeStatusLine(label);
     stageStartAt = nowMs();
     if (original) pushFeed('stage', original);
-    render();
+    scheduleRender();
   };
   const pushAiFeed = (raw, { replaceLastIfSameKind = false } = {}) => {
     const lines = String(raw || '')
@@ -754,7 +754,7 @@ function createFancyReporter(options = {}) {
     const elapsed = stageStartAt ? endAt - stageStartAt : 0;
     stageStartAt = 0;
     pushFeed('timing', `${label || 'Stage'}: ${elapsed}ms`, { replaceLastIfSameKind: false });
-    render();
+    scheduleRender();
   };
 
   const kindColor = (kind) => {
@@ -767,6 +767,8 @@ function createFancyReporter(options = {}) {
     if (kind === 'page') return palette.glow;
     return palette.muted;
   };
+
+  let renderQueued = false;
 
   const render = () => {
     if (!process.stdout.isTTY) return;
@@ -991,6 +993,16 @@ function createFancyReporter(options = {}) {
     renderer.render(panels.join('\n'));
   };
 
+  const scheduleRender = () => {
+    if (!process.stdout.isTTY) return;
+    if (renderQueued) return;
+    renderQueued = true;
+    setImmediate(() => {
+      renderQueued = false;
+      render();
+    });
+  };
+
   return {
     async onStart({
       pages,
@@ -1051,7 +1063,7 @@ function createFancyReporter(options = {}) {
       spinner.stop();
       startTicking();
       pushFeed('progress', i18n.t('Chrome ready. Starting pages…', 'Chrome ready. Starting pages…'));
-      render();
+      scheduleRender();
     },
 
     onResumeState({ completedPages = 0, completedCriteria = 0 } = {}) {
@@ -1059,13 +1071,13 @@ function createFancyReporter(options = {}) {
       resumeOverallDone = completedCriteria;
       overallDone = completedCriteria;
       currentPageIndex = completedPages - 1;
-      render();
+      scheduleRender();
     },
 
     onPause({ paused } = {}) {
       isPaused = Boolean(paused);
       pushFeed('stage', isPaused ? 'Paused' : 'Resumed', { replaceLastIfSameKind: false });
-      render();
+      scheduleRender();
     },
 
     onPageStart({ index, url }) {
@@ -1081,7 +1093,7 @@ function createFancyReporter(options = {}) {
       enrichmentLabel = '';
       enrichmentStartedAt = 0;
       pushFeed('page', `Page ${index + 1}/${totalPages}: ${url}`);
-      render();
+      scheduleRender();
     },
 
     onPageNavigateStart() {
@@ -1111,7 +1123,7 @@ function createFancyReporter(options = {}) {
       enrichmentLabel = pageLabel ? `Enrichment • ${pageLabel}` : 'Enrichment';
       enrichmentStartedAt = nowMs();
       enrichmentStatus = 'running';
-      render();
+      scheduleRender();
     },
 
     onEnrichmentEnd({ ok } = {}) {
@@ -1121,7 +1133,7 @@ function createFancyReporter(options = {}) {
       enrichmentActive = false;
       enrichmentStatus = ok === false ? 'failed' : 'done';
       enrichmentLabel = ok === false ? 'Enrichment failed' : '';
-      render();
+      scheduleRender();
     },
 
     onEnrichmentReady({ criteriaCount = 0, criteriaSample = [] } = {}) {
@@ -1130,7 +1142,7 @@ function createFancyReporter(options = {}) {
         ? ` • ${criteriaSample.join(', ')}`
         : '';
       pushFeed('stage', `Enrichment ready • affects ${criteriaCount} criteria${sample}`);
-      render();
+      scheduleRender();
     },
 
     onInferenceStart({ criteriaCount = 0, criteriaSample = [] } = {}) {
@@ -1139,7 +1151,7 @@ function createFancyReporter(options = {}) {
         : '';
       startStage('Inference');
       pushFeed('stage', `Inference running • ${criteriaCount} criteria${sample}`);
-      render();
+      scheduleRender();
     },
 
     onInferenceSummary({ counts } = {}) {
@@ -1148,7 +1160,7 @@ function createFancyReporter(options = {}) {
         'progress',
         `Inference summary • OK ${counts.OK || 0} • NC ${counts.NC || 0} • NA ${counts.NA || 0} • Review ${counts.REV || 0} • Error ${counts.ERR || 0}`
       );
-      render();
+      scheduleRender();
     },
 
     onInferenceEnd() {
@@ -1160,7 +1172,7 @@ function createFancyReporter(options = {}) {
       const message = String(error?.message || error || 'Unknown error').replace(/\s+/g, ' ').trim();
       const clipped = message.length > 220 ? `${message.slice(0, 217)}…` : message;
       pushFeed('error', `Page failed: ${clipped}`);
-      render();
+      scheduleRender();
     },
 
     onChecksStart() {
@@ -1173,7 +1185,7 @@ function createFancyReporter(options = {}) {
     onChecksEnd() {
       endStage('Checks');
       showEnrichmentSummary = enrichmentEnabled;
-      render();
+      scheduleRender();
     },
 
     onAIStart({ criterion }) {
@@ -1201,7 +1213,7 @@ function createFancyReporter(options = {}) {
         enrichmentLabel = sanitizeStatusLine(label) || 'Enrichment';
         if (!enrichmentStartedAt) enrichmentStartedAt = nowMs();
       }
-      render();
+      scheduleRender();
     },
 
     onAILog({ message, criterion }) {
@@ -1229,7 +1241,7 @@ function createFancyReporter(options = {}) {
           pushAiFeed(cleaned, { replaceLastIfSameKind: true });
           updated = true;
         }
-        if (updated) render();
+        if (updated) scheduleRender();
       }
     },
 
@@ -1246,7 +1258,7 @@ function createFancyReporter(options = {}) {
         rationale
       });
       pushFeed('decision', `${criterion.id} ${statusLabel}${rationale ? ` • ${rationale}` : ''}`);
-      render();
+      scheduleRender();
     },
 
     onCrossPageDecision({ criterion, evaluation }) {
@@ -1260,7 +1272,7 @@ function createFancyReporter(options = {}) {
         rationale
       });
       pushFeed('decision', `${criterion.id} ${statusLabel}${rationale ? ` • ${rationale}` : ''}`);
-      render();
+      scheduleRender();
     },
 
     onCrossPageStart({ total = 0, criteria = [] } = {}) {
@@ -1278,14 +1290,14 @@ function createFancyReporter(options = {}) {
       enrichmentLabel = '';
       enrichmentStartedAt = 0;
       pushFeed('stage', i18n.t('Second-pass checks starting…', 'Second-pass checks starting…'));
-      render();
+      scheduleRender();
     },
 
     onCrossPageUpdate({ done, total, current } = {}) {
       if (Number.isFinite(total) && total > 0) secondPassTotal = total;
       if (Number.isFinite(done)) secondPassDone = done;
       if (current?.id) secondPassCurrent = `${current.id}`;
-      render();
+      scheduleRender();
     },
 
     onCrossPageEnd({ done, total } = {}) {
@@ -1296,7 +1308,7 @@ function createFancyReporter(options = {}) {
       if (!secondPassActive) secondPassNotice = '';
       if (!secondPassActive) secondPassStartedAt = 0;
       pushFeed('stage', i18n.t('Second-pass checks complete.', 'Second-pass checks complete.'));
-      render();
+      scheduleRender();
     },
 
     onPageEnd({ index, url, counts }) {
@@ -1309,7 +1321,7 @@ function createFancyReporter(options = {}) {
         )}, Time ${totalElapsed}ms`
       );
       // Keep details in the live table to avoid fighting with cursor-based rendering.
-      render();
+      scheduleRender();
     },
 
     onDone({ outPath, globalScore, counts, errors, secondPass }) {
