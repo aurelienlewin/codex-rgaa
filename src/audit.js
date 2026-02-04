@@ -12,6 +12,7 @@ import { evaluateCriterion, STATUS } from './checks.js';
 import { aiReviewCriteriaBatch, aiReviewCriterion, aiReviewCrossPageCriterion } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
+import { validateHtmlUrl } from './htmlValidator.js';
 
 function sanitizeSheetName(name) {
   const cleaned = name
@@ -424,6 +425,14 @@ export async function runAudit(options) {
           onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
           signal
         });
+        const wantsHtmlValidation =
+          String(process.env.AUDIT_HTML_VALIDATOR || '').trim().toLowerCase() !== '0';
+        if (wantsHtmlValidation) {
+          const validation = await validateHtmlUrl(url);
+          if (validation) {
+            snapshot.validation = validation;
+          }
+        }
         let enrichment = null;
         if (wantsEnrichment && options.ai?.useMcp) {
           try {

@@ -53,6 +53,7 @@
 - Codex CLI available in PATH (for AI review / MCP tool runs)
 - Optional: `tesseract` binary in PATH (used as OCR fallback if `tesseract.js` fails)
 - Optional: `chrome-devtools-mcp` installed locally (otherwise pulled via `npx`)
+- Optional (for criterion **8.2**): W3C Nu validator jar (set `AUDIT_VNU_JAR=/path/to/vnu.jar`)
 
 ## Install
 ```bash

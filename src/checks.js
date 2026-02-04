@@ -783,12 +783,44 @@ function evaluateSkipLink(snapshot, i18n) {
   };
 }
 
+function evaluateHtmlValidity(snapshot, i18n) {
+  const validation = snapshot.validation || null;
+  if (!validation || validation.ok === false) {
+    const note = validation?.error
+      ? i18n.t(
+          'Validation HTML indisponible (outil manquant ou erreur).',
+          'HTML validation unavailable (missing tool or error).'
+        )
+      : i18n.t('Validation HTML non disponible.', 'HTML validation not available.');
+    return {
+      status: STATUS.REVIEW,
+      notes: note
+    };
+  }
+  const errors = Number(validation.errorsCount || 0);
+  if (errors === 0) {
+    return {
+      status: STATUS.C,
+      notes: i18n.t('Validation HTML: 0 erreur.', 'HTML validation: 0 errors.')
+    };
+  }
+  return {
+    status: STATUS.NC,
+    notes: i18n.t(
+      `Validation HTML: ${errors} erreur(s).`,
+      `HTML validation: ${errors} error(s).`
+    ),
+    examples: Array.isArray(validation.samples) ? validation.samples.slice(0, 3) : []
+  };
+}
+
 const RULES = new Map([
   ['1.1', evaluateImagesAlt],
   ['2.1', evaluateFramesTitle],
   ['6.1', evaluateLinksExplicit],
   ['6.2', evaluateLinksHaveName],
   ['8.1', evaluateDoctype],
+  ['8.2', evaluateHtmlValidity],
   ['8.3', evaluateLangPresent],
   ['8.4', evaluateLangValid],
   ['8.5', evaluateTitlePresent],
