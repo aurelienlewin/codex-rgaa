@@ -28,6 +28,17 @@ function formatPercent(value) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatSecondPassSummary(secondPass = {}) {
+  const total = Number(secondPass.total || 0);
+  const done = Number(secondPass.done || 0);
+  const criteria = Array.isArray(secondPass.criteria) ? secondPass.criteria : [];
+  const remaining = Math.max(0, total - done);
+  const detail = criteria
+    .map((c) => `${c.id}${c.status ? `:${c.status}` : ''}`)
+    .join(', ');
+  return { total, done, remaining, detail };
+}
+
 function stripAnsi(text) {
   return String(text || '').replace(/\x1b\[[0-9;]*m/g, '');
 }
@@ -1068,7 +1079,7 @@ function createFancyReporter(options = {}) {
       render();
     },
 
-    onDone({ outPath, globalScore, counts, errors }) {
+    onDone({ outPath, globalScore, counts, errors, secondPass }) {
       stopTicking();
       if (isGuided) {
         renderer.stop({ keepBlock: false });
@@ -1076,16 +1087,22 @@ function createFancyReporter(options = {}) {
         renderer.stop({ keepBlock: true });
       }
 
-      const col = (label, value, color) =>
-        `${palette.muted(label.padEnd(16))}${color(value)}`;
-      const summary = [
-        col('Conform', String(counts.C), palette.ok),
-        col('Not conform', String(counts.NC), palette.error),
-        col('Non applicable', String(counts.NA), palette.muted),
-        col('Review', String(counts.REVIEW || 0), palette.review),
-        col('Errors', String(counts.ERR || 0), palette.error),
-        col('Score', formatPercent(globalScore), palette.accent)
-      ].join('\n');
+      const reviewRemaining = counts.REVIEW || 0;
+      const second = formatSecondPassSummary(secondPass);
+      const scoreLine =
+        `${palette.accent('Score')} ${chalk.bold(formatPercent(globalScore))}` +
+        ` ${palette.muted('•')} ${palette.muted('C')} ${palette.ok(String(counts.C))}` +
+        ` ${palette.muted('NC')} ${palette.error(String(counts.NC))}` +
+        ` ${palette.muted('NA')} ${palette.muted(String(counts.NA))}` +
+        ` ${palette.muted('REV')} ${palette.review(String(counts.REVIEW || 0))}` +
+        ` ${palette.muted('ERR')} ${palette.error(String(counts.ERR || 0))}`;
+      const reviewLine = `${palette.review('Remaining review')} ${palette.accent(String(reviewRemaining))}`;
+      const secondPassLine =
+        second.total > 0
+          ? `${palette.glow('Second pass')} ${palette.muted(`${second.done}/${second.total}`)}` +
+            (second.detail ? ` ${palette.muted('•')} ${palette.accent(second.detail)}` : '')
+          : `${palette.glow('Second pass')} ${palette.muted('—')}`;
+      const summary = [scoreLine, reviewLine, secondPassLine].join('\n');
 
       if (isGuided) {
         const cols = process.stdout.columns || 100;
@@ -1520,29 +1537,38 @@ function createLegacyReporter(options = {}) {
       );
     },
 
-    onDone({ outPath, globalScore, counts, errors }) {
+    onDone({ outPath, globalScore, counts, errors, secondPass }) {
       stopPulse();
       if (overallBar) overallBar.update(totalPages * totalCriteria);
       if (pageBar) pageBar.update(totalCriteria);
       bars.stop();
 
-      const col = (label, value, color) =>
-        `${palette.muted(label.padEnd(16))}${color(value)}`;
-      const summary = [
-        col('Conform', String(counts.C), palette.ok),
-        col('Not conform', String(counts.NC), palette.error),
-        col('Non applicable', String(counts.NA), palette.muted),
-        col('Review', String(counts.REVIEW || 0), palette.review),
-        col('Errors', String(counts.ERR || 0), palette.error),
-        col('Score', formatPercent(globalScore), palette.accent)
-      ].join('\n');
+      const reviewRemaining = counts.REVIEW || 0;
+      const second = formatSecondPassSummary(secondPass);
+      const scoreLine =
+        `${palette.accent('Score')} ${chalk.bold(formatPercent(globalScore))}` +
+        ` ${palette.muted('•')} ${palette.muted('C')} ${palette.ok(String(counts.C))}` +
+        ` ${palette.muted('NC')} ${palette.error(String(counts.NC))}` +
+        ` ${palette.muted('NA')} ${palette.muted(String(counts.NA))}` +
+        ` ${palette.muted('REV')} ${palette.review(String(counts.REVIEW || 0))}` +
+        ` ${palette.muted('ERR')} ${palette.error(String(counts.ERR || 0))}`;
 
+      const secondPassLine =
+        second.total > 0
+          ? `${palette.glow('Second pass')} ${palette.muted(`${second.done}/${second.total}`)}` +
+            (second.detail ? ` ${palette.muted('•')} ${palette.accent(second.detail)}` : '')
+          : `${palette.glow('Second pass')} ${palette.muted('—')}`;
+
+      const reviewLine = `${palette.review('Remaining review')} ${palette.accent(String(reviewRemaining))}`;
+
+      const summary = [scoreLine, reviewLine, secondPassLine].join('\n');
+      const title = `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline('Audit recap')}`;
       console.log(
         boxen(summary, {
           padding: 1,
           borderStyle: 'double',
           borderColor: counts.ERR ? 'red' : 'green',
-          title: 'Audit summary'
+          title
         })
       );
       if (errors && (errors.pagesFailed || errors.aiFailed)) {
@@ -1767,14 +1793,19 @@ function createPlainReporter(options = {}) {
       );
     },
 
-    onDone({ outPath, globalScore, counts, errors }) {
+    onDone({ outPath, globalScore, counts, errors, secondPass }) {
       line(i18n.t('Audit summary:', 'Audit summary:'), '');
+      const reviewRemaining = counts.REVIEW || 0;
+      const second = formatSecondPassSummary(secondPass);
+      line('Score:', formatPercent(globalScore));
       line('Conform:', String(counts.C));
       line('Not conform:', String(counts.NC));
       line('Non applicable:', String(counts.NA));
-      line('Review:', String(counts.REVIEW || 0));
+      line('Review:', String(reviewRemaining));
       line('Errors:', String(counts.ERR || 0));
-      line('Score:', formatPercent(globalScore));
+      if (second.total > 0) {
+        line('Second pass:', `${second.done}/${second.total}${second.detail ? ` • ${second.detail}` : ''}`);
+      }
       const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
       if (elapsed) line(i18n.t('Elapsed:', 'Elapsed:'), elapsed);
       if (errors && (errors.pagesFailed || errors.aiFailed)) {

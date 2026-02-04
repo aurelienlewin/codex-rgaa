@@ -307,6 +307,11 @@ export async function runAudit(options) {
   const crossPageEvidence = [];
   const criteriaIndexById = new Map(criteria.map((criterion, idx) => [criterion.id, idx]));
   const hasMultiPageAudit = totalPages >= 2;
+  const secondPassSummary = {
+    total: 0,
+    done: 0,
+    criteria: []
+  };
 
   try {
     if (aborted || signal?.aborted) {
@@ -716,6 +721,9 @@ export async function runAudit(options) {
         title: criterion.title,
         theme: criterion.theme
       };
+      secondPassSummary.total = 1;
+      secondPassSummary.done = 0;
+      secondPassSummary.criteria = [{ id: criterion.id, title: criterion.title, status: null }];
       reporter?.onCrossPageStart?.({
         total: 1,
         criteria: [criterion]
@@ -742,6 +750,10 @@ export async function runAudit(options) {
             page.results[criterionIndex] = { ...criterion, ...evaluation };
           }
         }
+        secondPassSummary.done = 1;
+        secondPassSummary.criteria = [
+          { id: criterion.id, title: criterion.title, status: evaluation.status || STATUS.ERR }
+        ];
         reporter?.onCrossPageUpdate?.({ done: 1, total: 1, current: criterion });
       } catch (err) {
         if (failFast) throw err;
@@ -749,6 +761,10 @@ export async function runAudit(options) {
           criterion: pseudoCriterion,
           message: `Cross-page AI failed: ${String(err?.message || err)}`
         });
+        secondPassSummary.done = 1;
+        secondPassSummary.criteria = [
+          { id: criterion.id, title: criterion.title, status: STATUS.ERR }
+        ];
       } finally {
         reporter?.onCrossPageEnd?.({ done: 1, total: 1 });
       }
@@ -1035,13 +1051,25 @@ export async function runAudit(options) {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await workbook.xlsx.writeFile(outPath);
     if (reporter && reporter.onDone) {
-      reporter.onDone({ outPath, globalScore, counts: globalCounts, errors: errorSummary });
+      reporter.onDone({
+        outPath,
+        globalScore,
+        counts: globalCounts,
+        errors: errorSummary,
+        secondPass: secondPassSummary
+      });
     }
     if (shouldOpenReport()) {
       openReport(outPath);
     }
   } else if (reporter && reporter.onDone) {
-    reporter.onDone({ outPath: null, globalScore, counts: globalCounts, errors: errorSummary });
+    reporter.onDone({
+      outPath: null,
+      globalScore,
+      counts: globalCounts,
+      errors: errorSummary,
+      secondPass: secondPassSummary
+    });
   }
 
   const closeTabsEnv = String(process.env.AUDIT_CLOSE_TABS || '').trim().toLowerCase();
