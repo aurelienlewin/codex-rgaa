@@ -147,6 +147,10 @@ You can also enable OCR (repo-level, no system install required) to extract text
 
 This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks use the built-in OCR tool to extract visible text and include it as evidence.
 
+Local a11y utilities (enabled by default) expose extra MCP tools for quick DOM heuristics and structure checks:
+- Env: `AUDIT_AI_UTILS=0` to disable the local `rgaa-utils` MCP server.
+- Override command/script with `AUDIT_UTILS_COMMAND` and `AUDIT_UTILS_SCRIPT` if needed.
+
 Extra enrichment (enabled by default) uses MCP screenshots + DOM sampling to reduce NA:
 - Motion detection via screenshot diff
 - Contrast sampling from computed styles
@@ -158,6 +162,7 @@ The CLI shows a **live humanized Codex feed** during progress (table + colors + 
 Feed controls:
 - `--humanize-feed/--no-humanize-feed`
 - `--humanize-feed-model`
+- `AUDIT_AI_FEED_VERBOSE=1` to show the full multi-line AI feed instead of a single condensed line.
 
 In guided mode, the live UI is cleared at the end and replaced with a final **decisions report** plus summary.
 
