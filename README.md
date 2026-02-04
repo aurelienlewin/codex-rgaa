@@ -252,6 +252,7 @@ You can disable fail-fast with `AUDIT_FAIL_FAST=0` (or `false`/`no`) to continue
 - All remaining criteria are evaluated by the AI reviewer using the collected DOM evidence.
 - Cross-page criteria (e.g., **12.5**) are handled in a **second pass** once all pages have been audited.
 - The UI shows a **Second pass** callout when this happens, indicating the AI is doing extra review work to reduce remaining **Review** items.
+- Performance note: with `gpt-5.2-codex` on **low reasoning**, expect **up to ~1 hour per page** on a **2019 MacBook Pro (Intel, 6 cores)**.
 - If the evidence is insufficient, the AI returns **Not conform** and notes what is missing.
 - If the audit tool encounters a technical failure (page load/snapshot/AI runner), the criterion is marked **Error**.
 - By default, missing AI auth or MCP snapshot/enrichment failures **stop the audit** (fail-fast). Disable with `AUDIT_FAIL_FAST=0`.
