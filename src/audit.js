@@ -359,6 +359,32 @@ export async function runAudit(options) {
           continue;
         }
 
+        if (criterion.id === '12.5' && (options.pages?.length || 0) < 2) {
+          const evaluation = {
+            status: STATUS.REVIEW,
+            notes: i18n.t(
+              'Critère multi-pages : nécessite au moins deux pages. À revoir lors d’un second passage.',
+              'Multi-page criterion: requires at least two pages. Review in a second pass.'
+            ),
+            automated: false,
+            aiCandidate: false
+          };
+          const index = results.length;
+          results.push({ ...criterion, ...evaluation });
+          reportCriterion(
+            criterion,
+            {
+              status: evaluation.status,
+              notes: evaluation.notes,
+              ai: evaluation.ai || null,
+              automated: Boolean(evaluation.automated),
+              aiCandidate: Boolean(evaluation.aiCandidate)
+            },
+            index
+          );
+          continue;
+        }
+
         const evaluation = evaluateCriterion(criterion, page.snapshot, { lang: reportLang });
         const index = results.length;
         results.push({ ...criterion, ...evaluation });
