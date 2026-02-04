@@ -598,6 +598,8 @@ function createFancyReporter(options = {}) {
   let secondPassTotal = 0;
   let secondPassDone = 0;
   let secondPassCurrent = null;
+  let secondPassNotice = '';
+  let secondPassStartedAt = 0;
   let lastDecision = null;
   const decisions = [];
 
@@ -769,6 +771,9 @@ function createFancyReporter(options = {}) {
     const progressLines = [
       ...(secondPassActive
         ? [
+            secondPassNotice
+              ? `${padVisibleRight(palette.muted('Note'), 8)} ${palette.glow(clipInline(secondPassNotice, width - 18))}`
+              : '',
             `${padVisibleRight(palette.glow(i18n.t('Second pass', 'Second pass')), 8)} ${renderBar({
               value: secondPassDone,
               total: secondPassTotal,
@@ -867,6 +872,34 @@ function createFancyReporter(options = {}) {
 
     const chromeWarning = chromeAutomationWarningLines({ i18n, mcpMode });
     const panels = [
+      ...(secondPassActive
+        ? [
+            drawPanel({
+              title: i18n.t('Second pass • AI boost', 'Second pass • AI boost'),
+              lines: [
+                palette.glow(
+                  i18n.t(
+                    'Revue IA ciblée pour réduire les critères “Review”.',
+                    'Targeted AI review to reduce remaining “Review” criteria.'
+                  )
+                ),
+                secondPassCurrent
+                  ? `${palette.muted('Current')} ${palette.accent(secondPassCurrent)}`
+                  : '',
+                `${palette.muted('Progress')} ${palette.accent(
+                  `${secondPassDone}/${secondPassTotal || 0}`
+                )}`,
+                secondPassStartedAt
+                  ? `${palette.muted('Elapsed')} ${palette.accent(
+                      formatElapsed(nowMs() - secondPassStartedAt)
+                    )}`
+                  : ''
+              ].filter(Boolean),
+              width,
+              borderColor: palette.glow
+            })
+          ]
+        : []),
       drawPanel({
         title: i18n.t('Progress', 'Progress'),
         lines: progressLines,
@@ -1059,6 +1092,11 @@ function createFancyReporter(options = {}) {
       secondPassDone = 0;
       const first = Array.isArray(criteria) && criteria.length ? criteria[0] : null;
       secondPassCurrent = first ? `${first.id}` : null;
+      secondPassStartedAt = nowMs();
+      secondPassNotice = i18n.t(
+        'Seconde passe IA : réduction des critères “Review” restants.',
+        'Second-pass AI: reducing remaining “Review” criteria.'
+      );
       pushFeed('stage', i18n.t('Second-pass checks starting…', 'Second-pass checks starting…'));
       render();
     },
@@ -1075,6 +1113,8 @@ function createFancyReporter(options = {}) {
       if (Number.isFinite(done)) secondPassDone = done;
       secondPassActive = secondPassTotal > 0 && secondPassDone < secondPassTotal;
       if (!secondPassActive) secondPassCurrent = null;
+      if (!secondPassActive) secondPassNotice = '';
+      if (!secondPassActive) secondPassStartedAt = 0;
       pushFeed('stage', i18n.t('Second-pass checks complete.', 'Second-pass checks complete.'));
       render();
     },
@@ -1775,7 +1815,12 @@ function createPlainReporter(options = {}) {
       secondPassTotal = Number.isFinite(total) && total > 0 ? total : criteria.length || 0;
       secondPassDone = 0;
       const label = i18n.t('Second-pass checks start', 'Second-pass checks start');
+      const note = i18n.t(
+        'IA utilisée pour réduire les critères “Review” restants.',
+        'AI used to reduce remaining “Review” criteria.'
+      );
       line(label, secondPassTotal ? `${secondPassDone}/${secondPassTotal}` : '');
+      line('Note:', note);
     },
 
     onCrossPageUpdate({ done, total, current } = {}) {
