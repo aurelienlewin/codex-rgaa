@@ -1469,8 +1469,7 @@ export async function runAudit(options) {
         }
       }
 
-      return lines.join('
-').slice(0, 800);
+      return lines.join('\n').slice(0, 800);
     };
 
     const evidenceDir = outPath ? path.join(path.dirname(outPath), 'evidence') : '';
@@ -1485,8 +1484,7 @@ export async function runAudit(options) {
 
     const listToText = (items) =>
       Array.isArray(items) && items.length
-        ? items.map((item) => `- ${item}`).join('
-')
+        ? items.map((item) => `- ${item}`).join('\n')
         : '';
 
     for (const criterion of criteria) {
