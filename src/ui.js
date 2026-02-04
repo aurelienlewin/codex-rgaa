@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { attachIgnoreEpipe } from './streamErrors.js';
 
 const palette = {
   primary: chalk.hex('#22d3ee'),
@@ -362,6 +363,7 @@ function createCodexFeedHumanizer({
           if (stderrText.length > 64_000) stderrText = stderrText.slice(-64_000);
         });
 
+        attachIgnoreEpipe(child.stdin);
         child.stdin.write(prompt);
         child.stdin.end();
       });

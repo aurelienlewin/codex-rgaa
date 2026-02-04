@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createAbortError, isAbortError } from './abort.js';
+import { attachIgnoreEpipe } from './streamErrors.js';
 import {
   buildMcpArgs,
   normalizeBrowserUrl,
@@ -226,6 +227,9 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
       });
       onStage?.('AI: running MCP enrichment');
       onLog?.('Codex: running MCP enrichment');
+      attachIgnoreEpipe(child.stdin, (err) => {
+        onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
+      });
       child.stdin.write(prompt);
       child.stdin.end();
     });

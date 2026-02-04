@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createAbortError, isAbortError } from './abort.js';
 import { getSnapshotExpression } from './snapshot.js';
+import { attachIgnoreEpipe } from './streamErrors.js';
 import {
   buildMcpArgs,
   normalizeBrowserUrl,
@@ -310,6 +311,9 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
 
       onStage?.('AI: running MCP snapshot');
       onLog?.('Codex: running MCP snapshot');
+      attachIgnoreEpipe(child.stdin, (err) => {
+        onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
+      });
       child.stdin.write(buildPrompt({ url, pageId: mcp?.pageId }));
       child.stdin.end();
     });
@@ -487,6 +491,9 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
 
       onStage?.('AI: running MCP list_pages');
       onLog?.('Codex: running MCP list_pages');
+      attachIgnoreEpipe(child.stdin, (err) => {
+        onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
+      });
       child.stdin.write(buildListPagesPrompt());
       child.stdin.end();
     });

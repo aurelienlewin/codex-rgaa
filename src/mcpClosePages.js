@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createAbortError, isAbortError } from './abort.js';
+import { attachIgnoreEpipe } from './streamErrors.js';
 import {
   buildMcpArgs,
   normalizeBrowserUrl,
@@ -317,6 +318,9 @@ async function runCodexClosePages({ urls, model, mcp, onLog, onStage, signal }) 
 
       onStage?.('AI: closing audited tabs');
       onLog?.('Codex: closing audited tabs');
+      attachIgnoreEpipe(child.stdin, (err) => {
+        onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
+      });
       child.stdin.write(buildPrompt({ urls }));
       child.stdin.end();
     });

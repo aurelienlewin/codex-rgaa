@@ -7,6 +7,7 @@ import { STATUS } from './checks.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
 import { validateStrictOutputSchema } from './schemaValidate.js';
+import { attachIgnoreEpipe } from './streamErrors.js';
 import {
   buildMcpArgs,
   looksLikeMcpConnectError,
@@ -759,6 +760,9 @@ async function runCodexPrompt({
 
       onStage?.('AI: running inference');
       onLog?.('Codex: running inference');
+      attachIgnoreEpipe(child.stdin, (err) => {
+        onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
+      });
       child.stdin.write(prompt);
       child.stdin.end();
     });
