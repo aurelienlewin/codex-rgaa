@@ -611,7 +611,7 @@ function createFancyReporter(options = {}) {
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
   const uiTickRaw = Number(process.env.AUDIT_UI_TICK_MS || '');
   const uiTickMs =
-    Number.isFinite(uiTickRaw) && uiTickRaw >= 60 ? Math.floor(uiTickRaw) : 250;
+    Number.isFinite(uiTickRaw) && uiTickRaw >= 60 ? Math.floor(uiTickRaw) : 750;
   let currentCriterion = null;
   let secondPassActive = false;
   let secondPassTotal = 0;
