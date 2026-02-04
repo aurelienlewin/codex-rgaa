@@ -1046,7 +1046,8 @@ async function main() {
   const aiStageRaw = Number(process.env.AUDIT_AI_STAGE_TIMEOUT_MS || '');
   const aiStageTimeoutMs =
     Number.isFinite(aiStageRaw) && aiStageRaw > 0 ? Math.floor(aiStageRaw) : 0;
-  const criteriaCount = loadCriteria({ lang: reportLang }).length;
+  const criteria = loadCriteria({ lang: reportLang });
+  const criteriaCount = criteria.length;
   if (interactive && guided) {
     clearScreen();
   }
@@ -1117,6 +1118,7 @@ async function main() {
       pages,
       outPath,
       reportLang,
+      criteria,
       chromePath: argv['chrome-path'],
       chromePort: argv['chrome-port'],
       timeoutMs: argv.timeout,

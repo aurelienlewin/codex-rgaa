@@ -409,7 +409,10 @@ async function launchChrome({ chromePath, port } = {}) {
 export async function runAudit(options) {
   const reportLang = normalizeReportLang(options?.reportLang);
   const i18n = getI18n(reportLang);
-  const criteria = loadCriteria({ lang: reportLang });
+  const criteria =
+    Array.isArray(options?.criteria) && options.criteria.length
+      ? options.criteria
+      : loadCriteria({ lang: reportLang });
   const reporter = options.reporter || null;
   const signal = options.signal || null;
   const auditStartedAt = new Date();
