@@ -87,20 +87,78 @@ function isRetryableAiError(err) {
   return text.includes('timed out') || text.includes('timeout') || text.includes('stalled');
 }
 
-async function withPauseRetry({ fn, pauseController, reporter, label, retryOnAny = false }) {
-  try {
-    return await fn();
-  } catch (err) {
-    if (!pauseController) throw err;
-    if (!retryOnAny && !isRetryableAiError(err)) throw err;
-    reporter?.onAILog?.({
-      criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
-      message: `${label} failed (${String(err?.message || err)}). Pausing until resume to retry.`
-    });
-    pauseController.pause();
-    await pauseController.waitIfPaused();
-    return await fn();
+function createPauseAwareSignal({ signal, pauseController }) {
+  if (!pauseController) {
+    return { signal, cleanup: () => {}, wasPausedAbort: () => false };
   }
+  const controller = new AbortController();
+  let pausedAbort = false;
+  const pauseAbort = () => {
+    if (pausedAbort) return;
+    pausedAbort = true;
+    controller.abort();
+  };
+  const forwardAbort = () => {
+    controller.abort();
+  };
+  const removePauseListener = pauseController.onChange?.(({ paused }) => {
+    if (paused) pauseAbort();
+  });
+  if (pauseController.isPaused?.()) {
+    pauseAbort();
+  }
+  if (signal?.aborted) {
+    controller.abort();
+  } else if (signal) {
+    signal.addEventListener('abort', forwardAbort, { once: true });
+  }
+  const cleanup = () => {
+    if (signal) signal.removeEventListener('abort', forwardAbort);
+    if (removePauseListener) removePauseListener();
+  };
+  return { signal: controller.signal, cleanup, wasPausedAbort: () => pausedAbort };
+}
+
+async function withPauseRetry({
+  fn,
+  pauseController,
+  reporter,
+  label,
+  retryOnAny = false,
+  signal
+}) {
+  const runAttempt = async () => {
+    const { signal: attemptSignal, cleanup, wasPausedAbort } = createPauseAwareSignal({
+      signal,
+      pauseController
+    });
+    try {
+      return { result: await fn({ signal: attemptSignal }), wasPausedAbort };
+    } catch (err) {
+      return { err, wasPausedAbort };
+    } finally {
+      cleanup();
+    }
+  };
+
+  const first = await runAttempt();
+  if (!first.err) return first.result;
+  const firstErr = first.err;
+  const pausedAbort = first.wasPausedAbort();
+  if (signal?.aborted || (isAbortError(firstErr) && !pausedAbort)) {
+    throw firstErr;
+  }
+  if (!pauseController) throw firstErr;
+  if (!retryOnAny && !isRetryableAiError(firstErr)) throw firstErr;
+  reporter?.onAILog?.({
+    criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
+    message: `${label} failed (${String(firstErr?.message || firstErr)}). Pausing until resume to retry.`
+  });
+  if (!pauseController.isPaused?.()) pauseController.pause();
+  await pauseController.waitIfPaused();
+  const second = await runAttempt();
+  if (second.err) throw second.err;
+  return second.result;
 }
 
 function sanitizeSheetName(name) {
@@ -671,14 +729,15 @@ export async function runAudit(options) {
           reporter,
           label: 'Snapshot',
           retryOnAny: true,
-          fn: () =>
+          signal,
+          fn: ({ signal: attemptSignal }) =>
             collectSnapshotWithMcp({
               url,
               model: options.ai?.model,
               mcp: mcpConfig,
               onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
-              signal
+              signal: attemptSignal
             })
         });
         const wantsHtmlValidation =
@@ -700,14 +759,15 @@ export async function runAudit(options) {
               reporter,
               label: 'Enrichment',
               retryOnAny: true,
-              fn: () =>
+              signal,
+              fn: ({ signal: attemptSignal }) =>
                 collectEnrichedEvidenceWithMcp({
                   url,
                   model: options.ai?.model,
                   mcp: mcpConfig,
                   onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'enrich' }, message }),
                   onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
-                  signal
+                  signal: attemptSignal
                 })
             });
             const cacheKey = buildEnrichmentCacheKey(enriched);
@@ -931,7 +991,8 @@ export async function runAudit(options) {
               reporter,
               label: 'AI batch',
               retryOnAny: true,
-              fn: () =>
+              signal,
+              fn: ({ signal: attemptSignal }) =>
                 aiReviewCriteriaBatch({
                   model: options.ai.model,
                   url,
@@ -942,7 +1003,7 @@ export async function runAudit(options) {
                   onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
                   onError: (message) => reporter?.onError?.(message),
                   failFast,
-                  signal,
+                  signal: attemptSignal,
                   mcp: mcpForAi
                 })
             });
@@ -1005,7 +1066,8 @@ export async function runAudit(options) {
               reporter,
               label: `AI criterion ${criterion.id}`,
               retryOnAny: true,
-              fn: () =>
+              signal,
+              fn: ({ signal: attemptSignal }) =>
                 aiReviewCriterion({
                   model: options.ai.model,
                   url,
@@ -1016,7 +1078,7 @@ export async function runAudit(options) {
                   onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
                   onError: (message) => reporter?.onError?.(message),
                   failFast,
-                  signal,
+                  signal: attemptSignal,
                   mcp: mcpForAi
                 })
             });
@@ -1056,7 +1118,8 @@ export async function runAudit(options) {
             reporter,
             label: `AI retry ${criterion.id}`,
             retryOnAny: true,
-            fn: () =>
+            signal,
+            fn: ({ signal: attemptSignal }) =>
               aiReviewCriterion({
                 model: options.ai.model,
                 url,
@@ -1067,7 +1130,7 @@ export async function runAudit(options) {
                 onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
                 onError: (message) => reporter?.onError?.(message),
                 failFast,
-                signal,
+                signal: attemptSignal,
                 mcp: mcpForAi,
                 retry: true
               })
@@ -1183,7 +1246,8 @@ export async function runAudit(options) {
           reporter,
           label: `AI cross-page ${criterion.id}`,
           retryOnAny: true,
-          fn: () =>
+          signal,
+          fn: ({ signal: attemptSignal }) =>
             aiReviewCrossPageCriterion({
               model: options.ai?.model,
               criterion,
@@ -1193,7 +1257,7 @@ export async function runAudit(options) {
               onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
               onError: (message) => reporter?.onError?.(message),
               failFast,
-              signal
+              signal: attemptSignal
             })
         });
         if (evaluation.status === STATUS.ERR) {

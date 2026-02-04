@@ -296,13 +296,26 @@ function createPauseController({ reporter }) {
   let paused = false;
   let resumePromise = null;
   let resumeResolve = null;
+  const listeners = new Set();
   const notify = (nextPaused) => {
     if (reporter?.onPause) {
       reporter.onPause({ paused: nextPaused });
     }
+    for (const listener of listeners) {
+      try {
+        listener({ paused: nextPaused });
+      } catch {}
+    }
   };
   return {
     isPaused: () => paused,
+    onChange: (listener) => {
+      if (typeof listener !== 'function') return () => {};
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     pause: () => {
       if (paused) return;
       paused = true;
@@ -1214,6 +1227,7 @@ async function main() {
     if (typeof process.stdin.setRawMode === 'function') {
       process.stdin.setRawMode(true);
     }
+    process.stdin.resume();
     const keyHandler = (_, key) => {
       if (!key) return;
       if (key.name === 'p') pauseController.pause();
@@ -1225,6 +1239,7 @@ async function main() {
       if (typeof process.stdin.setRawMode === 'function') {
         process.stdin.setRawMode(false);
       }
+      process.stdin.pause();
     });
   }
 
