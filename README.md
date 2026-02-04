@@ -1,12 +1,14 @@
 # RGAA Website Auditor (MCP)
 
-This project runs an RGAA 4.x audit on a list of pages and produces an Excel report with:
-- per-page results for all **106 criteria**
-- a global summary sheet (a criterion is conform only if it passes on **every** page)
-- a score computed as **C / (C + NC)**
+A **modern, UI-forward** RGAA 4.x auditor that blends MCP‑driven evidence collection with AI review to deliver a crisp, readable Excel report.
 
-It collects evidence via:
-- **MCP** (Chrome DevTools MCP) using `chrome-devtools-mcp` started by Codex (useful when you want to drive an existing Chrome session)
+What you get:
+- **Per‑page results** for all **106 criteria**
+- **Global summary** (a criterion is conform only if it passes on **every** page)
+- **Score** computed as **C / (C + NC)**
+
+Evidence is collected via:
+- **MCP** (Chrome DevTools MCP) using `chrome-devtools-mcp` started by Codex (handy when driving an existing Chrome session)
 
 ## Requirements
 - OS: macOS, Windows, or Linux
