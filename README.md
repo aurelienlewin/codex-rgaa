@@ -27,6 +27,9 @@
 - [Requirements](#requirements)
 - [Install](#install)
 - [Run](#run)
+- [Quickstart](#quickstart)
+- [Advanced](#advanced)
+- [UX moments](#ux-moments)
 - [Output](#output)
 - [AI review (mandatory)](#ai-review-mandatory)
 - [Notes on automation](#notes-on-automation)
@@ -46,6 +49,70 @@
 ```bash
 npm install
 ```
+
+## Quickstart
+<details open>
+<summary><strong>Minimal run (guided)</strong></summary>
+
+```bash
+npm run audit
+```
+</details>
+
+<details>
+<summary><strong>One‑liner (URLs)</strong></summary>
+
+```bash
+npm run audit -- --pages https://example.com https://example.com/contact --allow-remote-debug
+```
+</details>
+
+<details>
+<summary><strong>From a pages file</strong></summary>
+
+```bash
+npm run audit -- --pages-file pages.sample.md --allow-remote-debug
+```
+</details>
+
+## Advanced
+<details>
+<summary><strong>MCP‑first (autoConnect)</strong></summary>
+
+```bash
+npm run audit -- --allow-remote-debug
+```
+
+Notes:
+- Use Chrome 144+ with remote debugging enabled.
+- The auditor will auto‑connect and prompt you to approve the connection.
+</details>
+
+<details>
+<summary><strong>Target an existing tab by id</strong></summary>
+
+```bash
+npm run audit:mcp -- --pages https://example.com --mcp-page-id 2
+```
+</details>
+
+<details>
+<summary><strong>Run non‑interactive</strong></summary>
+
+```bash
+npm run audit -- --pages https://example.com --allow-remote-debug --report-lang en
+```
+</details>
+
+## UX moments
+<details open>
+<summary><strong>What the UI shows while it runs</strong></summary>
+
+- **Progress**: Overall + per‑page bars with live counts.
+- **Live feed**: Human‑readable AI activity stream (collapsed or verbose).
+- **Second pass**: A dedicated callout panel when cross‑page checks run.
+- **End recap**: A modern summary line with Score + C/NC/NA/REV/ERR + remaining Review.
+</details>
 
 ## Run
 In interactive terminals, `npm run audit` starts a **guided wizard** by default.
