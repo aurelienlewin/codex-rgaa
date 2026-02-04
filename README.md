@@ -204,6 +204,7 @@ The Excel file contains:
 - **Audit**: rows = criteria, columns = pages, with **✓ / ✗ / – / !** icons and color-coded cells. Page URLs are stored as header cell comments; page names appear in the header row.
 
 When evidence is still insufficient after MCP tools (a11y tree, targeted DOM, OCR), criteria are marked **Review** and the Matrix UI cell is left blank with a **solid red** background for human review.
+Enrichment‑based evidence in cell notes is **humanized** (e.g., “liens sans nom”, “taux de mouvement”, “pire contraste”) for easier review.
 
 ## AI review (mandatory)
 All non-automated criteria are reviewed via the local **Codex CLI** (`codex exec`).
