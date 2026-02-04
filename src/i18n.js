@@ -33,6 +33,20 @@ export function getI18n(lang) {
     statusLabel,
     excel: {
       matrixHeader: () => [t('ID', 'ID'), t('Thème', 'Theme'), t('Critère', 'Criterion')],
+      evidenceSheet: () => t('Preuves', 'Evidence'),
+      evidenceHeader: () => [
+        t('ID', 'ID'),
+        t('Thème', 'Theme'),
+        t('Critère', 'Criterion'),
+        t('Page', 'Page'),
+        t('URL', 'URL'),
+        t('Statut', 'Status'),
+        t('Synthèse', 'Summary'),
+        t('Preuves', 'Evidence'),
+        t('Exemples', 'Examples'),
+        t('Capture A', 'Screenshot A'),
+        t('Capture B', 'Screenshot B')
+      ],
       urlLabel: () => t('URL', 'URL'),
       summaryTitle: () => t('Synthèse audit RGAA', 'RGAA Audit Summary'),
       generatedAt: () => t('Généré le', 'Generated at'),

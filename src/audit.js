@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import chromeLauncher from 'chrome-launcher';
 import ExcelJS from 'exceljs';
 import { loadCriteria } from './criteria.js';
@@ -86,6 +87,9 @@ function humanizeEnrichmentEvidence(text) {
     .replace(/\bworstSample\.ratio\b/gi, 'pire contraste')
     .replace(/\bworstSample\.text\b/gi, 'texte')
     .replace(/\bworstSample\b/gi, 'pire échantillon')
+    .replace(/\bworstClassification\.aa\b/gi, 'contraste AA')
+    .replace(/\bworstClassification\.aaa\b/gi, 'contraste AAA')
+    .replace(/\bworstClassification\.largeText\b/gi, 'texte large')
     .replace(/\bdiffRatio\b/gi, 'taux de mouvement')
     .replace(/\bdiffPixels\b/gi, 'pixels en mouvement')
     .replace(/\btotalPixels\b/gi, 'pixels totaux')
@@ -96,11 +100,73 @@ function humanizeEnrichmentEvidence(text) {
     .replace(/\btargetBlankLinks\b/gi, 'liens target=_blank')
     .replace(/\bdownloadLinks\b/gi, 'liens de téléchargement')
     .replace(/\bautoplayMedia\b/gi, 'médias en lecture auto')
+    .replace(/\buiContrast\./gi, 'Contraste UI ')
+    .replace(/\buiContrast\.sampleCount\b/gi, 'échantillons UI')
+    .replace(/\buiContrast\.failingCount\b/gi, 'échantillons UI insuffisants')
+    .replace(/\buiContrast\.worstSample\.ratio\b/gi, 'pire contraste UI')
+    .replace(/\buiContrast\.worstSample\.source\b/gi, 'source contraste UI')
+    .replace(/\buiContrast\.worstSample\b/gi, 'pire échantillon UI')
     .replace(/\btrue\b/gi, 'oui')
     .replace(/\bfalse\b/gi, 'non')
     .replace(/\s+([:;,.)])/g, '$1')
     .trim();
   return replaced;
+}
+
+function buildEnrichmentCacheKey(enriched) {
+  if (!enriched) return '';
+  try {
+    const payload = {
+      styleSamples: enriched.styleSamples || [],
+      uiSamples: enriched.uiSamples || [],
+      htmlSnippet: enriched.htmlSnippet || ''
+    };
+    const json = JSON.stringify(payload);
+    return createHash('sha1').update(json).digest('hex');
+  } catch {
+    return '';
+  }
+}
+
+async function copyEvidenceScreenshots(pages, evidenceDir) {
+  if (!evidenceDir) return pages.map(() => ({ screenshot1: '', screenshot2: '' }));
+  const results = pages.map(() => ({ screenshot1: '', screenshot2: '' }));
+  let dirReady = false;
+
+  const ensureDir = async () => {
+    if (dirReady) return;
+    await fs.mkdir(evidenceDir, { recursive: true });
+    dirReady = true;
+  };
+
+  const safeCopy = async (src, dest) => {
+    if (!src) return false;
+    try {
+      await fs.copyFile(src, dest);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  for (let i = 0; i < pages.length; i += 1) {
+    const meta = pages[i]?.snapshot?.enrichmentMeta || null;
+    if (!meta) continue;
+    const relA = `evidence/P${i + 1}-a.png`;
+    const relB = `evidence/P${i + 1}-b.png`;
+    if (meta.screenshot1) {
+      await ensureDir();
+      const ok = await safeCopy(meta.screenshot1, path.join(evidenceDir, `P${i + 1}-a.png`));
+      if (ok) results[i].screenshot1 = relA;
+    }
+    if (meta.screenshot2) {
+      await ensureDir();
+      const ok = await safeCopy(meta.screenshot2, path.join(evidenceDir, `P${i + 1}-b.png`));
+      if (ok) results[i].screenshot2 = relB;
+    }
+  }
+
+  return results;
 }
 
 async function fetchChromeVersion(baseUrl) {
@@ -346,6 +412,7 @@ export async function runAudit(options) {
   let aiFailed = 0;
   const wantsEnrichment =
     String(process.env.AUDIT_ENRICH || '').trim().toLowerCase() !== '0';
+  const enrichmentCache = new Map();
   const wantsDebugSnapshots =
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim() === '1' ||
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim().toLowerCase() === 'true';
@@ -444,8 +511,18 @@ export async function runAudit(options) {
               onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
               signal
             });
-            enrichment = await buildEnrichment(enriched);
+            const cacheKey = buildEnrichmentCacheKey(enriched);
+            if (cacheKey && enrichmentCache.has(cacheKey)) {
+              enrichment = enrichmentCache.get(cacheKey);
+            } else {
+              enrichment = await buildEnrichment(enriched);
+              if (cacheKey) enrichmentCache.set(cacheKey, enrichment);
+            }
             snapshot.enrichment = enrichment;
+            snapshot.enrichmentMeta = {
+              screenshot1: enriched?.screenshot1 || '',
+              screenshot2: enriched?.screenshot2 || ''
+            };
           } catch (err) {
             if (failFast) throw err;
             reporter?.onAILog?.({
@@ -963,8 +1040,9 @@ export async function runAudit(options) {
       created: auditStartedAt,
       modified: auditFinishedAt
     };
-    const summarySheet = workbook.addWorksheet('Summary');
+    const evidenceSheet = workbook.addWorksheet(i18n.excel.evidenceSheet());
     const uiSheet = workbook.addWorksheet('Audit');
+    const summarySheet = workbook.addWorksheet('Summary');
 
     const toColLetter = (n) => {
       let col = '';
@@ -988,6 +1066,7 @@ export async function runAudit(options) {
     });
     const header = [...i18n.excel.matrixHeader(), ...pageLabels];
     uiSheet.addRow(header);
+    evidenceSheet.addRow(i18n.excel.evidenceHeader());
 
     const lastCol = toColLetter(3 + pageLabels.length);
 
@@ -1035,6 +1114,34 @@ export async function runAudit(options) {
     };
 
     styleHeaderRow(uiSheet);
+    evidenceSheet.views = [{ state: 'frozen', ySplit: 1 }];
+    evidenceSheet.getRow(1).font = { size: BASE_FONT_SIZE, bold: true, color: { argb: COLORS.headerFg } };
+    evidenceSheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    for (let col = 1; col <= i18n.excel.evidenceHeader().length; col += 1) {
+      const cell = evidenceSheet.getRow(1).getCell(col);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: COLORS.grid } },
+        left: { style: 'thin', color: { argb: COLORS.grid } },
+        bottom: { style: 'thin', color: { argb: COLORS.grid } },
+        right: { style: 'thin', color: { argb: COLORS.grid } }
+      };
+    }
+    evidenceSheet.autoFilter = {
+      from: 'A1',
+      to: `${toColLetter(i18n.excel.evidenceHeader().length)}1`
+    };
+    evidenceSheet.getColumn(1).width = 7;
+    evidenceSheet.getColumn(2).width = 18;
+    evidenceSheet.getColumn(3).width = 60;
+    evidenceSheet.getColumn(4).width = 20;
+    evidenceSheet.getColumn(5).width = 36;
+    evidenceSheet.getColumn(6).width = 16;
+    evidenceSheet.getColumn(7).width = 60;
+    evidenceSheet.getColumn(8).width = 60;
+    evidenceSheet.getColumn(9).width = 50;
+    evidenceSheet.getColumn(10).width = 18;
+    evidenceSheet.getColumn(11).width = 18;
     // Attach page URLs as header comments.
     for (let i = 0; i < pageResults.length; i += 1) {
       const cell = uiSheet.getRow(1).getCell(4 + i);
@@ -1067,26 +1174,27 @@ export async function runAudit(options) {
       return s;
     };
 
-    const buildCellNote = (res) => {
-      if (!res) return '';
+    const collapseEvidence = (value) => {
+      const cleaned = stripToolReferences(String(value || '').replace(/\s+/g, ' ').trim());
+      return humanizeEnrichmentEvidence(cleaned);
+    };
 
-      const collapse = (value) => {
-        const cleaned = stripToolReferences(String(value || '').replace(/\s+/g, ' ').trim());
-        return humanizeEnrichmentEvidence(cleaned);
-      };
+    const buildEvidencePayload = (res) => {
+      if (!res) {
+        return { status: i18n.statusLabel(STATUS.ERR), summary: '', evidence: [], examples: [] };
+      }
       const status = i18n.statusLabel(res.status);
       const aiConfidence = Number(res.ai?.confidence || 0);
-      const aiRationale = collapse(res.ai?.rationale || '');
-
+      const aiRationale = collapseEvidence(res.ai?.rationale || '');
       const summary =
         aiRationale && Number.isFinite(aiConfidence)
           ? `${i18n.notes.aiPrefix(aiConfidence)}: ${aiRationale}`
-          : collapse(res.notes || '');
+          : collapseEvidence(res.notes || '');
 
       const evidence = [];
       if (Array.isArray(res.ai?.evidence)) {
         for (const ex of res.ai.evidence) {
-          const line = collapse(ex);
+          const line = collapseEvidence(ex);
           if (line) evidence.push(line);
         }
       }
@@ -1094,22 +1202,28 @@ export async function runAudit(options) {
       const examples = [];
       if (Array.isArray(res.examples)) {
         for (const ex of res.examples) {
-          const line = collapse(ex);
+          const line = collapseEvidence(ex);
           if (line) examples.push(line);
         }
       }
 
+      return { status, summary, evidence, examples };
+    };
+
+    const buildCellNote = (res) => {
+      if (!res) return '';
+      const payload = buildEvidencePayload(res);
       const lines = [];
-      lines.push(`${status}${summary ? `: ${summary}` : ''}`);
-      if (evidence.length > 0) {
+      lines.push(`${payload.status}${payload.summary ? `: ${payload.summary}` : ''}`);
+      if (payload.evidence.length > 0) {
         lines.push(i18n.notes.evidenceLabel());
-        for (const ex of evidence) {
+        for (const ex of payload.evidence) {
           lines.push(`- ${ex}`);
         }
       }
-      if (examples.length > 0) {
+      if (payload.examples.length > 0) {
         lines.push(i18n.notes.examplesLabel());
-        for (const ex of examples.slice(0, 3)) {
+        for (const ex of payload.examples.slice(0, 3)) {
           lines.push(`- ${ex}`);
         }
       }
@@ -1117,6 +1231,20 @@ export async function runAudit(options) {
       // Keep cell notes readable and avoid huge XLSX metadata.
       return lines.join('\n').slice(0, 800);
     };
+
+    const evidenceLinksByPage = await copyEvidenceScreenshots(
+      pageResults,
+      outPath ? path.join(path.dirname(outPath), 'evidence') : ''
+    );
+
+    const applyHyperlinkStyle = (cell) => {
+      cell.font = { ...(cell.font || {}), color: { argb: 'FF1D4ED8' }, underline: true };
+    };
+
+    const listToText = (items) =>
+      Array.isArray(items) && items.length
+        ? items.map((item) => `- ${item}`).join('\n')
+        : '';
 
     for (const criterion of criteria) {
       const uiRow = [criterion.id, criterion.theme, criterion.title];
@@ -1145,6 +1273,50 @@ export async function runAudit(options) {
         const s = applyStatusCellStyle(uiCell, res?.status || STATUS.ERR);
         uiCell.value = s.icon;
         uiCell.note = buildCellNote(res);
+
+        const evidencePayload = buildEvidencePayload(res);
+        const pageUrl = pageResults[pageIndex]?.url || '';
+        const evidenceLinks = evidenceLinksByPage[pageIndex] || {};
+        const evidenceRow = evidenceSheet.addRow([
+          criterion.id,
+          criterion.theme,
+          criterion.title,
+          pageLabels[pageIndex],
+          pageUrl,
+          evidencePayload.status,
+          evidencePayload.summary,
+          listToText(evidencePayload.evidence),
+          listToText(evidencePayload.examples),
+          evidenceLinks.screenshot1 || '',
+          evidenceLinks.screenshot2 || ''
+        ]);
+
+        for (let c = 1; c <= 11; c += 1) {
+          const cell = evidenceRow.getCell(c);
+          cell.alignment = { vertical: 'top', wrapText: true };
+          cell.border = {
+            top: { style: 'thin', color: { argb: COLORS.grid } },
+            left: { style: 'thin', color: { argb: COLORS.grid } },
+            bottom: { style: 'thin', color: { argb: COLORS.grid } },
+            right: { style: 'thin', color: { argb: COLORS.grid } }
+          };
+        }
+
+        if (pageUrl) {
+          const urlCell = evidenceRow.getCell(5);
+          urlCell.value = { text: pageUrl, hyperlink: pageUrl };
+          applyHyperlinkStyle(urlCell);
+        }
+        if (evidenceLinks.screenshot1) {
+          const shotCell = evidenceRow.getCell(10);
+          shotCell.value = { text: evidenceLinks.screenshot1, hyperlink: evidenceLinks.screenshot1 };
+          applyHyperlinkStyle(shotCell);
+        }
+        if (evidenceLinks.screenshot2) {
+          const shotCell = evidenceRow.getCell(11);
+          shotCell.value = { text: evidenceLinks.screenshot2, hyperlink: evidenceLinks.screenshot2 };
+          applyHyperlinkStyle(shotCell);
+        }
       }
     }
 
@@ -1224,7 +1396,7 @@ export async function runAudit(options) {
     }
 
     // Ensure a readable base font size across the whole workbook.
-    for (const sheet of [uiSheet, summarySheet]) {
+    for (const sheet of [uiSheet, summarySheet, evidenceSheet]) {
       sheet.eachRow((row) => {
         row.eachCell((cell) => {
           cell.font = { ...(cell.font || {}), size: Math.max(BASE_FONT_SIZE, cell.font?.size || 0) };

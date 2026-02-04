@@ -29,6 +29,39 @@ function colorToRgbArray(color) {
   return rgb.slice(0, 3).map((c) => Math.max(0, Math.min(1, c)));
 }
 
+function isTransparentColor(color) {
+  if (!color) return true;
+  if (typeof color.alpha === 'number') return color.alpha === 0;
+  return false;
+}
+
+function parseFontSizePx(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/([0-9.]+)/);
+  if (!match) return null;
+  const n = Number.parseFloat(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isBold(fontWeight) {
+  const raw = String(fontWeight || '').trim();
+  if (!raw) return false;
+  if (/bold/i.test(raw)) return true;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n >= 700 : false;
+}
+
+function classifyContrast({ ratio, fontSizePx, fontWeight }) {
+  if (!Number.isFinite(ratio)) return null;
+  const size = Number.isFinite(fontSizePx) ? fontSizePx : null;
+  const bold = isBold(fontWeight);
+  const largeText = size !== null && (size >= 24 || (size >= 18.66 && bold));
+  const aa = ratio >= (largeText ? 3 : 4.5);
+  const aaa = ratio >= (largeText ? 4.5 : 7);
+  return { aa, aaa, largeText };
+}
+
 async function loadPngBuffer(filePath, width = 900) {
   const buf = await sharp(filePath).resize({ width, withoutEnlargement: true }).png().toBuffer();
   return PNG.sync.read(buf);
@@ -88,7 +121,67 @@ export function analyzeContrast(styleSamples = []) {
   }
   const sorted = results.slice().sort((a, b) => a.ratio - b.ratio);
   const worst = sorted[0] || null;
+  const worstClassification = worst
+    ? classifyContrast({
+        ratio: worst.ratio,
+        fontSizePx: parseFontSizePx(worst.fontSize),
+        fontWeight: worst.fontWeight
+      })
+    : null;
   const failing = results.filter((r) => r.ratio < 4.5).length;
+  return {
+    sampleCount: results.length,
+    failingCount: failing,
+    worstSample: worst,
+    worstClassification
+  };
+}
+
+export function analyzeUiContrast(uiSamples = []) {
+  const results = [];
+  for (const sample of uiSamples) {
+    const bg = parseColor(sample.backgroundColor);
+    const border = parseColor(sample.borderColor);
+    const text = parseColor(sample.color);
+    const parentBg = parseColor(sample.parentBackgroundColor);
+    let component = null;
+    let source = '';
+    if (bg && !isTransparentColor(bg)) {
+      component = bg;
+      source = 'background';
+    } else if (border && !isTransparentColor(border)) {
+      component = border;
+      source = 'border';
+    } else if (text && !isTransparentColor(text)) {
+      component = text;
+      source = 'text';
+    }
+    if (!component || !parentBg) continue;
+    const compRgb = colorToRgbArray(component);
+    const bgRgb = colorToRgbArray(parentBg);
+    if (!compRgb || !bgRgb) continue;
+    try {
+      const compScaled = compRgb.map((c) => Math.round(c * 255));
+      const bgScaled = bgRgb.map((c) => Math.round(c * 255));
+      const ratio = contrastRgb(compScaled, bgScaled);
+      results.push({
+        text: sample.text,
+        selector: sample.selector,
+        role: sample.role,
+        ratio: Number(ratio.toFixed(2)),
+        source,
+        color: sample.color,
+        backgroundColor: sample.backgroundColor,
+        borderColor: sample.borderColor,
+        parentBackgroundColor: sample.parentBackgroundColor,
+        fontSize: sample.fontSize,
+        fontWeight: sample.fontWeight
+      });
+    } catch {}
+  }
+  const sorted = results.slice().sort((a, b) => a.ratio - b.ratio);
+  const worst = sorted[0] || null;
+  const failing = results.filter((r) => r.ratio < 3).length;
   return {
     sampleCount: results.length,
     failingCount: failing,
@@ -300,14 +393,22 @@ export function analyzeDomHints(htmlSnippet = '') {
   };
 }
 
-export async function buildEnrichment({ screenshot1, screenshot2, styleSamples, htmlSnippet }) {
+export async function buildEnrichment({
+  screenshot1,
+  screenshot2,
+  styleSamples,
+  uiSamples,
+  htmlSnippet
+}) {
   const motion = await analyzeMotion({ screenshot1, screenshot2 });
   const contrastSummary = analyzeContrast(styleSamples);
+  const uiContrastSummary = analyzeUiContrast(uiSamples);
   const htmlHints = analyzeHtmlHints(htmlSnippet);
   const domHints = analyzeDomHints(htmlSnippet);
   return {
     motion,
     contrast: contrastSummary,
+    uiContrast: uiContrastSummary,
     htmlHints,
     domHints
   };
