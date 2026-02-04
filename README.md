@@ -211,6 +211,7 @@ Enrichment‑based evidence in cell notes is **humanized** (e.g., “liens sans 
 All non-automated criteria are reviewed via the local **Codex CLI** (`codex exec`).
 
 You can override the model with `--codex-model` if your Codex config supports it.
+If you rely on a local proxy/authenticator (e.g., a `base_url` in `~/.codex/config.toml`), nested `codex exec` calls read that `base_url` and route through it automatically.
 
 **AI+MCP is enabled by default** to let the reviewer call chrome-devtools MCP tools for extra evidence (a11y tree, targeted DOM queries, screenshots).
 Disable with:
