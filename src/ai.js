@@ -858,6 +858,7 @@ export async function aiReviewCriterion({
   onLog,
   onStage,
   onError,
+  failFast = false,
   signal,
   mcp,
   retry = false
@@ -900,6 +901,10 @@ export async function aiReviewCriterion({
     if (isAbortError(err) || signal?.aborted) {
       throw createAbortError();
     }
+    if (failFast && looksLikeMissingAuth(err?.stderr || err?.message)) {
+      maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+      throw err;
+    }
     maybeAlertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);
     const message = hint && err?.message && !String(err.message).includes(hint)
@@ -922,6 +927,7 @@ export async function aiReviewCriteriaBatch({
   onLog,
   onStage,
   onError,
+  failFast = false,
   signal,
   mcp
 }) {
@@ -961,6 +967,10 @@ export async function aiReviewCriteriaBatch({
   } catch (err) {
     if (isAbortError(err) || signal?.aborted) {
       throw createAbortError();
+    }
+    if (failFast && looksLikeMissingAuth(err?.stderr || err?.message)) {
+      maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+      throw err;
     }
     maybeAlertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);

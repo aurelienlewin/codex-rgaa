@@ -181,6 +181,11 @@ export async function runAudit(options) {
     aiUseUtilsRaw === ''
       ? true
       : !(aiUseUtilsRaw === '0' || aiUseUtilsRaw === 'false' || aiUseUtilsRaw === 'no');
+  const failFastRaw = String(process.env.AUDIT_FAIL_FAST || '').trim().toLowerCase();
+  const failFast =
+    failFastRaw === ''
+      ? true
+      : !(failFastRaw === '0' || failFastRaw === 'false' || failFastRaw === 'no');
   const mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr, utils: aiUseUtils } : null;
   let pagesFailed = 0;
   let aiFailed = 0;
@@ -266,6 +271,7 @@ export async function runAudit(options) {
             enrichment = await buildEnrichment(enriched);
             snapshot.enrichment = enrichment;
           } catch (err) {
+            if (failFast) throw err;
             reporter?.onAILog?.({
               criterion: { id: 'enrich', title: 'Enrichment', theme: 'Debug' },
               message: `Enrichment failed: ${String(err?.message || err)}`
@@ -281,6 +287,9 @@ export async function runAudit(options) {
         page = { snapshot };
       } catch (err) {
         if (isAbortError(err)) {
+          throw err;
+        }
+        if (failFast) {
           throw err;
         }
         page = { error: err };
@@ -405,6 +414,7 @@ export async function runAudit(options) {
               onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
               onError: (message) => reporter?.onError?.(message),
+              failFast,
               signal,
               mcp: mcpForAi
             });
@@ -470,6 +480,7 @@ export async function runAudit(options) {
               onLog: (message) => reporter?.onAILog?.({ criterion, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
               onError: (message) => reporter?.onError?.(message),
+              failFast,
               signal,
               mcp: mcpForAi
             });
@@ -512,6 +523,7 @@ export async function runAudit(options) {
             onLog: (message) => reporter?.onAILog?.({ criterion, message }),
             onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
             onError: (message) => reporter?.onError?.(message),
+            failFast,
             signal,
             mcp: mcpForAi,
             retry: true
