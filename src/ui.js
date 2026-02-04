@@ -1081,10 +1081,9 @@ function createFancyReporter(options = {}) {
 
     onDone({ outPath, globalScore, counts, errors, secondPass }) {
       stopTicking();
-      if (isGuided) {
-        renderer.stop({ keepBlock: false });
-      } else {
-        renderer.stop({ keepBlock: true });
+      renderer.stop({ keepBlock: false });
+      if (process.stdout.isTTY) {
+        safeWrite('\x1b[2J\x1b[0;0H');
       }
 
       const reviewRemaining = counts.REVIEW || 0;
