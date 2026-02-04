@@ -560,6 +560,8 @@ export async function runAudit(options) {
         }
         let enrichment = null;
         if (wantsEnrichment && options.ai?.useMcp) {
+          reporter?.onEnrichmentStart?.({ url });
+          let enrichmentOk = true;
           try {
             const enriched = await collectEnrichedEvidenceWithMcp({
               url,
@@ -583,11 +585,14 @@ export async function runAudit(options) {
               screenshot2: enriched?.screenshot2 || ''
             };
           } catch (err) {
+            enrichmentOk = false;
             if (failFast) throw err;
             reporter?.onAILog?.({
               criterion: { id: 'enrich', title: 'Enrichment', theme: 'Debug' },
               message: `Enrichment failed: ${String(err?.message || err)}`
             });
+          } finally {
+            reporter?.onEnrichmentEnd?.({ url, ok: enrichmentOk });
           }
         }
         reporter?.onSnapshotEnd?.({ url, durationMs: Date.now() - snapshotStart });

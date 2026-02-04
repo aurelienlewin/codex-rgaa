@@ -424,6 +424,20 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
 }
 
 export async function collectSnapshotWithMcp({ url, model, mcp, onLog, onStage, signal }) {
+  if (
+    mcp &&
+    !mcp?.pageId &&
+    (!Array.isArray(mcp?.cachedPages) || mcp.cachedPages.length === 0)
+  ) {
+    try {
+      const list = await listMcpPages({ model, mcp, onLog, onStage, signal });
+      if (Array.isArray(list?.pages) && list.pages.length) {
+        mcp.cachedPages = list.pages;
+      }
+    } catch (err) {
+      onLog?.(`Codex: failed to prefetch MCP list_pages (${err?.message || 'unknown error'})`);
+    }
+  }
   return runCodexSnapshot({ url, model, mcp, onLog, onStage, signal });
 }
 

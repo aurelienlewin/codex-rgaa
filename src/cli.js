@@ -158,6 +158,14 @@ function wrapReporterWithDebug({ reporter, logger }) {
       logger.log('snapshot-start');
       reporter.onSnapshotStart?.(payload);
     },
+    onEnrichmentStart(payload) {
+      logger.log('enrich-start');
+      reporter.onEnrichmentStart?.(payload);
+    },
+    onEnrichmentEnd(payload) {
+      logger.log('enrich-end', payload?.ok === false ? 'error' : 'ok');
+      reporter.onEnrichmentEnd?.(payload);
+    },
     onSnapshotEnd(payload) {
       logger.log('snapshot-end', `${payload?.durationMs || 0}ms`);
       reporter.onSnapshotEnd?.(payload);
@@ -1048,6 +1056,9 @@ async function main() {
     Number.isFinite(aiStageRaw) && aiStageRaw > 0 ? Math.floor(aiStageRaw) : 0;
   const criteria = loadCriteria({ lang: reportLang });
   const criteriaCount = criteria.length;
+  const wantsEnrichment =
+    String(process.env.AUDIT_ENRICH || '').trim().toLowerCase() !== '0';
+  const enrichmentEnabled = wantsEnrichment && aiMcp;
   if (interactive && guided) {
     clearScreen();
   }
@@ -1057,7 +1068,8 @@ async function main() {
       criteriaCount,
       codexModel,
       mcpMode: process.env.CODEX_MCP_MODE,
-      auditMode: snapshotMode
+      auditMode: snapshotMode,
+      enrichmentEnabled
     });
   }
 

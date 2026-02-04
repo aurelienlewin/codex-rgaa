@@ -12,6 +12,7 @@ import {
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
 import { applyCodexBaseUrlFromConfig, maybeHandleMissingAuth } from './codexAuth.js';
+import { listMcpPages } from './mcpSnapshot.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-enrich-schema.json', import.meta.url));
 
@@ -366,5 +367,19 @@ export async function collectEnrichedEvidenceWithMcp({
   onStage,
   signal
 }) {
+  if (
+    mcp &&
+    !mcp?.pageId &&
+    (!Array.isArray(mcp?.cachedPages) || mcp.cachedPages.length === 0)
+  ) {
+    try {
+      const list = await listMcpPages({ model, mcp, onLog, onStage, signal });
+      if (Array.isArray(list?.pages) && list.pages.length) {
+        mcp.cachedPages = list.pages;
+      }
+    } catch (err) {
+      onLog?.(`Codex: failed to prefetch MCP list_pages (${err?.message || 'unknown error'})`);
+    }
+  }
   return runCodexEnrich({ url, model, mcp, onLog, onStage, signal });
 }
