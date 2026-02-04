@@ -529,8 +529,11 @@ function createFancyReporter(options = {}) {
   const spinner = ora({ text: i18n.t('Préparation de l’audit…', 'Preparing audit…'), color: 'cyan' });
   const renderer = createLiveBlockRenderer();
   const humanizeEnabled = Boolean(options.humanizeFeed);
+  const verboseAiFeedRaw = String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase();
   const verboseAiFeed =
-    String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase() === '1';
+    verboseAiFeedRaw === ''
+      ? true
+      : verboseAiFeedRaw === '1' || verboseAiFeedRaw === 'true' || verboseAiFeedRaw === 'yes';
   const feedHumanizer = createCodexFeedHumanizer({
     enabled: humanizeEnabled,
     model: options.humanizeFeedModel || '',
@@ -1166,8 +1169,11 @@ function createLegacyReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  const verboseAiFeedRaw = String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase();
   const verboseAiFeed =
-    String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase() === '1';
+    verboseAiFeedRaw === ''
+      ? true
+      : verboseAiFeedRaw === '1' || verboseAiFeedRaw === 'true' || verboseAiFeedRaw === 'yes';
   let pulseTimer = null;
   let pulseLabel = '';
   let pulseDots = 0;
@@ -1518,8 +1524,11 @@ function createPlainReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  const verboseAiFeedRaw = String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase();
   const verboseAiFeed =
-    String(process.env.AUDIT_AI_FEED_VERBOSE || '').trim().toLowerCase() === '1';
+    verboseAiFeedRaw === ''
+      ? true
+      : verboseAiFeedRaw === '1' || verboseAiFeedRaw === 'true' || verboseAiFeedRaw === 'yes';
   let pageStartAt = 0;
   let auditStartAt = 0;
   let auditMode = 'mcp';

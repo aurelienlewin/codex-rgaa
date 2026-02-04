@@ -162,7 +162,7 @@ The CLI shows a **live humanized Codex feed** during progress (table + colors + 
 Feed controls:
 - `--humanize-feed/--no-humanize-feed`
 - `--humanize-feed-model`
-- `AUDIT_AI_FEED_VERBOSE=1` to show the full multi-line AI feed instead of a single condensed line.
+- `AUDIT_AI_FEED_VERBOSE=0` to collapse the AI feed to a single condensed line (default: verbose multi-line).
 
 In guided mode, the live UI is cleared at the end and replaced with a final **decisions report** plus summary.
 
