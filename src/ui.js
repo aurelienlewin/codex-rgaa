@@ -831,14 +831,6 @@ function createFancyReporter(options = {}) {
           )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
-      enrichmentActive
-        ? `${padVisibleRight(palette.glow('Enrich'), 8)} ${palette.accent(
-            clipInline(
-              enrichmentLabel || i18n.t('Enrichment in progress', 'Enrichment in progress'),
-              width - 22
-            )
-          )}${enrichmentAge ? ` ${palette.muted('•')} ${palette.accent(enrichmentAge)}` : ''}`
-        : '',
       `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted('p pause • r resume')}`,
       isPaused
         ? `${padVisibleRight(palette.warn('Status'), 8)} ${palette.warn('paused')}`
