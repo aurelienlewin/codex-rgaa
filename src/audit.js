@@ -1105,9 +1105,7 @@ export async function runAudit(options) {
       errBg: 'FFFCA5A5',
       errFg: 'FF7F1D1D',
       reviewBg: 'FFFEF3C7',
-      reviewFg: 'FF92400E',
-      aiBg: 'FFEDE9FE',
-      aiFg: 'FF6D28D9'
+      reviewFg: 'FF92400E'
     };
 
     const styleHeaderRow = (sheet) => {
@@ -1171,14 +1169,21 @@ export async function runAudit(options) {
     }
 
     const statusStyle = (status) => {
-      if (status === STATUS.C) return { bg: COLORS.conformBg, fg: COLORS.conformFg, icon: '✓' };
-      if (status === STATUS.NC) return { bg: COLORS.notConformBg, fg: COLORS.notConformFg, icon: '✗' };
-      if (status === STATUS.NA) return { bg: COLORS.naBg, fg: COLORS.naFg, icon: '–' };
-      if (status === STATUS.ERR) return { bg: COLORS.errBg, fg: COLORS.errFg, icon: '!' };
-      if (status === STATUS.REVIEW) return { bg: COLORS.reviewBg, fg: COLORS.reviewFg, icon: '' };
-      if (status === STATUS.AI) return { bg: COLORS.aiBg, fg: COLORS.aiFg, icon: '?' };
+      if (status === STATUS.C) return { bg: COLORS.conformBg, fg: COLORS.conformFg, icon: '✅' };
+      if (status === STATUS.NC) return { bg: COLORS.notConformBg, fg: COLORS.notConformFg, icon: '❌' };
+      if (status === STATUS.NA) return { bg: COLORS.naBg, fg: COLORS.naFg, icon: '➖' };
+      if (status === STATUS.ERR) return { bg: COLORS.errBg, fg: COLORS.errFg, icon: '⚠️' };
+      if (status === STATUS.REVIEW) return { bg: COLORS.reviewBg, fg: COLORS.reviewFg, icon: '🟡' };
       return { bg: 'FFFFFFFF', fg: 'FF0F172A', icon: '' };
     };
+
+    const statusDropdown = [
+      statusStyle(STATUS.C).icon,
+      statusStyle(STATUS.NC).icon,
+      statusStyle(STATUS.NA).icon,
+      statusStyle(STATUS.REVIEW).icon,
+      statusStyle(STATUS.ERR).icon
+    ].join(',');
 
     const applyStatusCellStyle = (cell, status, { centered = true } = {}) => {
       const s = statusStyle(status);
@@ -1295,6 +1300,11 @@ export async function runAudit(options) {
         const uiCell = excelUiRow.getCell(4 + pageIndex);
         const s = applyStatusCellStyle(uiCell, res?.status || STATUS.ERR);
         uiCell.value = s.icon;
+        uiCell.dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`"${statusDropdown}"`]
+        };
         uiCell.note = buildCellNote(res);
 
         const evidencePayload = buildEvidencePayload(res);

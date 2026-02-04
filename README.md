@@ -202,10 +202,10 @@ By default, the generated XLSX is opened automatically; disable with `AUDIT_OPEN
 
 The Excel file contains:
 - **Summary** (first tab): global counts + score, color-coded status chips.
-- **Audit**: rows = criteria, columns = pages, with **✓ / ✗ / – / !** icons and color-coded cells. Page URLs are stored as header cell comments; page names appear in the header row.
+- **Audit**: rows = criteria, columns = pages, with **✅ / ❌ / ➖ / 🟡 / ⚠️** icons, color-coded cells, and a per-cell dropdown for quick edits. Page URLs are stored as header cell comments; page names appear in the header row.
 - **Evidence**: one row per criterion + page with status, rationale, evidence bullets, and links to stored screenshots when available.
 
-When evidence is still insufficient after MCP tools (a11y tree, targeted DOM, OCR), criteria are marked **Review** and the Matrix UI cell is left blank with a **solid red** background for human review.
+When evidence is still insufficient after MCP tools (a11y tree, targeted DOM, OCR), criteria are marked **Review** (🟡) for human review.
 Enrichment‑based evidence in cell notes is **humanized** (e.g., “liens sans nom”, “taux de mouvement”, “pire contraste”) for easier review.
 
 ## AI review (mandatory)

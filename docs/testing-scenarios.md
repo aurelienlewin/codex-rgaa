@@ -16,7 +16,7 @@
 - Criteria list = 106 unique IDs
 - Non-automated criteria require AI review
 - AI review failures are reported as Error with a failure note
-- Missing/insufficient evidence after MCP tools yields Review (solid red cell in Matrix UI)
+- Missing/insufficient evidence after MCP tools yields Review (🟡 in Matrix UI)
 - Global score computed as C / (C + NC)
 - AI+MCP mode (default on; disable with `--no-ai-mcp` / `AUDIT_AI_MCP=0`) can collect extra evidence via MCP tools
 - OCR tool (`--ai-ocr` / `AUDIT_AI_OCR=1`) extracts text from screenshots when needed

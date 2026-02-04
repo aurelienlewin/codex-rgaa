@@ -5,7 +5,6 @@ export const STATUS = {
   NC: 'Not conform',
   NA: 'Non applicable',
   ERR: 'Error',
-  AI: 'Review',
   REVIEW: 'Review'
 };
 
@@ -73,7 +72,7 @@ function needsReview(snapshot, key) {
 function reviewForMissing(snapshot, key, i18n, noteFr, noteEn) {
   if (!needsReview(snapshot, key)) return null;
   return {
-    status: STATUS.AI,
+    status: STATUS.REVIEW,
     aiCandidate: true,
     automated: false,
     notes: i18n.t(noteFr, noteEn)
@@ -161,7 +160,7 @@ function evaluateImagesAlt(snapshot, i18n) {
       ].filter(Boolean);
 
       return {
-        status: STATUS.AI,
+        status: STATUS.REVIEW,
         aiCandidate: true,
         automated: false,
         notes: i18n.t(
@@ -882,7 +881,7 @@ export function evaluateCriterion(criterion, snapshot, options = {}) {
   }
 
   return {
-    status: STATUS.AI,
+    status: STATUS.REVIEW,
     notes: i18n.t('Revue requise.', 'Review required.'),
     automated: false,
     aiCandidate: true
