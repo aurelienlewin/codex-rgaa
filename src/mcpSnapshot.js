@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createAbortError, isAbortError } from './abort.js';
@@ -31,6 +32,52 @@ const CACHED_PAGES_MAX = (() => {
 })();
 
 const listPagesCache = new Map();
+
+function hashCacheKey(cacheKey) {
+  return crypto.createHash('sha256').update(cacheKey).digest('hex').slice(0, 16);
+}
+
+async function getListPagesCacheDir() {
+  const preferred = process.env.CODEX_HOME || getDefaultCodexHome();
+  const candidateDirs = [
+    path.join(preferred, 'cache'),
+    path.join(getFallbackCodexHome(), 'cache')
+  ];
+  for (const dir of candidateDirs) {
+    try {
+      await ensureDir(dir);
+      return dir;
+    } catch {}
+  }
+  return '';
+}
+
+async function readListPagesDiskCache(cacheKey) {
+  if (LIST_PAGES_CACHE_TTL_MS <= 0) return null;
+  const dir = await getListPagesCacheDir();
+  if (!dir) return null;
+  const filePath = path.join(dir, `mcp-list-pages-${hashCacheKey(cacheKey)}.json`);
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.expiresAt && parsed.expiresAt > Date.now() && parsed.value) {
+      return parsed;
+    }
+    await fs.unlink(filePath).catch(() => {});
+  } catch {}
+  return null;
+}
+
+async function writeListPagesDiskCache(cacheKey, payload) {
+  if (LIST_PAGES_CACHE_TTL_MS <= 0) return;
+  const dir = await getListPagesCacheDir();
+  if (!dir) return;
+  const filePath = path.join(dir, `mcp-list-pages-${hashCacheKey(cacheKey)}.json`);
+  try {
+    await fs.writeFile(filePath, JSON.stringify(payload), { mode: 0o600 });
+  } catch {}
+}
 
 let schemaPreflightDone = false;
 async function preflightSchemas(onLog) {
@@ -461,6 +508,15 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       }
       return JSON.parse(JSON.stringify(cached.value));
     }
+    const diskCached = await readListPagesDiskCache(cacheKey);
+    if (diskCached && diskCached.expiresAt > Date.now()) {
+      onLog?.('Codex: using disk-cached MCP list_pages');
+      listPagesCache.set(cacheKey, diskCached);
+      if (typeof structuredClone === 'function') {
+        return structuredClone(diskCached.value);
+      }
+      return JSON.parse(JSON.stringify(diskCached.value));
+    }
     listPagesCache.delete(cacheKey);
   }
 
@@ -643,10 +699,12 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       autoConnect: Boolean(mcp?.autoConnect),
       channel: mcp?.channel || ''
     });
-    listPagesCache.set(cacheKey, {
+    const payload = {
       value: parsed,
       expiresAt: Date.now() + LIST_PAGES_CACHE_TTL_MS
-    });
+    };
+    listPagesCache.set(cacheKey, payload);
+    await writeListPagesDiskCache(cacheKey, payload);
   }
   return parsed;
 }
