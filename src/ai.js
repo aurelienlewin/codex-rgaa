@@ -630,6 +630,50 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
   return lines.join('\n');
 }
 
+function buildCrossPagePrompt({ criterion, pages, reportLang }) {
+  const i18n = getI18n(normalizeReportLang(reportLang));
+  const safePages = Array.isArray(pages) ? pages : [];
+  const payload = {
+    criterion_id: criterion.id,
+    criterion_title: criterion.title,
+    pages: safePages.map((page, idx) => ({
+      index: idx + 1,
+      url: page.url,
+      title: page.title || '',
+      searchLandmarks: page.searchLandmarks || [],
+      searchControls: page.searchControls || [],
+      searchLinks: page.searchLinks || []
+    }))
+  };
+  const baseLines =
+    i18n.lang === 'en'
+      ? [
+          'You are an RGAA auditor. Reply strictly following the provided JSON schema.',
+          'Allowed statuses: "Conform", "Not conform", "Non applicable", "Review".',
+          'Criterion 12.5 is cross-page: "Within each set of pages, is the search engine reachable in an identical manner?"',
+          'Compare how search is reached across all pages using the provided evidence (landmarks, controls, links).',
+          'Return "Review" if evidence is missing or ambiguous for any page.',
+          'Return "Non applicable" only if no search entry exists on all pages.',
+          'Always include 1–4 short evidence items that cite page index and a concrete clue (e.g., page[2].searchControls[0].label="Search").',
+          '',
+          'Data:',
+          JSON.stringify(payload)
+        ]
+      : [
+          'Tu es un auditeur RGAA. Réponds strictement au schéma JSON fourni.',
+          'Statuts autorisés: "Conform", "Not conform", "Non applicable", "Review".',
+          'Le critère 12.5 est inter-pages : "Dans chaque ensemble de pages, le moteur de recherche est-il atteignable de manière identique ?"',
+          'Compare la manière d’accéder à la recherche sur toutes les pages à partir des preuves fournies (landmarks, champs, liens).',
+          'Réponds "Review" si des preuves manquent ou sont ambiguës pour une page.',
+          'Réponds "Non applicable" uniquement si aucun accès à la recherche n’existe sur toutes les pages.',
+          'Fournis toujours 1–4 éléments de preuve courts en citant l’index de page et un indice concret (ex: page[2].searchControls[0].label="Recherche").',
+          '',
+          'Données:',
+          JSON.stringify(payload)
+        ];
+  return baseLines.join('\n');
+}
+
 async function runCodexPrompt({
   prompt,
   model,
@@ -987,5 +1031,57 @@ export async function aiReviewCriteriaBatch({
     const message =
       hint && err?.message && !String(err.message).includes(hint) ? `${err.message} (${hint})` : err.message;
     throw new Error(`AI batch review failed: ${message}`);
+  }
+}
+
+export async function aiReviewCrossPageCriterion({
+  model,
+  criterion,
+  pages,
+  reportLang,
+  onLog,
+  onStage,
+  onError,
+  failFast,
+  signal
+}) {
+  const i18n = getI18n(normalizeReportLang(reportLang));
+  try {
+    const prompt = buildCrossPagePrompt({ criterion, pages, reportLang });
+    onStage?.('AI: preparing cross-page prompt');
+    onLog?.('Codex: preparing cross-page prompt');
+    const content = await runCodexPrompt({ prompt, model, onLog, onStage, signal });
+    const parsed = JSON.parse(content);
+    const confidence = Number(parsed.confidence || 0);
+    const rationale = parsed.rationale || '';
+    const evidence = Array.isArray(parsed.evidence) ? parsed.evidence : [];
+    const normalized = normalizeAiStatus(parsed.status);
+    const finalStatus =
+      normalized === STATUS.NC && looksLikeNonVerifiable({ rationale, evidence })
+        ? STATUS.REVIEW
+        : normalized;
+    return {
+      status: finalStatus,
+      notes: `${i18n.notes.aiReviewLabel()} (${confidence.toFixed(2)}): ${rationale}`,
+      ai: { confidence, rationale, evidence }
+    };
+  } catch (err) {
+    if (isAbortError(err) || signal?.aborted) {
+      throw createAbortError();
+    }
+    if (failFast && looksLikeMissingAuth(err?.stderr || err?.message)) {
+      maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+      throw err;
+    }
+    maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+    const hint = summarizeCodexStderr(err?.stderr);
+    const message = hint && err?.message && !String(err.message).includes(hint)
+      ? `${err.message} (${hint})`
+      : err.message;
+    return {
+      status: STATUS.ERR,
+      notes: `${i18n.notes.aiFailed()}: ${message}`,
+      ai: null
+    };
   }
 }

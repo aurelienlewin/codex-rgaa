@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import chromeLauncher from 'chrome-launcher';
 import ExcelJS from 'exceljs';
 import { loadCriteria } from './criteria.js';
@@ -8,7 +9,7 @@ import { collectEnrichedEvidenceWithMcp } from './mcpEnrich.js';
 import { closeMcpPages } from './mcpClosePages.js';
 import { buildEnrichment } from './enrichment.js';
 import { evaluateCriterion, STATUS } from './checks.js';
-import { aiReviewCriteriaBatch, aiReviewCriterion } from './ai.js';
+import { aiReviewCriteriaBatch, aiReviewCriterion, aiReviewCrossPageCriterion } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
 
@@ -36,6 +37,77 @@ function scoreFromCounts(counts) {
   const denom = counts.C + counts.NC;
   if (denom === 0) return 0;
   return counts.C / denom;
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractSearchEvidence(snapshot) {
+  const landmarks = Array.isArray(snapshot?.landmarks) ? snapshot.landmarks : [];
+  const controls = Array.isArray(snapshot?.formControls) ? snapshot.formControls : [];
+  const links = Array.isArray(snapshot?.links) ? snapshot.links : [];
+  const keywords = ['search', 'recherche', 'chercher', 'rechercher'];
+  const hasKeyword = (value) => {
+    const text = normalizeSearchText(value);
+    if (!text) return false;
+    return keywords.some((k) => text.includes(k));
+  };
+
+  const searchLandmarks = landmarks
+    .filter((l) => String(l?.role || '').toLowerCase() === 'search' || hasKeyword(l?.label))
+    .slice(0, 5)
+    .map((l) => ({
+      tag: l?.tag || '',
+      role: l?.role || '',
+      label: l?.label || ''
+    }));
+
+  const searchControls = controls
+    .filter((c) => {
+      if (String(c?.type || '').toLowerCase() === 'search') return true;
+      return hasKeyword(c?.label) || hasKeyword(c?.name) || hasKeyword(c?.id);
+    })
+    .slice(0, 8)
+    .map((c) => ({
+      tag: c?.tag || '',
+      type: c?.type || '',
+      label: c?.label || '',
+      name: c?.name || '',
+      id: c?.id || ''
+    }));
+
+  const searchLinks = links
+    .filter((l) => hasKeyword(l?.name) || hasKeyword(l?.href))
+    .slice(0, 6)
+    .map((l) => ({
+      name: l?.name || '',
+      href: l?.href || ''
+    }));
+
+  return { searchLandmarks, searchControls, searchLinks };
+}
+
+function shouldOpenReport() {
+  const raw = String(process.env.AUDIT_OPEN_XLS || '').trim().toLowerCase();
+  if (!raw) return true;
+  return !(raw === '0' || raw === 'false' || raw === 'no');
+}
+
+function openReport(outPath) {
+  if (!outPath) return;
+  try {
+    if (process.platform === 'darwin') {
+      spawn('open', [outPath], { stdio: 'ignore', detached: true });
+    } else if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', outPath], { stdio: 'ignore', detached: true });
+    } else {
+      spawn('xdg-open', [outPath], { stdio: 'ignore', detached: true });
+    }
+  } catch {}
 }
 
 function formatPageFailure(error) {
@@ -187,6 +259,7 @@ export async function runAudit(options) {
       ? true
       : !(failFastRaw === '0' || failFastRaw === 'false' || failFastRaw === 'no');
   const mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr, utils: aiUseUtils } : null;
+  const totalPages = Array.isArray(options.pages) ? options.pages.length : 0;
   let pagesFailed = 0;
   let aiFailed = 0;
   const wantsEnrichment =
@@ -231,6 +304,9 @@ export async function runAudit(options) {
   }
 
   const pageResults = [];
+  const crossPageEvidence = [];
+  const criteriaIndexById = new Map(criteria.map((criterion, idx) => [criterion.id, idx]));
+  const hasMultiPageAudit = totalPages >= 2;
 
   try {
     if (aborted || signal?.aborted) {
@@ -359,12 +435,37 @@ export async function runAudit(options) {
           continue;
         }
 
-        if (criterion.id === '12.5' && (options.pages?.length || 0) < 2) {
+        if (criterion.id === '12.5' && !hasMultiPageAudit) {
           const evaluation = {
             status: STATUS.REVIEW,
             notes: i18n.t(
               'Critère multi-pages : nécessite au moins deux pages. À revoir lors d’un second passage.',
               'Multi-page criterion: requires at least two pages. Review in a second pass.'
+            ),
+            automated: false,
+            aiCandidate: false
+          };
+          const index = results.length;
+          results.push({ ...criterion, ...evaluation });
+          reportCriterion(
+            criterion,
+            {
+              status: evaluation.status,
+              notes: evaluation.notes,
+              ai: evaluation.ai || null,
+              automated: Boolean(evaluation.automated),
+              aiCandidate: Boolean(evaluation.aiCandidate)
+            },
+            index
+          );
+          continue;
+        }
+        if (criterion.id === '12.5' && hasMultiPageAudit) {
+          const evaluation = {
+            status: STATUS.REVIEW,
+            notes: i18n.t(
+              'Critère multi-pages : revue inter-pages en seconde passe.',
+              'Multi-page criterion: cross-page review in a second pass.'
             ),
             automated: false,
             aiCandidate: false
@@ -581,6 +682,14 @@ export async function runAudit(options) {
       }
       reporter?.onChecksEnd?.({ index: pageIndex, url });
       if (page.error) pagesFailed += 1;
+      const searchEvidence = page?.snapshot ? extractSearchEvidence(page.snapshot) : null;
+      if (searchEvidence) {
+        crossPageEvidence.push({
+          url,
+          title: page?.snapshot?.title || '',
+          ...searchEvidence
+        });
+      }
       pageResults.push({ url, snapshot: page.snapshot, results });
       if (reporter && reporter.onPageEnd) {
         const counts = summarizeCounts(results);
@@ -595,6 +704,46 @@ export async function runAudit(options) {
       try {
         await chrome.kill();
       } catch {}
+    }
+  }
+
+  if (!aborted && !signal?.aborted && hasMultiPageAudit && crossPageEvidence.length > 0) {
+    const criterionIndex = criteriaIndexById.get('12.5');
+    if (typeof criterionIndex === 'number') {
+      const criterion = criteria[criterionIndex];
+      const pseudoCriterion = {
+        id: 'AI(12.5)',
+        title: criterion.title,
+        theme: criterion.theme
+      };
+      reporter?.onAIStart?.({ criterion: pseudoCriterion });
+      try {
+        const evaluation = await aiReviewCrossPageCriterion({
+          model: options.ai?.model,
+          criterion,
+          pages: crossPageEvidence,
+          reportLang,
+          onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
+          onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
+          onError: (message) => reporter?.onError?.(message),
+          failFast,
+          signal
+        });
+        if (evaluation.status === STATUS.ERR) {
+          aiFailed += 1;
+        }
+        for (const page of pageResults) {
+          if (Array.isArray(page.results) && page.results[criterionIndex]) {
+            page.results[criterionIndex] = { ...criterion, ...evaluation };
+          }
+        }
+      } catch (err) {
+        if (failFast) throw err;
+        reporter?.onAILog?.({
+          criterion: pseudoCriterion,
+          message: `Cross-page AI failed: ${String(err?.message || err)}`
+        });
+      }
     }
   }
 
@@ -879,6 +1028,9 @@ export async function runAudit(options) {
     await workbook.xlsx.writeFile(outPath);
     if (reporter && reporter.onDone) {
       reporter.onDone({ outPath, globalScore, counts: globalCounts, errors: errorSummary });
+    }
+    if (shouldOpenReport()) {
+      openReport(outPath);
     }
   } else if (reporter && reporter.onDone) {
     reporter.onDone({ outPath: null, globalScore, counts: globalCounts, errors: errorSummary });

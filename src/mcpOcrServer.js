@@ -1,4 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, unlink } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -39,6 +42,48 @@ async function getWorker(lang) {
   return worker;
 }
 
+function normalizeOcrText(text) {
+  const raw = String(text || '');
+  const clipped = MAX_TEXT_LENGTH > 0 ? raw.slice(0, MAX_TEXT_LENGTH) : raw;
+  return clipped.trim();
+}
+
+async function runCliOcr({ buffer, lang }) {
+  const tmpDir = os.tmpdir();
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const imgPath = path.join(tmpDir, `rgaa-ocr-${suffix}.png`);
+  const language = String(lang || DEFAULT_LANG).trim() || DEFAULT_LANG;
+  try {
+    await writeFile(imgPath, buffer);
+    const args = [imgPath, 'stdout', '-l', language];
+    const stdout = await new Promise((resolve, reject) => {
+      const child = spawn('tesseract', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      let err = '';
+      child.stdout.on('data', (chunk) => {
+        out += String(chunk || '');
+      });
+      child.stderr.on('data', (chunk) => {
+        err += String(chunk || '');
+      });
+      child.on('error', (error) => reject(error));
+      child.on('close', (code) => {
+        if (code === 0) resolve(out);
+        else reject(new Error(`tesseract exited with code ${code}: ${err.trim()}`));
+      });
+    });
+    return {
+      text: normalizeOcrText(stdout),
+      confidence: null,
+      lang: language,
+      truncated: MAX_TEXT_LENGTH > 0 && stdout.length > MAX_TEXT_LENGTH,
+      engine: 'tesseract-cli'
+    };
+  } finally {
+    await unlink(imgPath).catch(() => {});
+  }
+}
+
 async function runOcr({ path, base64, lang }) {
   let buffer = null;
   if (base64) {
@@ -52,20 +97,41 @@ async function runOcr({ path, base64, lang }) {
   }
 
   const language = String(lang || DEFAULT_LANG).trim() || DEFAULT_LANG;
-  const worker = await getWorker(language);
-  const result = await worker.recognize(buffer);
-  const text = String(result?.data?.text || '');
-  const confidence = Number.isFinite(result?.data?.confidence)
-    ? Number(result.data.confidence)
-    : null;
-
-  const clipped = MAX_TEXT_LENGTH > 0 ? text.slice(0, MAX_TEXT_LENGTH) : text;
-  return {
-    text: clipped.trim(),
-    confidence,
-    lang: language,
-    truncated: MAX_TEXT_LENGTH > 0 && text.length > MAX_TEXT_LENGTH
-  };
+  try {
+    const worker = await getWorker(language);
+    const result = await worker.recognize(buffer);
+    const text = String(result?.data?.text || '');
+    const confidence = Number.isFinite(result?.data?.confidence)
+      ? Number(result.data.confidence)
+      : null;
+    return {
+      text: normalizeOcrText(text),
+      confidence,
+      lang: language,
+      truncated: MAX_TEXT_LENGTH > 0 && text.length > MAX_TEXT_LENGTH,
+      engine: 'tesseract.js'
+    };
+  } catch (err) {
+    if (DEBUG) {
+      process.stderr.write(`OCR failed with tesseract.js: ${String(err?.message || err)}\n`);
+    }
+    try {
+      return await runCliOcr({ buffer, lang: language });
+    } catch (cliErr) {
+      if (language !== 'eng') {
+        try {
+          return await runCliOcr({ buffer, lang: 'eng' });
+        } catch (fallbackErr) {
+          const message = `OCR failed (tesseract.js + tesseract CLI): ${String(
+            fallbackErr?.message || fallbackErr
+          )}`;
+          throw new Error(message);
+        }
+      }
+      const message = `OCR failed (tesseract.js + tesseract CLI): ${String(cliErr?.message || cliErr)}`;
+      throw new Error(message);
+    }
+  }
 }
 
 const server = new Server(
