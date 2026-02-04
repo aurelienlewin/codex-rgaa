@@ -54,6 +54,21 @@ function padVisibleRight(text, width) {
   return str + ' '.repeat(width - len);
 }
 
+function joinBoxenColumns(left, right) {
+  const leftLines = String(left || '').split('\n');
+  const rightLines = String(right || '').split('\n');
+  const maxLines = Math.max(leftLines.length, rightLines.length);
+  const leftWidth = Math.max(...leftLines.map((line) => visibleLen(line)));
+  const rightWidth = Math.max(...rightLines.map((line) => visibleLen(line)));
+  const out = [];
+  for (let i = 0; i < maxLines; i += 1) {
+    const l = leftLines[i] || '';
+    const r = rightLines[i] || '';
+    out.push(`${padVisibleRight(l, leftWidth)}  ${padVisibleRight(r, rightWidth)}`);
+  }
+  return out.join('\n');
+}
+
 function normalizeInline(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
@@ -911,27 +926,25 @@ function createFancyReporter(options = {}) {
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(42)
       );
+      const cols = process.stdout.columns || 100;
+      const totalWidth = Math.max(76, Math.min(cols - 2, 120));
+      const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
       const title = boxen(
         `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(headline)}\n` +
           `${palette.muted(subtitle)}\n` +
           `${palette.muted(credit)}\n` +
           `${glowLine}`,
-        { padding: 1, borderStyle: 'double', borderColor: 'magenta' }
+        { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      console.log(title);
       const modelLabel = codexModel ? `Codex model: ${codexModel}` : 'Codex model: (default)';
-      const mcpLabel = mcpModeFromCli ? `MCP mode: ${mcpModeFromCli}` : 'MCP mode: (default)';
-      const modeLabel = `Snapshot mode: ${auditMode}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(modelLabel)}\n` +
-          `${palette.muted(mcpLabel)}\n` +
-          `${palette.muted(modeLabel)}`,
-        { padding: 1, borderStyle: 'round', borderColor: 'cyan' }
+          `${palette.muted(modelLabel)}`,
+        { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
-      console.log(session);
+      console.log(joinBoxenColumns(title, session));
       spinner.start();
       spinner.text = i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…');
     },
@@ -1320,27 +1333,25 @@ function createLegacyReporter(options = {}) {
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(42)
       );
+      const cols = process.stdout.columns || 100;
+      const totalWidth = Math.max(76, Math.min(cols - 2, 120));
+      const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
       const title = boxen(
         `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(headline)}\n` +
           `${palette.muted(subtitle)}\n` +
           `${palette.muted(credit)}\n` +
           `${glowLine}`,
-        { padding: 1, borderStyle: 'double', borderColor: 'magenta' }
+        { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      console.log(title);
       const modelLabel = codexModel ? `Codex model: ${codexModel}` : 'Codex model: (default)';
-      const mcpLabel = mcpMode ? `MCP mode: ${mcpMode}` : 'MCP mode: (default)';
-      const modeLabel = `Snapshot mode: ${auditMode}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(modelLabel)}\n` +
-          `${palette.muted(mcpLabel)}\n` +
-          `${palette.muted(modeLabel)}`,
-        { padding: 1, borderStyle: 'round', borderColor: 'cyan' }
+          `${palette.muted(modelLabel)}`,
+        { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
-      console.log(session);
+      console.log(joinBoxenColumns(title, session));
       spinner.start();
       spinner.text = i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…');
     },
