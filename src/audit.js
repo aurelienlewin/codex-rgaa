@@ -878,7 +878,6 @@ export async function runAudit(options) {
         'RGAA',
         'accessibility',
         'audit',
-        'MCP',
         'Codex',
         modelLabel,
         ...uniqueHosts
