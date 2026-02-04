@@ -9,8 +9,12 @@ It collects evidence via:
 - **MCP** (Chrome DevTools MCP) using `chrome-devtools-mcp` started by Codex (useful when you want to drive an existing Chrome session)
 
 ## Requirements
-- Node.js 18+
+- OS: macOS, Windows, or Linux
+- Node.js 18+ (npm included)
 - Chrome/Chromium installed
+- Codex CLI available in PATH (for AI review / MCP tool runs)
+- Optional: `tesseract` binary in PATH (used as OCR fallback if `tesseract.js` fails)
+- Optional: `chrome-devtools-mcp` installed locally (otherwise pulled via `npx`)
 
 ## Install
 ```bash
