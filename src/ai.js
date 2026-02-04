@@ -85,6 +85,28 @@ function summarizeCodexStderr(stderr) {
   return (lastError || lines[lines.length - 1] || '').slice(0, 400);
 }
 
+function looksLikeMissingAuth(stderr) {
+  const text = String(stderr || '').toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('missing bearer authentication') ||
+    text.includes('unauthorized') ||
+    text.includes('401') ||
+    text.includes('api key') ||
+    text.includes('openai_api_key')
+  );
+}
+
+let missingAuthAlerted = false;
+function maybeAlertMissingAuth(onError, stderr) {
+  if (missingAuthAlerted) return;
+  if (!looksLikeMissingAuth(stderr)) return;
+  missingAuthAlerted = true;
+  onError?.(
+    'Missing OpenAI API credentials. Set OPENAI_API_KEY or configure ~/.codex/config.toml, then retry.'
+  );
+}
+
 function terminateChild(child) {
   if (!child || child.killed) return;
   const pid = child.pid;
@@ -835,6 +857,7 @@ export async function aiReviewCriterion({
   reportLang,
   onLog,
   onStage,
+  onError,
   signal,
   mcp,
   retry = false
@@ -877,6 +900,7 @@ export async function aiReviewCriterion({
     if (isAbortError(err) || signal?.aborted) {
       throw createAbortError();
     }
+    maybeAlertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);
     const message = hint && err?.message && !String(err.message).includes(hint)
       ? `${err.message} (${hint})`
@@ -897,6 +921,7 @@ export async function aiReviewCriteriaBatch({
   reportLang,
   onLog,
   onStage,
+  onError,
   signal,
   mcp
 }) {
@@ -937,6 +962,7 @@ export async function aiReviewCriteriaBatch({
     if (isAbortError(err) || signal?.aborted) {
       throw createAbortError();
     }
+    maybeAlertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);
     const message =
       hint && err?.message && !String(err.message).includes(hint) ? `${err.message} (${hint})` : err.message;

@@ -404,6 +404,7 @@ export async function runAudit(options) {
               reportLang,
               onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
+              onError: (message) => reporter?.onError?.(message),
               signal,
               mcp: mcpForAi
             });
@@ -468,6 +469,7 @@ export async function runAudit(options) {
               reportLang,
               onLog: (message) => reporter?.onAILog?.({ criterion, message }),
               onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+              onError: (message) => reporter?.onError?.(message),
               signal,
               mcp: mcpForAi
             });
@@ -509,6 +511,7 @@ export async function runAudit(options) {
             reportLang,
             onLog: (message) => reporter?.onAILog?.({ criterion, message }),
             onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+            onError: (message) => reporter?.onError?.(message),
             signal,
             mcp: mcpForAi,
             retry: true
