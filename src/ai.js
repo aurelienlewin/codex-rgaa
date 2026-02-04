@@ -399,6 +399,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
                 '- Do NOT submit forms or change data/state.',
                 'If you used MCP tools, include the relevant tool outputs in evidence items.',
+                'If you resize the viewport for criterion 10.11 (e.g., width 320px / height 256px), record the original size and restore it after checks.',
                 ...(useOcr
                   ? [
                       'OCR tool available: rgaa_ocr. Recommended flow: take_screenshot with filePath under /tmp, then call rgaa_ocr {path, lang?}.',
@@ -462,6 +463,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
                 '- Ne soumets pas de formulaires et ne modifie pas l’état.',
                 'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                'Si tu redimensionnes la fenêtre pour le critère 10.11 (ex: largeur 320px / hauteur 256px), note la taille d’origine et rétablis-la après les vérifications.',
                 'Pour les critères 10.7 et 10.13, identifie des éléments interactifs représentatifs (logo, entrée/icône de navigation principale, liens de fil d’Ariane, bouton CTA de tuile, liens de pied de page).',
                 'Utilise evaluate_script pour trouver un sélecteur ou un texte distinctif, focus() l’élément (et scrollIntoView si besoin), puis prends des captures d’élément via take_screenshot {uid}.',
                 ...(useOcr
@@ -535,6 +537,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
                 '- Do NOT submit forms or change data/state.',
                 'If you used MCP tools, include the relevant tool outputs in evidence items.',
+                'If you resize the viewport for criterion 10.11 (e.g., width 320px / height 256px), record the original size and restore it after checks.',
                 ...(useOcr
                   ? [
                       'OCR tool available: rgaa_ocr. Recommended flow: take_screenshot with filePath under /tmp, then call rgaa_ocr {path, lang?}.',
@@ -597,6 +600,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
                 '- Ne soumets pas de formulaires et ne modifie pas l’état.',
                 'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                'Si tu redimensionnes la fenêtre pour le critère 10.11 (ex: largeur 320px / hauteur 256px), note la taille d’origine et rétablis-la après les vérifications.',
                 ...(useOcr
                   ? [
                       'Outil OCR disponible : rgaa_ocr. Flux recommandé : take_screenshot avec filePath sous /tmp, puis rgaa_ocr {path, lang?}.',
