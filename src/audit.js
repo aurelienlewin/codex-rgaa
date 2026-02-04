@@ -1040,9 +1040,9 @@ export async function runAudit(options) {
       created: auditStartedAt,
       modified: auditFinishedAt
     };
-    const evidenceSheet = workbook.addWorksheet(i18n.excel.evidenceSheet());
-    const uiSheet = workbook.addWorksheet('Audit');
     const summarySheet = workbook.addWorksheet('Summary');
+    const uiSheet = workbook.addWorksheet('Audit');
+    const evidenceSheet = workbook.addWorksheet(i18n.excel.evidenceSheet());
 
     const toColLetter = (n) => {
       let col = '';
