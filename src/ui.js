@@ -609,6 +609,9 @@ function createFancyReporter(options = {}) {
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
+  const uiTickRaw = Number(process.env.AUDIT_UI_TICK_MS || '');
+  const uiTickMs =
+    Number.isFinite(uiTickRaw) && uiTickRaw >= 60 ? Math.floor(uiTickRaw) : 250;
   let currentCriterion = null;
   let secondPassActive = false;
   let secondPassTotal = 0;
@@ -712,7 +715,7 @@ function createFancyReporter(options = {}) {
       if (!process.stdout.isTTY) return;
       frame = frame ? 0 : 1;
       scheduleRender();
-    }, 1000);
+    }, uiTickMs);
     if (typeof elapsedTimer.unref === 'function') elapsedTimer.unref();
   };
 
