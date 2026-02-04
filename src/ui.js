@@ -1040,14 +1040,11 @@ function createFancyReporter(options = {}) {
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
       const reasoningLabel = `Codex reasoning: ${codexReasoning || 'detecting…'}`;
-      const resumeLabel = resumePath ? `Resume: ${path.basename(resumePath)}` : '';
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(reasoningLabel)}\n` +
-          `${resumeLabel ? palette.muted(resumeLabel) + '\n' : ''}` +
-          `${palette.muted('Keys: p pause • r resume')}`,
+          `${palette.muted(reasoningLabel)}`,
         { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
       console.log(joinBoxenColumns(title, session));
@@ -1587,14 +1584,11 @@ function createLegacyReporter(options = {}) {
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
       const reasoningLabel = `Codex reasoning: ${codexReasoning || 'detecting…'}`;
-      const resumeLabel = resumePath ? `Resume: ${path.basename(resumePath)}` : '';
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(reasoningLabel)}\n` +
-          `${resumeLabel ? palette.muted(resumeLabel) + '\n' : ''}` +
-          `${palette.muted('Keys: p pause • r resume')}`,
+          `${palette.muted(reasoningLabel)}`,
         { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
       console.log(joinBoxenColumns(title, session));
