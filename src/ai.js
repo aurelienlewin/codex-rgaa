@@ -15,6 +15,26 @@ import {
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
 
+const CODEX_MAX_CONCURRENT = (() => {
+  const raw = Number(process.env.AUDIT_CODEX_MAX_CONCURRENT || '');
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
+})();
+let codexInFlight = 0;
+const codexWaiters = [];
+async function acquireCodexSlot() {
+  if (codexInFlight < CODEX_MAX_CONCURRENT) {
+    codexInFlight += 1;
+    return;
+  }
+  await new Promise((resolve) => codexWaiters.push(resolve));
+  codexInFlight += 1;
+}
+function releaseCodexSlot() {
+  codexInFlight = Math.max(0, codexInFlight - 1);
+  const next = codexWaiters.shift();
+  if (next) next();
+}
+
 const activeCodexChildren = new Set();
 const childProcessGroup = new WeakMap();
 const childKillTimers = new Map();
@@ -675,6 +695,8 @@ async function runCodexPrompt({
   }
 
   await preflightSchemas(onLog);
+  await acquireCodexSlot();
+  try {
 
   const outputFile = path.join(
     os.tmpdir(),
@@ -887,6 +909,9 @@ async function runCodexPrompt({
   const content = await fs.readFile(outputFile, 'utf-8');
   await fs.unlink(outputFile).catch(() => {});
   return content;
+  } finally {
+    releaseCodexSlot();
+  }
 }
 
 export async function aiReviewCriterion({
