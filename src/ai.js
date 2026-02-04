@@ -8,7 +8,7 @@ import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
 import { validateStrictOutputSchema } from './schemaValidate.js';
 import { attachIgnoreEpipe } from './streamErrors.js';
-import { looksLikeMissingAuth, maybeHandleMissingAuth } from './codexAuth.js';
+import { applyCodexBaseUrlFromConfig, looksLikeMissingAuth, maybeHandleMissingAuth } from './codexAuth.js';
 import {
   buildMcpArgs,
   looksLikeMcpConnectError,
@@ -78,7 +78,7 @@ function buildCodexEnv({ codexHome } = {}) {
   env.npm_config_update_notifier = env.npm_config_update_notifier || 'false';
   env.npm_config_fund = env.npm_config_fund || 'false';
   env.npm_config_audit = env.npm_config_audit || 'false';
-  return env;
+  return applyCodexBaseUrlFromConfig(env, env.CODEX_HOME);
 }
 
 function summarizeCodexStderr(stderr) {

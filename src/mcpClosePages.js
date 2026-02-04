@@ -12,7 +12,7 @@ import {
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
 import { validateStrictOutputSchema } from './schemaValidate.js';
-import { maybeHandleMissingAuth } from './codexAuth.js';
+import { applyCodexBaseUrlFromConfig, maybeHandleMissingAuth } from './codexAuth.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-close-pages-schema.json', import.meta.url));
 
@@ -108,7 +108,7 @@ function buildCodexEnv({ codexHome } = {}) {
   env.npm_config_update_notifier = env.npm_config_update_notifier || 'false';
   env.npm_config_fund = env.npm_config_fund || 'false';
   env.npm_config_audit = env.npm_config_audit || 'false';
-  return env;
+  return applyCodexBaseUrlFromConfig(env, env.CODEX_HOME);
 }
 
 let schemaPreflightDone = false;
