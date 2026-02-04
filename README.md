@@ -123,6 +123,7 @@ By default the tool writes one report per run under `out/`, for example: `out/20
 To change the output path, pass `--out`.
 
 To disable XLSX export, pass `--no-xlsx`.
+By default, the generated XLSX is opened automatically; disable with `AUDIT_OPEN_XLS=0`.
 
 The Excel file contains:
 - **Summary** (first tab): global counts + score, color-coded status chips.
@@ -145,7 +146,7 @@ You can also enable OCR (repo-level, no system install required) to extract text
 - Env: `AUDIT_AI_OCR=1` (set to `0` to force-disable)
 - OCR languages: `AUDIT_OCR_LANGS=fra+eng`
 
-This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks use the built-in OCR tool to extract visible text and include it as evidence.
+This can reduce **NA** on dynamic/visual pages but is slower and interacts with the live page. The reviewer is instructed not to submit forms or mutate state. Screenshot-based checks use the built-in OCR tool to extract visible text and include it as evidence. If `tesseract.js` fails, the tool falls back to the system `tesseract` binary (if available).
 
 Local a11y utilities (enabled by default) expose extra MCP tools for quick DOM heuristics and structure checks:
 - Env: `AUDIT_AI_UTILS=0` to disable the local `rgaa-utils` MCP server.
@@ -175,6 +176,7 @@ You can disable fail-fast with `AUDIT_FAIL_FAST=0` (or `false`/`no`) to continue
 ## Notes on automation
 - Only a subset of criteria can be validated automatically with high confidence.
 - All remaining criteria are evaluated by the AI reviewer using the collected DOM evidence.
+- Cross-page criteria (e.g., **12.5**) are handled in a **second pass** once all pages have been audited.
 - If the evidence is insufficient, the AI returns **Not conform** and notes what is missing.
 - If the audit tool encounters a technical failure (page load/snapshot/AI runner), the criterion is marked **Error**.
 - By default, missing AI auth or MCP snapshot/enrichment failures **stop the audit** (fail-fast). Disable with `AUDIT_FAIL_FAST=0`.
