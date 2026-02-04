@@ -376,7 +376,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 'If using MCP tools:',
                 pageId !== null
                   ? `- select_page with MCP_PAGE_ID=${pageId} then verify location.href.`
-                  : '- list_pages then select a page whose URL matches; if none, navigate_page to MCP_TARGET_URL.',
+                  : '- list_pages then select the matching URL page with the lowest id; if none, navigate_page to MCP_TARGET_URL.',
                 '- Verify location.href; if mismatched, navigate_page to MCP_TARGET_URL.',
                 '- Prefer take_snapshot (a11y tree) and small evaluate_script queries for targeted facts.',
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
@@ -441,7 +441,7 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 'Si tu utilises MCP:',
                 pageId !== null
                   ? `- select_page avec MCP_PAGE_ID=${pageId} puis vérifie location.href.`
-                  : '- list_pages puis sélectionne une page dont l’URL correspond; sinon navigate_page vers MCP_TARGET_URL.',
+                  : '- list_pages puis sélectionne la page correspondante avec l’ID le plus bas; sinon navigate_page vers MCP_TARGET_URL.',
                 '- Vérifie location.href; si différent, navigate_page vers MCP_TARGET_URL.',
                 '- Privilégie take_snapshot (arbre a11y) et evaluate_script pour des requêtes ciblées.',
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
@@ -516,7 +516,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 'If using MCP tools, do so once per batch and reuse the evidence across results.',
                 pageId !== null
                   ? `- select_page with MCP_PAGE_ID=${pageId} then verify location.href.`
-                  : '- list_pages then select a page whose URL matches; if none, navigate_page to MCP_TARGET_URL.',
+                  : '- list_pages then select the matching URL page with the lowest id; if none, navigate_page to MCP_TARGET_URL.',
                 '- Verify location.href; if mismatched, navigate_page to MCP_TARGET_URL.',
                 '- Prefer take_snapshot (a11y tree) and small evaluate_script queries for targeted facts.',
                 '- Use take_screenshot only for visual-only checks; do not claim anything you cannot verify.',
@@ -580,7 +580,7 @@ function buildBatchPrompt({ criteria, url, snapshot, reportLang, mcp }) {
                 'Si tu utilises MCP, fais-le une fois par batch et réutilise les preuves.',
                 pageId !== null
                   ? `- select_page avec MCP_PAGE_ID=${pageId} puis vérifie location.href.`
-                  : '- list_pages puis sélectionne une page dont l’URL correspond; sinon navigate_page vers MCP_TARGET_URL.',
+                  : '- list_pages puis sélectionne la page correspondante avec l’ID le plus bas; sinon navigate_page vers MCP_TARGET_URL.',
                 '- Vérifie location.href; si différent, navigate_page vers MCP_TARGET_URL.',
                 '- Privilégie take_snapshot (arbre a11y) et evaluate_script pour des requêtes ciblées.',
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',

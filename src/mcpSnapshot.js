@@ -61,7 +61,7 @@ function buildPrompt({ url, pageId } = {}) {
     '1) Détermine la page cible:',
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `- Sélectionne la page ${pageId} avec select_page.`
-      : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne-la avec select_page; sinon navigue vers l’URL avec navigate_page.',
+      : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne celle avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.',
     `2) Vérifie que location.href correspond bien à la cible (${targetLabel}); si besoin navigue vers l’URL.`,
     '3) Exécute la fonction JS fournie via evaluate_script pour attendre le chargement et collecter le snapshot.',
     '4) Réponds uniquement avec le JSON retourné (pas de texte supplémentaire).',

@@ -79,7 +79,7 @@ function buildPrompt({ url, pageId, paths }) {
     '1) Determine the target page:',
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `- select_page ${pageId}.`
-      : '- list_pages; if a page matches the URL, select it; otherwise navigate_page to the URL.',
+      : '- list_pages; if a page matches the URL, select the one with the lowest id; otherwise navigate_page to the URL.',
     `2) Verify location.href matches the target (${targetLabel}); if not, navigate_page.`,
     '3) Collect evidence:',
     `- take_screenshot fullPage=true to "${paths.screenshot1}".`,
