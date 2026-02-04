@@ -602,6 +602,10 @@ function createFancyReporter(options = {}) {
   let secondPassStartedAt = 0;
   let lastDecision = null;
   const decisions = [];
+  let lastReasoning = '';
+  let enrichmentActive = false;
+  let enrichmentLabel = '';
+  let enrichmentStartedAt = 0;
 
   const feedMax = 7;
   const feed = [];
@@ -758,8 +762,9 @@ function createFancyReporter(options = {}) {
     const pagePct = totalCriteria ? Math.round((pageDone / totalCriteria) * 100) : 0;
     const pageLabel = totalPages ? `${Math.max(0, currentPageIndex + 1)}/${totalPages}` : '-/-';
 
-    const stageSpinner = stageStartAt ? spinnerFrames[frame] : ' ';
-    const stageAge = stageStartAt ? `${nowMs() - stageStartAt}ms` : lastStageMs ? `${lastStageMs}ms` : '';
+    const stageSpinner = '';
+    const stageAgeMs = stageStartAt ? nowMs() - stageStartAt : lastStageMs;
+    const stageAge = stageAgeMs ? formatElapsed(stageAgeMs) : '';
     const stageText = stageLabel || (currentUrl ? i18n.t('Audit en cours', 'Audit running') : '');
     const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
 
@@ -767,6 +772,8 @@ function createFancyReporter(options = {}) {
     const criterionLine = currentCriterion
       ? clipInline(`${currentCriterion.id} ${currentCriterion.title}`, width - 18)
       : '';
+    const enrichmentAge =
+      enrichmentActive && enrichmentStartedAt ? formatElapsed(nowMs() - enrichmentStartedAt) : '';
 
     const progressLines = [
       ...(secondPassActive
@@ -791,6 +798,19 @@ function createFancyReporter(options = {}) {
       )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
+      enrichmentActive
+        ? `${padVisibleRight(palette.glow('Enrich'), 8)} ${palette.accent(
+            clipInline(
+              enrichmentLabel || i18n.t('Enrichment in progress', 'Enrichment in progress'),
+              width - 22
+            )
+          )}${enrichmentAge ? ` ${palette.muted('•')} ${palette.accent(enrichmentAge)}` : ''}`
+        : '',
+      lastReasoning
+        ? `${padVisibleRight(palette.muted('Reasoning'), 8)} ${palette.accent(
+            clipInline(lastReasoning, width - 18)
+          )}`
+        : '',
       `${padVisibleRight(palette.muted('Stage'), 8)} ${palette.primary(stageSpinner)} ${palette.muted(
         clipInline(stageText, width - 22)
       )}${stageAge ? ` ${palette.muted('•')} ${palette.accent(stageAge)}` : ''}`,
@@ -999,6 +1019,9 @@ function createFancyReporter(options = {}) {
       pageDone = 0;
       pageStartAt = nowMs();
       stageStartAt = 0;
+      enrichmentActive = false;
+      enrichmentLabel = '';
+      enrichmentStartedAt = 0;
       stageLabel = i18n.t('Starting page', 'Starting page');
       pushFeed('page', `Page ${index + 1}/${totalPages}: ${url}`);
       render();
@@ -1033,6 +1056,9 @@ function createFancyReporter(options = {}) {
 
     onChecksStart() {
       startStage('Running checks');
+      enrichmentActive = false;
+      enrichmentLabel = '';
+      enrichmentStartedAt = 0;
     },
 
     onChecksEnd() {
@@ -1042,30 +1068,50 @@ function createFancyReporter(options = {}) {
     onAIStart({ criterion }) {
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 60);
       currentCriterion = { id: criterion.id, title: criterion.title };
+      lastReasoning = '';
       startStage(`AI thinking ${critText}`);
       pushFeed('thinking', `${criterion.id} ${criterion.title}`.slice(0, 140));
     },
 
-    onAIStage({ label }) {
+    onAIStage({ label, criterion }) {
       if (!label || isNoiseAiMessage(label)) return;
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
+      if (criterion?.id === 'enrich') {
+        enrichmentActive = true;
+        enrichmentLabel = sanitizeStatusLine(label) || 'Enrichment';
+        if (!enrichmentStartedAt) enrichmentStartedAt = nowMs();
+      }
+      render();
     },
 
-    onAILog({ message }) {
+    onAILog({ message, criterion }) {
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = clipInline(cleaned, 64);
       if (clipped) {
         const now = nowMs();
         const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
+        let updated = false;
+        const normalizedReason = sanitizeStatusLine(cleaned);
+        if (normalizedReason) {
+          lastReasoning = normalizedReason;
+          stageLabel = clipInline(normalizedReason, 160);
+          updated = true;
+        }
+        if (criterion?.id === 'enrich') {
+          enrichmentActive = true;
+          enrichmentLabel = normalizedReason || enrichmentLabel || 'Enrichment';
+          if (!enrichmentStartedAt) enrichmentStartedAt = nowMs();
+          updated = true;
+        }
         if (clipped !== lastAILog || shouldRepeat) {
           lastAILog = clipped;
           lastAILogAt = now;
           pushAiFeed(cleaned, { replaceLastIfSameKind: true });
-          stageLabel = i18n.t('Codex is thinking…', 'Codex is thinking…');
-          render();
+          updated = true;
         }
+        if (updated) render();
       }
     },
 
@@ -1111,6 +1157,14 @@ function createFancyReporter(options = {}) {
         'Seconde passe IA : réduction des critères “Review” restants.',
         'Second-pass AI: reducing remaining “Review” criteria.'
       );
+      lastReasoning = '';
+      enrichmentActive = false;
+      enrichmentLabel = '';
+      enrichmentStartedAt = 0;
+      stageStartAt = stageStartAt || nowMs();
+      stageLabel = secondPassCurrent
+        ? `${i18n.t('Second pass', 'Second pass')} ${secondPassCurrent}`
+        : i18n.t('Second pass starting…', 'Second pass starting…');
       pushFeed('stage', i18n.t('Second-pass checks starting…', 'Second-pass checks starting…'));
       render();
     },
@@ -1119,6 +1173,12 @@ function createFancyReporter(options = {}) {
       if (Number.isFinite(total) && total > 0) secondPassTotal = total;
       if (Number.isFinite(done)) secondPassDone = done;
       if (current?.id) secondPassCurrent = `${current.id}`;
+      if (!stageStartAt) stageStartAt = nowMs();
+      const labelBase = i18n.t('Second pass', 'Second pass');
+      const progressLabel = `${secondPassDone}/${secondPassTotal || 0}`;
+      stageLabel = secondPassCurrent
+        ? `${labelBase} ${secondPassCurrent} ${progressLabel}`
+        : `${labelBase} ${progressLabel}`;
       render();
     },
 
@@ -1129,6 +1189,7 @@ function createFancyReporter(options = {}) {
       if (!secondPassActive) secondPassCurrent = null;
       if (!secondPassActive) secondPassNotice = '';
       if (!secondPassActive) secondPassStartedAt = 0;
+      stageLabel = i18n.t('Second pass complete', 'Second pass complete');
       pushFeed('stage', i18n.t('Second-pass checks complete.', 'Second-pass checks complete.'));
       render();
     },

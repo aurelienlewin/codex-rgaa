@@ -565,5 +565,13 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
   onLog?.('Codex: parsing MCP list_pages');
   const content = await fs.readFile(outputFile, 'utf-8');
   await fs.unlink(outputFile).catch(() => {});
-  return JSON.parse(content);
+  const parsed = JSON.parse(content);
+  if (Array.isArray(parsed?.pages)) {
+    parsed.pages.sort((a, b) => {
+      const aId = Number.isFinite(a?.id) ? a.id : Number.MAX_SAFE_INTEGER;
+      const bId = Number.isFinite(b?.id) ? b.id : Number.MAX_SAFE_INTEGER;
+      return aId - bId;
+    });
+  }
+  return parsed;
 }
