@@ -169,6 +169,28 @@ async function copyEvidenceScreenshots(pages, evidenceDir) {
   return results;
 }
 
+async function cleanupEnrichmentTempFiles(pages, evidenceLinksByPage) {
+  if (!Array.isArray(evidenceLinksByPage) || evidenceLinksByPage.length === 0) {
+    return;
+  }
+  const tasks = [];
+  for (let i = 0; i < pages.length; i += 1) {
+    const page = pages[i];
+    const links = evidenceLinksByPage[i] || null;
+    const meta = page?.snapshot?.enrichmentMeta || null;
+    if (!meta) continue;
+    if (meta.screenshot1 && links?.screenshot1) {
+      tasks.push(fs.unlink(meta.screenshot1).catch(() => {}));
+    }
+    if (meta.screenshot2 && links?.screenshot2) {
+      tasks.push(fs.unlink(meta.screenshot2).catch(() => {}));
+    }
+  }
+  if (tasks.length) {
+    await Promise.all(tasks);
+  }
+}
+
 async function fetchChromeVersion(baseUrl) {
   const url = String(baseUrl || '').trim();
   if (!url) return null;
@@ -1236,6 +1258,7 @@ export async function runAudit(options) {
       pageResults,
       outPath ? path.join(path.dirname(outPath), 'evidence') : ''
     );
+    await cleanupEnrichmentTempFiles(pageResults, evidenceLinksByPage);
 
     const applyHyperlinkStyle = (cell) => {
       cell.font = { ...(cell.font || {}), color: { argb: 'FF1D4ED8' }, underline: true };
