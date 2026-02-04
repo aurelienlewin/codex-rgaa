@@ -92,6 +92,14 @@ function formatRunId(date = new Date()) {
   return `${y}${m}${d}-${hh}${mm}${ss}`;
 }
 
+function parseEnvBool(raw, defaultValue) {
+  const cleaned = String(raw || '').trim().toLowerCase();
+  if (cleaned === '') return defaultValue;
+  if (['1', 'true', 'yes'].includes(cleaned)) return true;
+  if (['0', 'false', 'no'].includes(cleaned)) return false;
+  return defaultValue;
+}
+
 function formatResumeLabel(candidate) {
   const updatedAt = candidate?.state?.updatedAt
     ? new Date(candidate.state.updatedAt).toLocaleString()
@@ -403,8 +411,8 @@ function createAiWatchdog({ reporter, abortController, stallTimeoutMs, stageTime
   return { reporter: wrapped, stop };
 }
 
-function defaultXlsxOutPath() {
-  return path.join('out', formatRunId(), 'rgaa-audit.xlsx');
+function defaultXlsxOutPath(runId) {
+  return path.join('out', runId || formatRunId(), 'rgaa-audit.xlsx');
 }
 
 function normalizeHttpBaseUrl(value) {
@@ -869,11 +877,10 @@ async function main() {
     .help()
     .parse();
 
+  const runId = formatRunId();
+  const defaultOutDir = path.join('out', runId);
   const guided = interactive ? argv.guided !== false : Boolean(argv.guided);
-  const humanizeFeedDefault =
-    String(process.env.AUDIT_HUMANIZE_FEED || '').trim().length > 0
-      ? ['1', 'true', 'yes'].includes(String(process.env.AUDIT_HUMANIZE_FEED || '').trim().toLowerCase())
-      : interactive;
+  const humanizeFeedDefault = parseEnvBool(process.env.AUDIT_HUMANIZE_FEED, interactive);
   const humanizeFeed =
     typeof argv['humanize-feed'] === 'boolean' ? argv['humanize-feed'] : humanizeFeedDefault;
   const humanizeFeedModel =
@@ -910,7 +917,7 @@ async function main() {
     argv.out = null;
   } else if (!argv.out) {
     // Default behavior: always produce an XLSX report.
-    argv.out = defaultXlsxOutPath();
+    argv.out = defaultXlsxOutPath(runId);
   }
 
   let pages = argv.pages || [];
@@ -1131,13 +1138,10 @@ async function main() {
   }
   const resumeStatePath = resumePath
     ? resumePath
-    : path.join(outPath ? path.dirname(outPath) : path.join('out', formatRunId()), 'audit.resume.json');
-  const debugLogEnv = String(process.env.AUDIT_DEBUG_LOG || '').trim().toLowerCase();
-  const debugLogEnabled = debugLogEnv
-    ? debugLogEnv === '1' || debugLogEnv === 'true' || debugLogEnv === 'yes'
-    : true;
+    : path.join(outPath ? path.dirname(outPath) : defaultOutDir, 'audit.resume.json');
+  const debugLogEnabled = parseEnvBool(process.env.AUDIT_DEBUG_LOG, true);
   const debugLogPath = debugLogEnabled
-    ? path.join(outPath ? path.dirname(outPath) : path.join('out', formatRunId()), 'audit.debug.log')
+    ? path.join(outPath ? path.dirname(outPath) : defaultOutDir, 'audit.debug.log')
     : '';
   const debugLogger = debugLogEnabled ? createDebugLogger({ logPath: debugLogPath }) : null;
   const debugSnapshotsEnvExplicit =
@@ -1163,18 +1167,10 @@ async function main() {
     argv['codex-model'] ||
     process.env.AUDIT_CODEX_MODEL ||
     '';
-  const aiMcpEnv = String(process.env.AUDIT_AI_MCP || '').trim().toLowerCase();
-  const aiMcpEnvExplicit = aiMcpEnv.length > 0;
-  const aiMcpEnvEnabled =
-    aiMcpEnv === '1' || aiMcpEnv === 'true' || aiMcpEnv === 'yes';
-  const aiMcpDefault = aiMcpEnvExplicit ? aiMcpEnvEnabled : true;
+  const aiMcpDefault = parseEnvBool(process.env.AUDIT_AI_MCP, true);
   const aiMcp =
     typeof argv['ai-mcp'] === 'boolean' ? argv['ai-mcp'] : aiMcpDefault;
-  const aiOcrEnv = String(process.env.AUDIT_AI_OCR || '').trim().toLowerCase();
-  const aiOcrEnvExplicit = aiOcrEnv.length > 0;
-  const aiOcrEnvEnabled =
-    aiOcrEnv === '1' || aiOcrEnv === 'true' || aiOcrEnv === 'yes';
-  const aiOcrDefault = aiMcp ? (!aiOcrEnvExplicit || aiOcrEnvEnabled) : false;
+  const aiOcrDefault = aiMcp ? parseEnvBool(process.env.AUDIT_AI_OCR, true) : false;
   const aiOcr = typeof argv['ai-ocr'] === 'boolean' ? argv['ai-ocr'] : aiOcrDefault;
   if (!process.env.CODEX_MCP_MODE) {
     process.env.CODEX_MCP_MODE = 'chrome';
@@ -1196,8 +1192,7 @@ async function main() {
     Number.isFinite(aiStageRaw) && aiStageRaw > 0 ? Math.floor(aiStageRaw) : 0;
   const criteria = loadCriteria({ lang: reportLang });
   const criteriaCount = criteria.length;
-  const wantsEnrichment =
-    String(process.env.AUDIT_ENRICH || '').trim().toLowerCase() !== '0';
+  const wantsEnrichment = parseEnvBool(process.env.AUDIT_ENRICH, true);
   const enrichmentEnabled = wantsEnrichment && aiMcp;
   if (interactive && guided) {
     clearScreen();
