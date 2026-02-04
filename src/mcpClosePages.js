@@ -12,6 +12,7 @@ import {
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
 import { validateStrictOutputSchema } from './schemaValidate.js';
+import { maybeHandleMissingAuth } from './codexAuth.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-close-pages-schema.json', import.meta.url));
 
@@ -346,6 +347,7 @@ async function runCodexClosePages({ urls, model, mcp, onLog, onStage, signal }) 
   try {
     await runOnce(preferredEnv, buildArgs(mcp));
   } catch (err) {
+    maybeHandleMissingAuth({ onLog, stderr: err?.stderr || err?.message });
     if (model && looksLikeModelNotFound(err.stderr)) {
       onLog?.(`Codex: model ${JSON.stringify(model)} not found; retrying with default model`);
       await runOnce(preferredEnv, buildArgs(mcp, ''));

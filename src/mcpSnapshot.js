@@ -13,6 +13,7 @@ import {
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
 import { validateStrictOutputSchema } from './schemaValidate.js';
+import { maybeHandleMissingAuth } from './codexAuth.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-snapshot-schema.json', import.meta.url));
 const LIST_PAGES_SCHEMA_PATH = fileURLToPath(
@@ -343,6 +344,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
   try {
     await runOnce(preferredEnv, buildArgs(mcp, SCHEMA_PATH));
   } catch (err) {
+    maybeHandleMissingAuth({ onLog, stderr: err?.stderr || err?.message });
     if (model && looksLikeModelNotFound(err.stderr)) {
       onLog?.(`Codex: model ${JSON.stringify(model)} not found; retrying with default model`);
       await runOnce(preferredEnv, buildArgs(mcp, SCHEMA_PATH, ''));
@@ -522,6 +524,7 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
   try {
     await runOnce(preferredEnv, buildArgs(mcp));
   } catch (err) {
+    maybeHandleMissingAuth({ onLog, stderr: err?.stderr || err?.message });
     if (model && looksLikeModelNotFound(err.stderr)) {
       onLog?.(`Codex: model ${JSON.stringify(model)} not found; retrying with default model`);
       await runOnce(preferredEnv, buildArgs(mcp, ''));

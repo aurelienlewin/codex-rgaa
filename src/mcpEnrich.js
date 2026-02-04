@@ -11,6 +11,7 @@ import {
   looksLikeMcpConnectError,
   looksLikeMcpInstallOrNetworkError
 } from './mcpConfig.js';
+import { maybeHandleMissingAuth } from './codexAuth.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-enrich-schema.json', import.meta.url));
 
@@ -254,6 +255,7 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
   try {
     await runOnce(preferredEnv, buildArgs(mcp));
   } catch (err) {
+    maybeHandleMissingAuth({ onLog, stderr: err?.stderr || err?.message });
     const providedBrowserUrl = normalizeBrowserUrl(mcp?.browserUrl);
     const canFallback = Boolean(providedBrowserUrl && mcp?.autoConnect);
     if (canFallback && looksLikeMcpConnectError(err.stderr)) {

@@ -8,6 +8,7 @@ import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
 import { validateStrictOutputSchema } from './schemaValidate.js';
 import { attachIgnoreEpipe } from './streamErrors.js';
+import { looksLikeMissingAuth, maybeHandleMissingAuth } from './codexAuth.js';
 import {
   buildMcpArgs,
   looksLikeMcpConnectError,
@@ -89,27 +90,8 @@ function summarizeCodexStderr(stderr) {
   return (lastError || lines[lines.length - 1] || '').slice(0, 400);
 }
 
-function looksLikeMissingAuth(stderr) {
-  const text = String(stderr || '').toLowerCase();
-  if (!text) return false;
-  return (
-    text.includes('missing bearer authentication') ||
-    text.includes('unauthorized') ||
-    text.includes('401') ||
-    text.includes('api key') ||
-    text.includes('openai_api_key')
-  );
-}
-
-let missingAuthAlerted = false;
-function maybeAlertMissingAuth(onError, stderr) {
-  if (missingAuthAlerted) return;
-  if (!looksLikeMissingAuth(stderr)) return;
-  missingAuthAlerted = true;
-  onError?.(
-    'Missing OpenAI API credentials. Set OPENAI_API_KEY or configure ~/.codex/config.toml, then retry.'
-  );
-}
+const alertMissingAuth = (onError, stderr) =>
+  maybeHandleMissingAuth({ onError, stderr });
 
 function terminateChild(child) {
   if (!child || child.killed) return;
@@ -956,10 +938,10 @@ export async function aiReviewCriterion({
       throw createAbortError();
     }
     if (failFast && looksLikeMissingAuth(err?.stderr || err?.message)) {
-      maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+      alertMissingAuth(onError, err?.stderr || err?.message);
       throw err;
     }
-    maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+    alertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);
     const message = hint && err?.message && !String(err.message).includes(hint)
       ? `${err.message} (${hint})`
@@ -1023,10 +1005,10 @@ export async function aiReviewCriteriaBatch({
       throw createAbortError();
     }
     if (failFast && looksLikeMissingAuth(err?.stderr || err?.message)) {
-      maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+      alertMissingAuth(onError, err?.stderr || err?.message);
       throw err;
     }
-    maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+    alertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);
     const message =
       hint && err?.message && !String(err.message).includes(hint) ? `${err.message} (${hint})` : err.message;
@@ -1070,10 +1052,10 @@ export async function aiReviewCrossPageCriterion({
       throw createAbortError();
     }
     if (failFast && looksLikeMissingAuth(err?.stderr || err?.message)) {
-      maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+      alertMissingAuth(onError, err?.stderr || err?.message);
       throw err;
     }
-    maybeAlertMissingAuth(onError, err?.stderr || err?.message);
+    alertMissingAuth(onError, err?.stderr || err?.message);
     const hint = summarizeCodexStderr(err?.stderr);
     const message = hint && err?.message && !String(err.message).includes(hint)
       ? `${err.message} (${hint})`

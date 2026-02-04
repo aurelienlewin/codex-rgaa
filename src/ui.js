@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { attachIgnoreEpipe } from './streamErrors.js';
+import { maybeHandleMissingAuth } from './codexAuth.js';
 
 const palette = {
   primary: chalk.hex('#22d3ee'),
@@ -406,6 +407,7 @@ function createCodexFeedHumanizer({
     try {
       return await runWithEnv(buildCodexEnv(), model);
     } catch (err) {
+      maybeHandleMissingAuth({ onLog: null, stderr: err?.stderr || err?.message });
       if (!process.env.CODEX_HOME && looksLikeCodexHomePermissionError(err?.stderr)) {
         const fallbackHome = getFallbackCodexHome();
         await ensureDir(fallbackHome);
