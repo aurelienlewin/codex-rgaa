@@ -1,5 +1,14 @@
 # RGAA Website Auditor (MCP)
 
+<p align="center">
+  <a href="https://github.com/aurelienlewin">
+    <img src="https://avatars.githubusercontent.com/u/45093822?v=4" width="160" height="160" alt="Aurélien Lewin" />
+  </a>
+</p>
+<p align="center">
+  <strong>Aurélien Lewin</strong>
+</p>
+
 **UI‑first RGAA auditing** — fast evidence, clear answers, and a report your team actually reads.
 
 **Highlights**
