@@ -230,12 +230,16 @@ function looksLikeCodexHomePermissionError(stderr) {
   );
 }
 
+function getDefaultCodexHome() {
+  return path.join(os.homedir(), '.codex');
+}
+
 function buildCodexEnv({ codexHome } = {}) {
   const env = { ...process.env };
-  if (codexHome) env.CODEX_HOME = codexHome;
+  env.CODEX_HOME = codexHome || env.CODEX_HOME || getDefaultCodexHome();
   env.CODEX_SANDBOX_NETWORK_DISABLED = '0';
 
-  const cacheRoot = codexHome || env.CODEX_HOME || os.tmpdir();
+  const cacheRoot = env.CODEX_HOME || os.tmpdir();
   env.npm_config_cache = env.npm_config_cache || path.join(cacheRoot, 'npm-cache');
   env.npm_config_yes = env.npm_config_yes || 'true';
   env.npm_config_update_notifier = env.npm_config_update_notifier || 'false';

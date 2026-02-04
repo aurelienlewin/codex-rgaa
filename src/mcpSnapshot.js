@@ -188,15 +188,19 @@ function getFallbackCodexHome() {
   return path.join(os.tmpdir(), 'rgaa-auditor-codex-home');
 }
 
+function getDefaultCodexHome() {
+  return path.join(os.homedir(), '.codex');
+}
+
 function buildCodexEnv({ codexHome } = {}) {
   const env = { ...process.env };
-  if (codexHome) env.CODEX_HOME = codexHome;
+  env.CODEX_HOME = codexHome || env.CODEX_HOME || getDefaultCodexHome();
   // This project relies on Codex network access to reach the OpenAI API.
   // In some Codex-managed environments, CODEX_SANDBOX_NETWORK_DISABLED=1 is inherited,
   // which breaks `codex exec` runs. Override it for the nested Codex process.
   env.CODEX_SANDBOX_NETWORK_DISABLED = '0';
 
-  const cacheRoot = codexHome || env.CODEX_HOME || os.tmpdir();
+  const cacheRoot = env.CODEX_HOME || os.tmpdir();
   // Make npx/npm usable even when $HOME is not writable (common in sandboxed environments).
   env.npm_config_cache = env.npm_config_cache || path.join(cacheRoot, 'npm-cache');
   env.npm_config_yes = env.npm_config_yes || 'true';

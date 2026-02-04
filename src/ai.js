@@ -58,15 +58,19 @@ function getFallbackCodexHome() {
   return path.join(os.tmpdir(), 'rgaa-auditor-codex-home');
 }
 
+function getDefaultCodexHome() {
+  return path.join(os.homedir(), '.codex');
+}
+
 function buildCodexEnv({ codexHome } = {}) {
   const env = { ...process.env };
-  if (codexHome) env.CODEX_HOME = codexHome;
+  env.CODEX_HOME = codexHome || env.CODEX_HOME || getDefaultCodexHome();
   // This project relies on Codex network access to reach the OpenAI API.
   // In some Codex-managed environments, CODEX_SANDBOX_NETWORK_DISABLED=1 is inherited,
   // which breaks `codex exec` runs. Override it for the nested Codex process.
   env.CODEX_SANDBOX_NETWORK_DISABLED = '0';
 
-  const cacheRoot = codexHome || env.CODEX_HOME || os.tmpdir();
+  const cacheRoot = env.CODEX_HOME || os.tmpdir();
   // Make npx/npm usable even when $HOME is not writable (common in sandboxed environments).
   env.npm_config_cache = env.npm_config_cache || path.join(cacheRoot, 'npm-cache');
   env.npm_config_yes = env.npm_config_yes || 'true';
@@ -458,6 +462,8 @@ function buildPrompt({ criterion, url, snapshot, reportLang, mcp, retry = false 
                 '- Utilise take_screenshot uniquement pour des vérifications visuelles; ne conclus rien d’invérifiable.',
                 '- Ne soumets pas de formulaires et ne modifie pas l’état.',
                 'Si tu utilises MCP, cite les sorties d’outils pertinentes dans les preuves.',
+                'Pour les critères 10.7 et 10.13, identifie des éléments interactifs représentatifs (logo, entrée/icône de navigation principale, liens de fil d’Ariane, bouton CTA de tuile, liens de pied de page).',
+                'Utilise evaluate_script pour trouver un sélecteur ou un texte distinctif, focus() l’élément (et scrollIntoView si besoin), puis prends des captures d’élément via take_screenshot {uid}.',
                 ...(useOcr
                   ? [
                       'Outil OCR disponible : rgaa_ocr. Flux recommandé : take_screenshot avec filePath sous /tmp, puis rgaa_ocr {path, lang?}.',
