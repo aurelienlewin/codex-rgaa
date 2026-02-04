@@ -60,7 +60,7 @@ function humanizeEnrichmentEvidence(text) {
   if (!raw) return '';
   const normalized = raw.replace(/\s+/g, ' ').trim();
   if (!normalized.toLowerCase().includes('enrichment.')) return normalized;
-  return normalized
+  const replaced = normalized
     .replace(/enrichment\.contrast\./gi, 'Contraste ')
     .replace(/enrichment\.motion\./gi, 'Mouvement ')
     .replace(/enrichment\.htmlHints\./gi, 'Indice HTML ')
@@ -69,8 +69,37 @@ function humanizeEnrichmentEvidence(text) {
     .replace(/\bmotion\./gi, 'Mouvement ')
     .replace(/\bhtmlHints\./gi, 'Indice HTML ')
     .replace(/\bdomHints\./gi, 'Indice DOM ')
+    .replace(/\bmissingAltCount\b/gi, 'images sans alt')
+    .replace(/\broleImgMissingNameCount\b/gi, 'images role=img sans nom')
+    .replace(/\bmissingTitleCount\b/gi, 'iframes sans titre')
+    .replace(/\bmissingNameCount\b/gi, 'liens sans nom')
+    .replace(/\bgenericCount\b/gi, 'liens génériques')
+    .replace(/\bskipLinkFound\b/gi, 'lien d’évitement')
+    .replace(/\bh1Count\b/gi, 'h1')
+    .replace(/\bhasLevelJumps\b/gi, 'sauts de niveaux')
+    .replace(/\binvalidCount\b/gi, 'listes invalides')
+    .replace(/\bmissingLabel\b/gi, 'champs sans libellé')
+    .replace(/\bcontrolsTotal\b/gi, 'champs')
+    .replace(/\bsampleCount\b/gi, 'échantillons contraste')
+    .replace(/\bfailingCount\b/gi, 'échantillons contraste insuffisant')
+    .replace(/\bworstSample\.ratio\b/gi, 'pire contraste')
+    .replace(/\bworstSample\.text\b/gi, 'texte')
+    .replace(/\bworstSample\b/gi, 'pire échantillon')
+    .replace(/\bdiffRatio\b/gi, 'taux de mouvement')
+    .replace(/\bdiffPixels\b/gi, 'pixels en mouvement')
+    .replace(/\btotalPixels\b/gi, 'pixels totaux')
+    .replace(/\bmotionLikely\b/gi, 'mouvement probable')
+    .replace(/\bmarqueeCount\b/gi, 'balises marquee')
+    .replace(/\bblinkCount\b/gi, 'balises blink')
+    .replace(/\binlineAnimationCount\b/gi, 'animations inline')
+    .replace(/\btargetBlankLinks\b/gi, 'liens target=_blank')
+    .replace(/\bdownloadLinks\b/gi, 'liens de téléchargement')
+    .replace(/\bautoplayMedia\b/gi, 'médias en lecture auto')
+    .replace(/\btrue\b/gi, 'oui')
+    .replace(/\bfalse\b/gi, 'non')
     .replace(/\s+([:;,.)])/g, '$1')
     .trim();
+  return replaced;
 }
 
 async function fetchChromeVersion(baseUrl) {
