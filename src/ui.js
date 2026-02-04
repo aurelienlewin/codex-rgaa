@@ -560,12 +560,18 @@ function createFancyReporter(options = {}) {
   let auditStartAt = 0;
   let auditMode = 'mcp';
   let mcpMode = '';
+  let secondPassTotal = 0;
+  let secondPassDone = 0;
   let lastAILog = '';
   let lastAILogAt = 0;
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
   const aiLogRepeatMs =
     Number.isFinite(aiLogRepeatRaw) && aiLogRepeatRaw > 0 ? Math.floor(aiLogRepeatRaw) : 8000;
   let currentCriterion = null;
+  let secondPassActive = false;
+  let secondPassTotal = 0;
+  let secondPassDone = 0;
+  let secondPassCurrent = null;
   let lastDecision = null;
   const decisions = [];
 
@@ -735,6 +741,17 @@ function createFancyReporter(options = {}) {
       : '';
 
     const progressLines = [
+      ...(secondPassActive
+        ? [
+            `${padVisibleRight(palette.glow(i18n.t('Second pass', 'Second pass')), 8)} ${renderBar({
+              value: secondPassDone,
+              total: secondPassTotal,
+              width: barW
+            })} ${palette.muted(
+              `${secondPassDone}/${secondPassTotal || 0}`
+            )}${secondPassCurrent ? ` ${palette.muted('•')} ${palette.accent(secondPassCurrent)}` : ''}`
+          ]
+        : []),
       `${padVisibleRight(palette.primary('Overall'), 8)} ${renderBar({ value: overallDone, total: overallTotal, width: barW })} ${palette.muted(
         `${overallPct}% • ${overallDone}/${overallTotal || 0}`
       )}`,
@@ -1012,6 +1029,32 @@ function createFancyReporter(options = {}) {
       render();
     },
 
+    onCrossPageStart({ total = 0, criteria = [] } = {}) {
+      secondPassActive = true;
+      secondPassTotal = Number.isFinite(total) && total > 0 ? total : criteria.length || 0;
+      secondPassDone = 0;
+      const first = Array.isArray(criteria) && criteria.length ? criteria[0] : null;
+      secondPassCurrent = first ? `${first.id}` : null;
+      pushFeed('stage', i18n.t('Second-pass checks starting…', 'Second-pass checks starting…'));
+      render();
+    },
+
+    onCrossPageUpdate({ done, total, current } = {}) {
+      if (Number.isFinite(total) && total > 0) secondPassTotal = total;
+      if (Number.isFinite(done)) secondPassDone = done;
+      if (current?.id) secondPassCurrent = `${current.id}`;
+      render();
+    },
+
+    onCrossPageEnd({ done, total } = {}) {
+      if (Number.isFinite(total) && total > 0) secondPassTotal = total;
+      if (Number.isFinite(done)) secondPassDone = done;
+      secondPassActive = secondPassTotal > 0 && secondPassDone < secondPassTotal;
+      if (!secondPassActive) secondPassCurrent = null;
+      pushFeed('stage', i18n.t('Second-pass checks complete.', 'Second-pass checks complete.'));
+      render();
+    },
+
     onPageEnd({ index, url, counts }) {
       const totalElapsed = pageStartAt ? nowMs() - pageStartAt : 0;
       const score = counts.C + counts.NC === 0 ? 0 : counts.C / (counts.C + counts.NC);
@@ -1164,6 +1207,7 @@ function createLegacyReporter(options = {}) {
 
   let overallBar = null;
   let pageBar = null;
+  let secondPassBar = null;
   let totalCriteria = 0;
   let totalPages = 0;
   let overallDone = 0;
@@ -1184,6 +1228,8 @@ function createLegacyReporter(options = {}) {
   let pageStartAt = 0;
   let stageStartAt = 0;
   let auditMode = 'mcp';
+  let secondPassTotal = 0;
+  let secondPassDone = 0;
 
   const stopPulse = () => {
     if (pulseTimer) clearInterval(pulseTimer);
@@ -1415,6 +1461,40 @@ function createLegacyReporter(options = {}) {
         if (typeof bars.log === 'function') bars.log(line);
         else console.log(line);
       }
+    },
+
+    onCrossPageStart({ total = 0, criteria = [] } = {}) {
+      secondPassTotal = Number.isFinite(total) && total > 0 ? total : criteria.length || 0;
+      secondPassDone = 0;
+      if (!secondPassBar) {
+        secondPassBar = bars.create(secondPassTotal || 1, 0, {
+          label: palette.glow(i18n.t('Second pass', 'Second pass')),
+          crit: ''
+        });
+      } else {
+        secondPassBar.setTotal(secondPassTotal || 1);
+        secondPassBar.update(0, { crit: '' });
+      }
+    },
+
+    onCrossPageUpdate({ done, total, current } = {}) {
+      if (!secondPassBar) return;
+      if (Number.isFinite(total) && total > 0) {
+        secondPassTotal = total;
+        secondPassBar.setTotal(total);
+      }
+      if (Number.isFinite(done)) {
+        secondPassDone = done;
+        secondPassBar.update(done, {
+          crit: current?.id ? palette.accent(String(current.id)) : ''
+        });
+      }
+    },
+
+    onCrossPageEnd({ done, total } = {}) {
+      if (!secondPassBar) return;
+      if (Number.isFinite(total) && total > 0) secondPassBar.setTotal(total);
+      if (Number.isFinite(done)) secondPassBar.update(done, { crit: '' });
     },
 
     onPageEnd({ index, url, counts }) {
@@ -1653,6 +1733,27 @@ function createPlainReporter(options = {}) {
       overallDone += 1;
       pageDone += 1;
       line(i18n.t('Result:', 'Result:'), `${criterion.id} ${status}${rationale}`);
+    },
+
+    onCrossPageStart({ total = 0, criteria = [] } = {}) {
+      secondPassTotal = Number.isFinite(total) && total > 0 ? total : criteria.length || 0;
+      secondPassDone = 0;
+      const label = i18n.t('Second-pass checks start', 'Second-pass checks start');
+      line(label, secondPassTotal ? `${secondPassDone}/${secondPassTotal}` : '');
+    },
+
+    onCrossPageUpdate({ done, total, current } = {}) {
+      if (Number.isFinite(total) && total > 0) secondPassTotal = total;
+      if (Number.isFinite(done)) secondPassDone = done;
+      const label = i18n.t('Second-pass progress', 'Second-pass progress');
+      const currentLabel = current?.id ? ` • ${current.id}` : '';
+      line(label, `${secondPassDone}/${secondPassTotal || 0}${currentLabel}`);
+    },
+
+    onCrossPageEnd({ done, total } = {}) {
+      if (Number.isFinite(total) && total > 0) secondPassTotal = total;
+      if (Number.isFinite(done)) secondPassDone = done;
+      line(i18n.t('Second-pass checks done', 'Second-pass checks done'), `${secondPassDone}/${secondPassTotal || 0}`);
     },
 
     onPageEnd({ index, url, counts }) {

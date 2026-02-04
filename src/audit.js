@@ -716,8 +716,13 @@ export async function runAudit(options) {
         title: criterion.title,
         theme: criterion.theme
       };
+      reporter?.onCrossPageStart?.({
+        total: 1,
+        criteria: [criterion]
+      });
       reporter?.onAIStart?.({ criterion: pseudoCriterion });
       try {
+        reporter?.onCrossPageUpdate?.({ done: 0, total: 1, current: criterion });
         const evaluation = await aiReviewCrossPageCriterion({
           model: options.ai?.model,
           criterion,
@@ -737,12 +742,15 @@ export async function runAudit(options) {
             page.results[criterionIndex] = { ...criterion, ...evaluation };
           }
         }
+        reporter?.onCrossPageUpdate?.({ done: 1, total: 1, current: criterion });
       } catch (err) {
         if (failFast) throw err;
         reporter?.onAILog?.({
           criterion: pseudoCriterion,
           message: `Cross-page AI failed: ${String(err?.message || err)}`
         });
+      } finally {
+        reporter?.onCrossPageEnd?.({ done: 1, total: 1 });
       }
     }
   }
