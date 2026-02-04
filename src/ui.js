@@ -1086,6 +1086,20 @@ function createFancyReporter(options = {}) {
       render();
     },
 
+    onCrossPageDecision({ criterion, evaluation }) {
+      const statusLabel = evaluation?.status || '';
+      const critText = `${criterion.id} ${criterion.title}`.slice(0, 120);
+      const rationale = evaluation?.ai?.rationale || '';
+      lastDecision = { status: statusLabel, crit: critText, rationale };
+      decisions.push({
+        status: statusLabel,
+        crit: critText,
+        rationale
+      });
+      pushFeed('decision', `${criterion.id} ${statusLabel}${rationale ? ` • ${rationale}` : ''}`);
+      render();
+    },
+
     onCrossPageStart({ total = 0, criteria = [] } = {}) {
       secondPassActive = true;
       secondPassTotal = Number.isFinite(total) && total > 0 ? total : criteria.length || 0;
@@ -1530,6 +1544,20 @@ function createLegacyReporter(options = {}) {
       }
     },
 
+    onCrossPageDecision({ criterion, evaluation }) {
+      const statusLabel = evaluation?.status || '';
+      let statusColor = palette.muted;
+      if (statusLabel === 'Conform') statusColor = palette.ok;
+      if (statusLabel === 'Not conform') statusColor = palette.error;
+      if (statusLabel === 'Non applicable') statusColor = palette.muted;
+      if (statusLabel === 'Review') statusColor = palette.review;
+      if (statusLabel === 'Error') statusColor = palette.error;
+      const rationale = evaluation?.ai?.rationale || '';
+      const line = `${palette.accent('AI second pass')} ${criterion.id} ${statusColor(statusLabel)} ${rationale}`;
+      if (typeof bars.log === 'function') bars.log(line);
+      else console.log(line);
+    },
+
     onCrossPageStart({ total = 0, criteria = [] } = {}) {
       secondPassTotal = Number.isFinite(total) && total > 0 ? total : criteria.length || 0;
       secondPassDone = 0;
@@ -1809,6 +1837,12 @@ function createPlainReporter(options = {}) {
       overallDone += 1;
       pageDone += 1;
       line(i18n.t('Result:', 'Result:'), `${criterion.id} ${status}${rationale}`);
+    },
+
+    onCrossPageDecision({ criterion, evaluation }) {
+      const status = evaluation?.status || '';
+      const rationale = evaluation?.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
+      line(i18n.t('Second-pass result:', 'Second-pass result:'), `${criterion.id} ${status}${rationale}`);
     },
 
     onCrossPageStart({ total = 0, criteria = [] } = {}) {

@@ -754,6 +754,7 @@ export async function runAudit(options) {
         secondPassSummary.criteria = [
           { id: criterion.id, title: criterion.title, status: evaluation.status || STATUS.ERR }
         ];
+        reporter?.onCrossPageDecision?.({ criterion, evaluation });
         reporter?.onCrossPageUpdate?.({ done: 1, total: 1, current: criterion });
       } catch (err) {
         if (failFast) throw err;
