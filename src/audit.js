@@ -1091,13 +1091,30 @@ export async function runAudit(options) {
     }
 
     const summaryTitleRow = summarySheet.addRow([i18n.excel.summaryTitle()]);
-    summaryTitleRow.font = { size: 16, bold: true };
-    summarySheet.getColumn(1).width = 28;
-    summarySheet.getColumn(2).width = 18;
-    summarySheet.addRow([i18n.excel.generatedAt(), new Date().toISOString()]);
-    summarySheet.addRow([i18n.excel.pagesAudited(), options.pages.length]);
-    summarySheet.addRow([i18n.excel.globalScore(), globalScore]);
-    summarySheet.addRow([i18n.excel.pagesFailed(), pagesFailed]);
+    summarySheet.getColumn(1).width = 30;
+    summarySheet.getColumn(2).width = 20;
+    summarySheet.mergeCells('A1:B1');
+    summaryTitleRow.font = { size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+    summaryTitleRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    summaryTitleRow.height = 28;
+    summaryTitleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
+
+    const infoRows = [
+      [i18n.excel.generatedAt(), new Date().toISOString()],
+      [i18n.excel.pagesAudited(), options.pages.length],
+      [i18n.excel.globalScore(), globalScore],
+      [i18n.excel.pagesFailed(), pagesFailed]
+    ];
+    for (const row of infoRows) {
+      const r = summarySheet.addRow(row);
+      r.getCell(1).font = { size: BASE_FONT_SIZE, bold: true };
+      r.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
+      r.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
+      r.getCell(2).font = { size: BASE_FONT_SIZE, bold: true };
+    }
+    const scoreRowIndex = summaryTitleRow.number + 3;
+    const scoreCell = summarySheet.getRow(scoreRowIndex).getCell(2);
+    scoreCell.numFmt = '0.0%';
     summarySheet.addRow([]);
     summarySheet.addRow([i18n.excel.globalStatus()]);
     const statusRows = [
@@ -1118,6 +1135,19 @@ export async function runAudit(options) {
       const s = statusStyle(row.status);
       valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: s.bg } };
       valueCell.font = { size: BASE_FONT_SIZE, bold: true, color: { argb: s.fg } };
+    }
+
+    const summaryBottom = summarySheet.rowCount;
+    for (let r = 1; r <= summaryBottom; r += 1) {
+      for (let c = 1; c <= 2; c += 1) {
+        const cell = summarySheet.getRow(r).getCell(c);
+        cell.border = {
+          top: { style: 'thin', color: { argb: COLORS.grid } },
+          left: { style: 'thin', color: { argb: COLORS.grid } },
+          bottom: { style: 'thin', color: { argb: COLORS.grid } },
+          right: { style: 'thin', color: { argb: COLORS.grid } }
+        };
+      }
     }
 
     // Legend (UI-friendly)
