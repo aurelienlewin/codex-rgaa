@@ -15,6 +15,32 @@ import { createAbortError, isAbortError } from './abort.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
 import { validateHtmlUrl } from './htmlValidator.js';
 
+class EnrichmentCache {
+  constructor(limit = 32) {
+    this.limit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 32;
+    this.map = new Map();
+  }
+  get(key) {
+    if (!key || !this.map.has(key)) return undefined;
+    const val = this.map.get(key);
+    this.map.delete(key);
+    this.map.set(key, val);
+    return val;
+  }
+  set(key, value) {
+    if (!key) return;
+    if (this.map.has(key)) this.map.delete(key);
+    this.map.set(key, value);
+    if (this.map.size > this.limit) {
+      const oldest = this.map.keys().next().value;
+      this.map.delete(oldest);
+    }
+  }
+  clear() {
+    this.map.clear();
+  }
+}
+
 function sanitizeSheetName(name) {
   const cleaned = name
     .replace(/[\\/?*\[\]:]/g, ' ')
@@ -128,6 +154,13 @@ function buildEnrichmentCacheKey(enriched) {
   }
 }
 
+function createEnrichmentCache() {
+  const limitRaw = Number(process.env.AUDIT_ENRICH_CACHE_MAX || '');
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 32;
+  return new EnrichmentCache(limit);
+}
+
 async function copyEvidenceScreenshots(pages, evidenceDir) {
   if (!evidenceDir) return pages.map(() => ({ screenshot1: '', screenshot2: '' }));
   const results = pages.map(() => ({ screenshot1: '', screenshot2: '' }));
@@ -169,7 +202,7 @@ async function copyEvidenceScreenshots(pages, evidenceDir) {
   return results;
 }
 
-async function cleanupEnrichmentTempFiles(pages, evidenceLinksByPage) {
+async function cleanupEnrichmentTempFiles(pages, evidenceLinksByPage, { force = false } = {}) {
   if (!Array.isArray(evidenceLinksByPage) || evidenceLinksByPage.length === 0) {
     return;
   }
@@ -179,10 +212,10 @@ async function cleanupEnrichmentTempFiles(pages, evidenceLinksByPage) {
     const links = evidenceLinksByPage[i] || null;
     const meta = page?.snapshot?.enrichmentMeta || null;
     if (!meta) continue;
-    if (meta.screenshot1 && links?.screenshot1) {
+    if (meta.screenshot1 && (force || links?.screenshot1)) {
       tasks.push(fs.unlink(meta.screenshot1).catch(() => {}));
     }
-    if (meta.screenshot2 && links?.screenshot2) {
+    if (meta.screenshot2 && (force || links?.screenshot2)) {
       tasks.push(fs.unlink(meta.screenshot2).catch(() => {}));
     }
   }
@@ -437,7 +470,7 @@ export async function runAudit(options) {
   let aiFailed = 0;
   const wantsEnrichment =
     String(process.env.AUDIT_ENRICH || '').trim().toLowerCase() !== '0';
-  const enrichmentCache = new Map();
+  const enrichmentCache = createEnrichmentCache();
   const wantsDebugSnapshots =
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim() === '1' ||
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim().toLowerCase() === 'true';
@@ -537,8 +570,9 @@ export async function runAudit(options) {
               signal
             });
             const cacheKey = buildEnrichmentCacheKey(enriched);
-            if (cacheKey && enrichmentCache.has(cacheKey)) {
-              enrichment = enrichmentCache.get(cacheKey);
+            const cached = cacheKey ? enrichmentCache.get(cacheKey) : null;
+            if (cached) {
+              enrichment = cached;
             } else {
               enrichment = await buildEnrichment(enriched);
               if (cacheKey) enrichmentCache.set(cacheKey, enrichment);
@@ -1262,11 +1296,9 @@ export async function runAudit(options) {
       return lines.join('\n').slice(0, 800);
     };
 
-    const evidenceLinksByPage = await copyEvidenceScreenshots(
-      pageResults,
-      outPath ? path.join(path.dirname(outPath), 'evidence') : ''
-    );
-    await cleanupEnrichmentTempFiles(pageResults, evidenceLinksByPage);
+    const evidenceDir = outPath ? path.join(path.dirname(outPath), 'evidence') : '';
+    const evidenceLinksByPage = await copyEvidenceScreenshots(pageResults, evidenceDir);
+    await cleanupEnrichmentTempFiles(pageResults, evidenceLinksByPage, { force: !evidenceDir });
 
     const applyHyperlinkStyle = (cell) => {
       cell.font = { ...(cell.font || {}), color: { argb: 'FF1D4ED8' }, underline: true };
@@ -1356,6 +1388,8 @@ export async function runAudit(options) {
       }
     }
 
+    const auditRange = `D2:${lastCol}${uiSheet.rowCount}`;
+
     const summaryTitleRow = summarySheet.addRow([i18n.excel.summaryTitle()]);
     summarySheet.getColumn(1).width = 30;
     summarySheet.getColumn(2).width = 20;
@@ -1381,6 +1415,11 @@ export async function runAudit(options) {
     const scoreRowIndex = summaryTitleRow.number + 3;
     const scoreCell = summarySheet.getRow(scoreRowIndex).getCell(2);
     scoreCell.numFmt = '0.0%';
+    const countC = `COUNTIF(Audit!${auditRange},"${statusStyle(STATUS.C).icon}")`;
+    const countNC = `COUNTIF(Audit!${auditRange},"${statusStyle(STATUS.NC).icon}")`;
+    scoreCell.value = {
+      formula: `IF((${countC}+${countNC})=0,0,${countC}/(${countC}+${countNC}))`
+    };
     summarySheet.addRow([]);
     summarySheet.addRow([i18n.excel.globalStatus()]);
     const statusRows = [
@@ -1399,6 +1438,9 @@ export async function runAudit(options) {
       valueCell.font = { size: BASE_FONT_SIZE, bold: true };
       valueCell.alignment = { vertical: 'middle', horizontal: 'center' };
       const s = statusStyle(row.status);
+      valueCell.value = {
+        formula: `COUNTIF(Audit!${auditRange},"${s.icon}")`
+      };
       valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: s.bg } };
       valueCell.font = { size: BASE_FONT_SIZE, bold: true, color: { argb: s.fg } };
     }
