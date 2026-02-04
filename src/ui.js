@@ -581,9 +581,7 @@ function createFancyReporter(options = {}) {
   let pageDone = 0;
   let currentPageIndex = -1;
   let currentUrl = '';
-  let stageLabel = '';
   let stageStartAt = 0;
-  let lastStageMs = null;
   let pageStartAt = 0;
   let auditStartAt = 0;
   let auditMode = 'mcp';
@@ -602,7 +600,6 @@ function createFancyReporter(options = {}) {
   let secondPassStartedAt = 0;
   let lastDecision = null;
   const decisions = [];
-  let lastReasoning = '';
   let enrichmentActive = false;
   let enrichmentLabel = '';
   let enrichmentStartedAt = 0;
@@ -701,18 +698,8 @@ function createFancyReporter(options = {}) {
 
   const startStage = (label) => {
     const original = sanitizeStatusLine(label);
-    stageLabel = pendingLabel('stage', original);
     stageStartAt = nowMs();
-    lastStageMs = null;
     if (original) pushFeed('stage', original);
-    feedHumanizer.request({
-      kind: 'stage',
-      text: original,
-      onResult: (rewritten) => {
-        stageLabel = rewritten;
-        render();
-      }
-    });
     render();
   };
   const pushAiFeed = (raw, { replaceLastIfSameKind = false } = {}) => {
@@ -734,8 +721,6 @@ function createFancyReporter(options = {}) {
     const endAt = nowMs();
     const elapsed = stageStartAt ? endAt - stageStartAt : 0;
     stageStartAt = 0;
-    lastStageMs = elapsed;
-    if (label) stageLabel = `${label} done`;
     pushFeed('timing', `${label || 'Stage'}: ${elapsed}ms`, { replaceLastIfSameKind: false });
     render();
   };
@@ -762,10 +747,6 @@ function createFancyReporter(options = {}) {
     const pagePct = totalCriteria ? Math.round((pageDone / totalCriteria) * 100) : 0;
     const pageLabel = totalPages ? `${Math.max(0, currentPageIndex + 1)}/${totalPages}` : '-/-';
 
-    const stageSpinner = '';
-    const stageAgeMs = stageStartAt ? nowMs() - stageStartAt : lastStageMs;
-    const stageAge = stageAgeMs ? formatElapsed(stageAgeMs) : '';
-    const stageText = stageLabel || (currentUrl ? i18n.t('Audit en cours', 'Audit running') : '');
     const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
 
     const urlLine = currentUrl ? clipInline(currentUrl, width - 18) : '';
@@ -806,14 +787,6 @@ function createFancyReporter(options = {}) {
             )
           )}${enrichmentAge ? ` ${palette.muted('•')} ${palette.accent(enrichmentAge)}` : ''}`
         : '',
-      lastReasoning
-        ? `${padVisibleRight(palette.muted('Reasoning'), 8)} ${palette.accent(
-            clipInline(lastReasoning, width - 18)
-          )}`
-        : '',
-      `${padVisibleRight(palette.muted('Stage'), 8)} ${palette.primary(stageSpinner)} ${palette.muted(
-        clipInline(stageText, width - 22)
-      )}${stageAge ? ` ${palette.muted('•')} ${palette.accent(stageAge)}` : ''}`,
       elapsed
         ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)}`
         : ''
@@ -1022,7 +995,6 @@ function createFancyReporter(options = {}) {
       enrichmentActive = false;
       enrichmentLabel = '';
       enrichmentStartedAt = 0;
-      stageLabel = i18n.t('Starting page', 'Starting page');
       pushFeed('page', `Page ${index + 1}/${totalPages}: ${url}`);
       render();
     },
@@ -1050,7 +1022,6 @@ function createFancyReporter(options = {}) {
       const message = String(error?.message || error || 'Unknown error').replace(/\s+/g, ' ').trim();
       const clipped = message.length > 220 ? `${message.slice(0, 217)}…` : message;
       pushFeed('error', `Page failed: ${clipped}`);
-      stageLabel = `Error: ${clipped}`;
       render();
     },
 
@@ -1068,7 +1039,6 @@ function createFancyReporter(options = {}) {
     onAIStart({ criterion }) {
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 60);
       currentCriterion = { id: criterion.id, title: criterion.title };
-      lastReasoning = '';
       startStage(`AI thinking ${critText}`);
       pushFeed('thinking', `${criterion.id} ${criterion.title}`.slice(0, 140));
     },
@@ -1094,11 +1064,6 @@ function createFancyReporter(options = {}) {
         const shouldRepeat = clipped === lastAILog && now - lastAILogAt >= aiLogRepeatMs;
         let updated = false;
         const normalizedReason = sanitizeStatusLine(cleaned);
-        if (normalizedReason) {
-          lastReasoning = normalizedReason;
-          stageLabel = clipInline(normalizedReason, 160);
-          updated = true;
-        }
         if (criterion?.id === 'enrich') {
           enrichmentActive = true;
           enrichmentLabel = normalizedReason || enrichmentLabel || 'Enrichment';
@@ -1128,7 +1093,6 @@ function createFancyReporter(options = {}) {
         rationale
       });
       pushFeed('decision', `${criterion.id} ${statusLabel}${rationale ? ` • ${rationale}` : ''}`);
-      stageLabel = i18n.t('Waiting for next criterion…', 'Waiting for next criterion…');
       render();
     },
 
@@ -1157,14 +1121,9 @@ function createFancyReporter(options = {}) {
         'Seconde passe IA : réduction des critères “Review” restants.',
         'Second-pass AI: reducing remaining “Review” criteria.'
       );
-      lastReasoning = '';
       enrichmentActive = false;
       enrichmentLabel = '';
       enrichmentStartedAt = 0;
-      stageStartAt = stageStartAt || nowMs();
-      stageLabel = secondPassCurrent
-        ? `${i18n.t('Second pass', 'Second pass')} ${secondPassCurrent}`
-        : i18n.t('Second pass starting…', 'Second pass starting…');
       pushFeed('stage', i18n.t('Second-pass checks starting…', 'Second-pass checks starting…'));
       render();
     },
@@ -1173,12 +1132,6 @@ function createFancyReporter(options = {}) {
       if (Number.isFinite(total) && total > 0) secondPassTotal = total;
       if (Number.isFinite(done)) secondPassDone = done;
       if (current?.id) secondPassCurrent = `${current.id}`;
-      if (!stageStartAt) stageStartAt = nowMs();
-      const labelBase = i18n.t('Second pass', 'Second pass');
-      const progressLabel = `${secondPassDone}/${secondPassTotal || 0}`;
-      stageLabel = secondPassCurrent
-        ? `${labelBase} ${secondPassCurrent} ${progressLabel}`
-        : `${labelBase} ${progressLabel}`;
       render();
     },
 
@@ -1189,7 +1142,6 @@ function createFancyReporter(options = {}) {
       if (!secondPassActive) secondPassCurrent = null;
       if (!secondPassActive) secondPassNotice = '';
       if (!secondPassActive) secondPassStartedAt = 0;
-      stageLabel = i18n.t('Second pass complete', 'Second pass complete');
       pushFeed('stage', i18n.t('Second-pass checks complete.', 'Second-pass checks complete.'));
       render();
     },

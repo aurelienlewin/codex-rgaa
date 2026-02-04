@@ -62,10 +62,27 @@ function summarizeCodexStderr(stderr) {
   return String(lines[lines.length - 1] || '').slice(0, 400);
 }
 
-function buildPrompt({ url, pageId, paths }) {
+function normalizeCachedPages(pages, maxEntries) {
+  if (!Array.isArray(pages) || pages.length === 0) return null;
+  const trimmed = pages
+    .map((page) => ({
+      id: Number.isFinite(page?.id) ? page.id : null,
+      url: typeof page?.url === 'string' ? page.url : '',
+      title: typeof page?.title === 'string' ? page.title : ''
+    }))
+    .filter((page) => Number.isFinite(page.id) && page.url);
+  if (!trimmed.length) return null;
+  return trimmed.slice(0, maxEntries);
+}
+
+function buildPrompt({ url, pageId, paths, cachedPages }) {
   const htmlMaxRaw = Number(process.env.AUDIT_ENRICH_HTML_MAX || '');
   const htmlMax =
     Number.isFinite(htmlMaxRaw) && htmlMaxRaw > 0 ? Math.floor(htmlMaxRaw) : 20000;
+  const cachedMaxRaw = Number(process.env.AUDIT_MCP_CACHED_PAGES_MAX || '');
+  const cachedMax =
+    Number.isFinite(cachedMaxRaw) && cachedMaxRaw > 0 ? Math.floor(cachedMaxRaw) : 60;
+  const normalizedCachedPages = normalizeCachedPages(cachedPages, cachedMax);
   const targetLabel =
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `page id ${pageId}`
@@ -79,7 +96,9 @@ function buildPrompt({ url, pageId, paths }) {
     '1) Determine the target page:',
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `- select_page ${pageId}.`
-      : '- list_pages; if a page matches the URL, select the one with the lowest id; otherwise navigate_page to the URL.',
+      : normalizedCachedPages
+        ? '- Use the provided CACHED_PAGES list (do not call list_pages); select the page matching the URL with the lowest id; otherwise navigate_page to the URL.'
+        : '- list_pages; if a page matches the URL, select the one with the lowest id; otherwise navigate_page to the URL.',
     `2) Verify location.href matches the target (${targetLabel}); if not, navigate_page.`,
     '3) Collect evidence:',
     `- take_screenshot fullPage=true to "${paths.screenshot1}".`,
@@ -90,6 +109,7 @@ function buildPrompt({ url, pageId, paths }) {
     '',
     `URL: ${url}`,
     typeof pageId === 'number' && Number.isFinite(pageId) ? `PAGE_ID: ${pageId}` : '',
+    normalizedCachedPages ? `CACHED_PAGES: ${JSON.stringify(normalizedCachedPages)}` : '',
     '',
     'evaluate_script JS:',
     '() => {',
@@ -278,7 +298,8 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
       const prompt = buildPrompt({
         url,
         pageId: mcp?.pageId,
-        paths: { screenshot1, screenshot2 }
+        paths: { screenshot1, screenshot2 },
+        cachedPages: mcp?.cachedPages
       });
       onStage?.('AI: running MCP enrichment');
       onLog?.('Codex: running MCP enrichment');

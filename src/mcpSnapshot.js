@@ -20,6 +20,18 @@ const LIST_PAGES_SCHEMA_PATH = fileURLToPath(
   new URL('../data/mcp-list-pages-schema.json', import.meta.url)
 );
 
+const LIST_PAGES_CACHE_TTL_MS = (() => {
+  const raw = Number(process.env.AUDIT_MCP_LIST_PAGES_CACHE_TTL_MS || '');
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 5000;
+})();
+
+const CACHED_PAGES_MAX = (() => {
+  const raw = Number(process.env.AUDIT_MCP_CACHED_PAGES_MAX || '');
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60;
+})();
+
+const listPagesCache = new Map();
+
 let schemaPreflightDone = false;
 async function preflightSchemas(onLog) {
   if (schemaPreflightDone) return;
@@ -46,12 +58,26 @@ async function preflightSchemas(onLog) {
   }
 }
 
-function buildPrompt({ url, pageId } = {}) {
+function normalizeCachedPages(pages) {
+  if (!Array.isArray(pages) || pages.length === 0) return null;
+  const trimmed = pages
+    .map((page) => ({
+      id: Number.isFinite(page?.id) ? page.id : null,
+      url: typeof page?.url === 'string' ? page.url : '',
+      title: typeof page?.title === 'string' ? page.title : ''
+    }))
+    .filter((page) => Number.isFinite(page.id) && page.url);
+  if (!trimmed.length) return null;
+  return trimmed.slice(0, CACHED_PAGES_MAX);
+}
+
+function buildPrompt({ url, pageId, cachedPages } = {}) {
   const expression = getSnapshotExpression();
   const targetLabel =
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `page id ${pageId}`
       : `URL ${url}`;
+  const normalizedCachedPages = normalizeCachedPages(cachedPages);
   return [
     'Tu es un outil technique. Utilise uniquement le MCP chrome-devtools.',
     'Écris une courte narration explicative sur UNE ligne.',
@@ -61,13 +87,16 @@ function buildPrompt({ url, pageId } = {}) {
     '1) Détermine la page cible:',
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `- Sélectionne la page ${pageId} avec select_page.`
-      : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne celle avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.',
+      : normalizedCachedPages
+        ? '- Utilise la liste CACHED_PAGES fournie (sans appeler list_pages); sélectionne la page qui correspond à l’URL avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.'
+        : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne celle avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.',
     `2) Vérifie que location.href correspond bien à la cible (${targetLabel}); si besoin navigue vers l’URL.`,
     '3) Exécute la fonction JS fournie via evaluate_script pour attendre le chargement et collecter le snapshot.',
     '4) Réponds uniquement avec le JSON retourné (pas de texte supplémentaire).',
     '',
     `URL: ${url}`,
     typeof pageId === 'number' && Number.isFinite(pageId) ? `PAGE_ID: ${pageId}` : '',
+    normalizedCachedPages ? `CACHED_PAGES: ${JSON.stringify(normalizedCachedPages)}` : '',
     '',
     'Fonction JS à exécuter via evaluate_script:',
     'async () => {',
@@ -319,7 +348,9 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
       attachIgnoreEpipe(child.stdin, (err) => {
         onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
       });
-      child.stdin.write(buildPrompt({ url, pageId: mcp?.pageId }));
+      child.stdin.write(
+        buildPrompt({ url, pageId: mcp?.pageId, cachedPages: mcp?.cachedPages })
+      );
       child.stdin.end();
     });
 
@@ -399,6 +430,24 @@ export async function collectSnapshotWithMcp({ url, model, mcp, onLog, onStage, 
 export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
   if (signal?.aborted) {
     throw createAbortError();
+  }
+
+  if (LIST_PAGES_CACHE_TTL_MS > 0) {
+    const cacheKey = JSON.stringify({
+      model: model || '',
+      browserUrl: mcp?.browserUrl || '',
+      autoConnect: Boolean(mcp?.autoConnect),
+      channel: mcp?.channel || ''
+    });
+    const cached = listPagesCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      onLog?.('Codex: using cached MCP list_pages');
+      if (typeof structuredClone === 'function') {
+        return structuredClone(cached.value);
+      }
+      return JSON.parse(JSON.stringify(cached.value));
+    }
+    listPagesCache.delete(cacheKey);
   }
 
   await preflightSchemas(onLog);
@@ -571,6 +620,18 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       const aId = Number.isFinite(a?.id) ? a.id : Number.MAX_SAFE_INTEGER;
       const bId = Number.isFinite(b?.id) ? b.id : Number.MAX_SAFE_INTEGER;
       return aId - bId;
+    });
+  }
+  if (LIST_PAGES_CACHE_TTL_MS > 0) {
+    const cacheKey = JSON.stringify({
+      model: model || '',
+      browserUrl: mcp?.browserUrl || '',
+      autoConnect: Boolean(mcp?.autoConnect),
+      channel: mcp?.channel || ''
+    });
+    listPagesCache.set(cacheKey, {
+      value: parsed,
+      expiresAt: Date.now() + LIST_PAGES_CACHE_TTL_MS
     });
   }
   return parsed;

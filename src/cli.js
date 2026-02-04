@@ -1129,7 +1129,8 @@ async function main() {
         browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
         autoConnect: mcpAutoConnect,
         channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || '',
-        pageId: mcpPageIdArg
+        pageId: mcpPageIdArg,
+        cachedPages: mcpTabs.length ? mcpTabs : undefined
       },
       ai: {
         model: codexModel,
