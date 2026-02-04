@@ -78,11 +78,12 @@ function isRetryableAiError(err) {
   return text.includes('timed out') || text.includes('timeout') || text.includes('stalled');
 }
 
-async function withPauseRetry({ fn, pauseController, reporter, label }) {
+async function withPauseRetry({ fn, pauseController, reporter, label, retryOnAny = false }) {
   try {
     return await fn();
   } catch (err) {
-    if (!isRetryableAiError(err) || !pauseController) throw err;
+    if (!pauseController) throw err;
+    if (!retryOnAny && !isRetryableAiError(err)) throw err;
     reporter?.onAILog?.({
       criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
       message: `${label} failed (${String(err?.message || err)}). Pausing until resume to retry.`
@@ -651,13 +652,20 @@ export async function runAudit(options) {
         if (pauseController) await pauseController.waitIfPaused();
         reporter?.onSnapshotStart?.({ url });
         const snapshotStart = Date.now();
-        const snapshot = await collectSnapshotWithMcp({
-          url,
-          model: options.ai?.model,
-          mcp: mcpConfig,
-          onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
-          onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
-          signal
+        const snapshot = await withPauseRetry({
+          pauseController,
+          reporter,
+          label: 'Snapshot',
+          retryOnAny: true,
+          fn: () =>
+            collectSnapshotWithMcp({
+              url,
+              model: options.ai?.model,
+              mcp: mcpConfig,
+              onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
+              onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
+              signal
+            })
         });
         const wantsHtmlValidation =
           String(process.env.AUDIT_HTML_VALIDATOR || '').trim().toLowerCase() !== '0';
@@ -673,13 +681,20 @@ export async function runAudit(options) {
           reporter?.onEnrichmentStart?.({ url });
           let enrichmentOk = true;
           try {
-            const enriched = await collectEnrichedEvidenceWithMcp({
-              url,
-              model: options.ai?.model,
-              mcp: mcpConfig,
-              onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'enrich' }, message }),
-              onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
-              signal
+            const enriched = await withPauseRetry({
+              pauseController,
+              reporter,
+              label: 'Enrichment',
+              retryOnAny: true,
+              fn: () =>
+                collectEnrichedEvidenceWithMcp({
+                  url,
+                  model: options.ai?.model,
+                  mcp: mcpConfig,
+                  onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'enrich' }, message }),
+                  onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
+                  signal
+                })
             });
             const cacheKey = buildEnrichmentCacheKey(enriched);
             const cached = cacheKey ? enrichmentCache.get(cacheKey) : null;

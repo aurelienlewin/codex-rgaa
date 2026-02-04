@@ -114,6 +114,20 @@ npm run audit -- --pages https://example.com --allow-remote-debug --report-lang 
 ```
 </details>
 
+<details>
+<summary><strong>Pause / resume & continue later</strong></summary>
+
+- Press `p` to pause, `r` to resume (displayed in the CLI).
+- A resume file is written after each page: `out/<run>/audit.resume.json`.
+- Resume later with:
+
+```bash
+npm run audit -- --resume out/<run>/audit.resume.json
+```
+
+In guided mode, the CLI will offer recent resume files automatically.
+</details>
+
 ## UX moments
 <details open>
 <summary><strong>What the UI shows while it runs</strong></summary>
