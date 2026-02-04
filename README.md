@@ -1,14 +1,38 @@
 # RGAA Website Auditor (MCP)
 
-A **modern, UI-forward** RGAA 4.x auditor that blends MCP‑driven evidence collection with AI review to deliver a crisp, readable Excel report.
+**UI‑first RGAA auditing** — fast evidence, clear answers, and a report your team actually reads.
 
-What you get:
+**Highlights**
+| Feature | What it feels like |
+|---|---|
+| MCP‑driven evidence | Live Chrome‑native auditing without scripts |
+| AI review (Codex) | Fast decisions with traceable evidence |
+| Excel report | A clean, color‑coded matrix built for reviewers |
+| Second‑pass AI | Targets remaining **Review** items after all pages are scanned |
+
+**What you get**
 - **Per‑page results** for all **106 criteria**
 - **Global summary** (a criterion is conform only if it passes on **every** page)
 - **Score** computed as **C / (C + NC)**
 
-Evidence is collected via:
+**Evidence collection**
 - **MCP** (Chrome DevTools MCP) using `chrome-devtools-mcp` started by Codex (handy when driving an existing Chrome session)
+
+> [!TIP]
+> The CLI UI is designed like a modern product console: animated progress, humanized AI feed, and a dedicated **Second pass** callout when cross‑page checks run.
+
+---
+
+## Table of contents
+- [Requirements](#requirements)
+- [Install](#install)
+- [Run](#run)
+- [Output](#output)
+- [AI review (mandatory)](#ai-review-mandatory)
+- [Notes on automation](#notes-on-automation)
+- [Tests](#tests)
+- [RGAA criteria source](#rgaa-criteria-source)
+- [Example pages file](#example-pages-file)
 
 ## Requirements
 - OS: macOS, Windows, or Linux
