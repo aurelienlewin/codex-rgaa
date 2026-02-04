@@ -115,43 +115,11 @@ npm run audit -- --pages https://example.com --allow-remote-debug --report-lang 
 </details>
 
 ## Run
-In interactive terminals, `npm run audit` starts a **guided wizard** by default.
-
-### Guided (default, non-technical)
-```bash
-npm run audit
-```
-
-To disable the wizard (power users), pass:
-```bash
-npm run audit -- --no-guided
-```
-
-You can also run the wizard explicitly:
-```bash
-npm run audit:guided
-```
-
-Report language can also be forced from CLI:
-```bash
-npm run audit -- --pages https://example.com --allow-remote-debug --report-lang en
-```
-
-### 2) From a markdown/text file
-```bash
-npm run audit -- --pages-file pages.sample.md --allow-remote-debug
-```
-
-### 3) From CLI URLs
-```bash
-npm run audit -- --pages https://example.com https://example.com/contact --allow-remote-debug
-```
-
-### 4) Non-interactive
-In non-interactive runs (no TTY), the wizard can’t prompt. Provide all required flags:
-```bash
-npm run audit -- --pages https://example.com --allow-remote-debug --report-lang fr
-```
+The **Quickstart** and **Advanced** sections above cover all common modes.  
+Key tips:
+- `npm run audit` launches the guided wizard (default).
+- `--no-guided` skips prompts for power users.
+- In non‑interactive environments, supply all flags explicitly.
 
 ### MCP-first (interactive Chrome, recommended)
 This uses `chrome-devtools-mcp` (via Codex) and lets **you** approve the incoming debugging connection in Chrome.
