@@ -601,6 +601,9 @@ function createFancyReporter(options = {}) {
   let enrichmentDone = 0;
   let enrichmentStatus = 'idle';
   let showEnrichmentSummary = false;
+  let isPaused = false;
+  let resumeOverallDone = 0;
+  let resumeCompletedPages = 0;
   let lastAILog = '';
   let lastAILogAt = 0;
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
@@ -839,6 +842,10 @@ function createFancyReporter(options = {}) {
             )
           )}${enrichmentAge ? ` ${palette.muted('•')} ${palette.accent(enrichmentAge)}` : ''}`
         : '',
+      `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted('p pause • r resume')}`,
+      isPaused
+        ? `${padVisibleRight(palette.warn('Status'), 8)} ${palette.warn('paused')}`
+        : '',
       elapsed
         ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)} ${palette.muted(
             frame ? '•' : '·'
@@ -990,7 +997,8 @@ function createFancyReporter(options = {}) {
       criteriaCount,
       mcpMode: mcpModeFromCli,
       auditMode: mode,
-      enrichmentEnabled: enrichmentEnabledFromCli
+      enrichmentEnabled: enrichmentEnabledFromCli,
+      resumePath
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
@@ -1020,11 +1028,14 @@ function createFancyReporter(options = {}) {
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
       const reasoningLabel = `Codex reasoning: ${codexReasoning || 'detecting…'}`;
+      const resumeLabel = resumePath ? `Resume: ${path.basename(resumePath)}` : '';
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(reasoningLabel)}`,
+          `${palette.muted(reasoningLabel)}\n` +
+          `${resumeLabel ? palette.muted(resumeLabel) + '\n' : ''}` +
+          `${palette.muted('Keys: p pause • r resume')}`,
         { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
       console.log(joinBoxenColumns(title, session));
@@ -1040,6 +1051,20 @@ function createFancyReporter(options = {}) {
       spinner.stop();
       startTicking();
       pushFeed('progress', i18n.t('Chrome ready. Starting pages…', 'Chrome ready. Starting pages…'));
+      render();
+    },
+
+    onResumeState({ completedPages = 0, completedCriteria = 0 } = {}) {
+      resumeCompletedPages = completedPages;
+      resumeOverallDone = completedCriteria;
+      overallDone = completedCriteria;
+      currentPageIndex = completedPages - 1;
+      render();
+    },
+
+    onPause({ paused } = {}) {
+      isPaused = Boolean(paused);
+      pushFeed('stage', isPaused ? 'Paused' : 'Resumed', { replaceLastIfSameKind: false });
       render();
     },
 
@@ -1453,6 +1478,8 @@ function createLegacyReporter(options = {}) {
   let secondPassTotal = 0;
   let secondPassDone = 0;
   let enrichmentStatus = 'idle';
+  let isPaused = false;
+  let resumeOverallDone = 0;
 
   const stopPulse = () => {
     if (pulseTimer) clearInterval(pulseTimer);
@@ -1514,7 +1541,8 @@ function createLegacyReporter(options = {}) {
       criteriaCount,
       mcpMode,
       auditMode: mode,
-      enrichmentEnabled: enrichmentEnabledFromCli
+      enrichmentEnabled: enrichmentEnabledFromCli,
+      resumePath
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
@@ -1542,11 +1570,14 @@ function createLegacyReporter(options = {}) {
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
       const reasoningLabel = `Codex reasoning: ${codexReasoning || 'detecting…'}`;
+      const resumeLabel = resumePath ? `Resume: ${path.basename(resumePath)}` : '';
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(reasoningLabel)}`,
+          `${palette.muted(reasoningLabel)}\n` +
+          `${resumeLabel ? palette.muted(resumeLabel) + '\n' : ''}` +
+          `${palette.muted('Keys: p pause • r resume')}`,
         { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
       console.log(joinBoxenColumns(title, session));
@@ -1568,6 +1599,14 @@ function createLegacyReporter(options = {}) {
         label: palette.accent(i18n.t('Page', 'Page')),
         crit: ''
       });
+      if (resumeOverallDone > 0 && overallBar) {
+        overallBar.update(resumeOverallDone, { crit: '' });
+      }
+    },
+
+    onResumeState({ completedCriteria = 0 } = {}) {
+      resumeOverallDone = completedCriteria;
+      overallDone = completedCriteria;
     },
 
     onPageStart({ index, url }) {
@@ -1700,6 +1739,15 @@ function createLegacyReporter(options = {}) {
           });
         }
       }
+    },
+
+    onPause({ paused } = {}) {
+      isPaused = Boolean(paused);
+      const lineText = isPaused
+        ? `${palette.warn('Paused')} ${palette.muted('(press r to resume)')}`
+        : `${palette.ok('Resumed')}`;
+      if (typeof bars.log === 'function') bars.log(lineText);
+      else console.log(lineText);
     },
 
     onAIStart({ criterion }) {
@@ -1971,7 +2019,7 @@ function createPlainReporter(options = {}) {
   };
 
   return {
-    async onStart({ pages, criteriaCount, mcpMode: mcpModeFromCli, auditMode: mode }) {
+    async onStart({ pages, criteriaCount, mcpMode: mcpModeFromCli, auditMode: mode, resumePath }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
       auditMode = mode || 'mcp';
@@ -1980,6 +2028,8 @@ function createPlainReporter(options = {}) {
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
       line('Codex reasoning:', codexReasoning || '(detecting…)');
+      line('Keys:', 'p pause • r resume');
+      if (resumePath) line('Resume file:', resumePath);
       line('MCP mode:', mcpModeFromCli || '(default)');
       line('Snapshot mode:', auditMode);
       const chromeWarning = chromeAutomationWarningLines({ i18n, mcpMode });
@@ -1991,6 +2041,15 @@ function createPlainReporter(options = {}) {
 
     onChromeReady() {
       line(i18n.t('Chrome ready. Auditing pages…', 'Chrome ready. Auditing pages…'));
+    },
+
+    onResumeState({ completedPages = 0, completedCriteria = 0 } = {}) {
+      if (completedPages > 0 || completedCriteria > 0) {
+        line(
+          i18n.t('Resuming:', 'Resuming:'),
+          `${completedPages} pages • ${completedCriteria} criteria`
+        );
+      }
     },
 
     onPageStart({ index, url }) {
@@ -2059,6 +2118,10 @@ function createPlainReporter(options = {}) {
 
     onInferenceEnd() {
       if (!codexReasoning) codexReasoning = 'n/a';
+    },
+
+    onPause({ paused } = {}) {
+      line(i18n.t('Stage:', 'Stage:'), paused ? 'Paused (press r to resume)' : 'Resumed');
     },
 
     onChecksStart() {

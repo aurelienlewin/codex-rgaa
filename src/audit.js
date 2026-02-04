@@ -41,6 +41,58 @@ class EnrichmentCache {
   }
 }
 
+async function writeResumeState(statePath, state) {
+  if (!statePath) return;
+  try {
+    await fs.mkdir(path.dirname(statePath), { recursive: true });
+    await fs.writeFile(statePath, JSON.stringify(state, null, 2), 'utf-8');
+  } catch {}
+}
+
+function buildResumeState({
+  pages,
+  reportLang,
+  outPath,
+  completedPages,
+  crossPageEvidence,
+  pageMeta,
+  criteriaIds,
+  createdAt
+}) {
+  return {
+    version: 1,
+    createdAt: createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    pages,
+    reportLang,
+    outPath,
+    criteriaIds,
+    completedPages,
+    crossPageEvidence,
+    pageMeta
+  };
+}
+
+function isRetryableAiError(err) {
+  const text = String(err?.message || err || '').toLowerCase();
+  return text.includes('timed out') || text.includes('timeout') || text.includes('stalled');
+}
+
+async function withPauseRetry({ fn, pauseController, reporter, label }) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isRetryableAiError(err) || !pauseController) throw err;
+    reporter?.onAILog?.({
+      criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
+      message: `${label} failed (${String(err?.message || err)}). Pausing until resume to retry.`
+    });
+    pauseController.pause();
+    await pauseController.waitIfPaused();
+    return await fn();
+  }
+}
+
 function sanitizeSheetName(name) {
   const cleaned = name
     .replace(/[\\/?*\[\]:]/g, ' ')
@@ -446,8 +498,10 @@ export async function runAudit(options) {
     Array.isArray(options?.criteria) && options.criteria.length
       ? options.criteria
       : loadCriteria({ lang: reportLang });
+  const criteriaIds = criteria.map((criterion) => criterion.id);
   const reporter = options.reporter || null;
   const signal = options.signal || null;
+  const pauseController = options.pauseController || null;
   const auditStartedAt = new Date();
   let aborted = false;
   let chrome = null;
@@ -524,6 +578,35 @@ export async function runAudit(options) {
   };
   const pageMeta = [];
   let chromeInfo = null;
+  let resumeCompletedPages = 0;
+
+  if (options.resumeState?.completedPages?.length) {
+    const resumeCriteria = Array.isArray(options.resumeState.criteriaIds)
+      ? options.resumeState.criteriaIds
+      : [];
+    if (resumeCriteria.length && JSON.stringify(resumeCriteria) !== JSON.stringify(criteriaIds)) {
+      throw new Error('Resume file does not match current criteria set.');
+    }
+    const completed = options.resumeState.completedPages || [];
+    for (const page of completed) {
+      if (!page?.url || !Array.isArray(page?.results)) continue;
+      pageResults.push({
+        url: page.url,
+        results: page.results,
+        snapshot: {
+          title: page?.title || '',
+          lang: page?.lang || ''
+        }
+      });
+      if (page?.title || page?.lang) {
+        pageMeta.push({ url: page.url, title: page?.title || '', lang: page?.lang || '' });
+      }
+    }
+    if (Array.isArray(options.resumeState.crossPageEvidence)) {
+      crossPageEvidence.push(...options.resumeState.crossPageEvidence);
+    }
+    resumeCompletedPages = pageResults.length;
+  }
 
   try {
     if (aborted || signal?.aborted) {
@@ -553,16 +636,19 @@ export async function runAudit(options) {
         });
       }
     }
-    for (const url of options.pages) {
+    for (let pageIdx = resumeCompletedPages; pageIdx < options.pages.length; pageIdx += 1) {
+      const url = options.pages[pageIdx];
       if (aborted || signal?.aborted) {
         throw createAbortError();
       }
+      if (pauseController) await pauseController.waitIfPaused();
       const pageIndex = pageResults.length;
       if (reporter && reporter.onPageStart) reporter.onPageStart({ index: pageIndex, url });
       let page = null;
       reporter?.onPageNavigateStart?.({ url });
       const navStart = Date.now();
       try {
+        if (pauseController) await pauseController.waitIfPaused();
         reporter?.onSnapshotStart?.({ url });
         const snapshotStart = Date.now();
         const snapshot = await collectSnapshotWithMcp({
@@ -583,6 +669,7 @@ export async function runAudit(options) {
         }
         let enrichment = null;
         if (wantsEnrichment && options.ai?.useMcp) {
+          if (pauseController) await pauseController.waitIfPaused();
           reporter?.onEnrichmentStart?.({ url });
           let enrichmentOk = true;
           try {
@@ -691,6 +778,7 @@ export async function runAudit(options) {
         if (aborted || signal?.aborted) {
           throw createAbortError();
         }
+        if (pauseController) await pauseController.waitIfPaused();
 
         if (page.error) {
           const evaluation = {
@@ -778,6 +866,7 @@ export async function runAudit(options) {
       }
 
       if (!page.error && pendingAI.length > 0) {
+        if (pauseController) await pauseController.waitIfPaused();
         const pseudoCriterion = {
           id: `AI(${pendingAI.length})`,
           title: 'Batch criteria review',
@@ -805,20 +894,27 @@ export async function runAudit(options) {
           if (aborted || signal?.aborted) {
             throw createAbortError();
           }
+          if (pauseController) await pauseController.waitIfPaused();
           const chunk = pendingAI.slice(start, start + batchSize);
           try {
-            const batchResults = await aiReviewCriteriaBatch({
-              model: options.ai.model,
-              url,
-              criteria: chunk.map((p) => p.criterion),
-              snapshot: page.snapshot,
-              reportLang,
-              onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
-              onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
-              onError: (message) => reporter?.onError?.(message),
-              failFast,
-              signal,
-              mcp: mcpForAi
+            const batchResults = await withPauseRetry({
+              pauseController,
+              reporter,
+              label: 'AI batch',
+              fn: () =>
+                aiReviewCriteriaBatch({
+                  model: options.ai.model,
+                  url,
+                  criteria: chunk.map((p) => p.criterion),
+                  snapshot: page.snapshot,
+                  reportLang,
+                  onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
+                  onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
+                  onError: (message) => reporter?.onError?.(message),
+                  failFast,
+                  signal,
+                  mcp: mcpForAi
+                })
             });
             for (const r of Array.isArray(batchResults) ? batchResults : []) {
               const key = String(r?.criterion_id || '');
@@ -864,6 +960,7 @@ export async function runAudit(options) {
           if (aborted || signal?.aborted) {
             throw createAbortError();
           }
+          if (pauseController) await pauseController.waitIfPaused();
 
           const { criterion, index } = pending;
           if (reported.has(index)) continue;
@@ -873,18 +970,24 @@ export async function runAudit(options) {
           if (hit) {
             evaluation = evaluationFromHit(hit);
           } else {
-            evaluation = await aiReviewCriterion({
-              model: options.ai.model,
-              url,
-              criterion,
-              snapshot: page.snapshot,
-              reportLang,
-              onLog: (message) => reporter?.onAILog?.({ criterion, message }),
-              onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
-              onError: (message) => reporter?.onError?.(message),
-              failFast,
-              signal,
-              mcp: mcpForAi
+            evaluation = await withPauseRetry({
+              pauseController,
+              reporter,
+              label: `AI criterion ${criterion.id}`,
+              fn: () =>
+                aiReviewCriterion({
+                  model: options.ai.model,
+                  url,
+                  criterion,
+                  snapshot: page.snapshot,
+                  reportLang,
+                  onLog: (message) => reporter?.onAILog?.({ criterion, message }),
+                  onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+                  onError: (message) => reporter?.onError?.(message),
+                  failFast,
+                  signal,
+                  mcp: mcpForAi
+                })
             });
           }
 
@@ -915,20 +1018,27 @@ export async function runAudit(options) {
           if (aborted || signal?.aborted) {
             throw createAbortError();
           }
+          if (pauseController) await pauseController.waitIfPaused();
           const { criterion, index } = pending;
-          const evaluation = await aiReviewCriterion({
-            model: options.ai.model,
-            url,
-            criterion,
-            snapshot: page.snapshot,
-            reportLang,
-            onLog: (message) => reporter?.onAILog?.({ criterion, message }),
-            onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
-            onError: (message) => reporter?.onError?.(message),
-            failFast,
-            signal,
-            mcp: mcpForAi,
-            retry: true
+          const evaluation = await withPauseRetry({
+            pauseController,
+            reporter,
+            label: `AI retry ${criterion.id}`,
+            fn: () =>
+              aiReviewCriterion({
+                model: options.ai.model,
+                url,
+                criterion,
+                snapshot: page.snapshot,
+                reportLang,
+                onLog: (message) => reporter?.onAILog?.({ criterion, message }),
+                onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+                onError: (message) => reporter?.onError?.(message),
+                failFast,
+                signal,
+                mcp: mcpForAi,
+                retry: true
+              })
           });
           if (evaluation.status === STATUS.ERR) {
             aiFailed += 1;
@@ -942,6 +1052,7 @@ export async function runAudit(options) {
         if (aborted || signal?.aborted) {
           throw createAbortError();
         }
+        if (pauseController) await pauseController.waitIfPaused();
         const criterion = criteria[i];
         const res = results[i];
         if (!reported.has(i)) {
@@ -976,6 +1087,27 @@ export async function runAudit(options) {
         });
       }
       pageResults.push({ url, snapshot: page.snapshot, results });
+      if (options.resumeStatePath) {
+        const completedPages = pageResults.map((item) => ({
+          url: item.url,
+          results: item.results,
+          title: item.snapshot?.title || '',
+          lang: item.snapshot?.lang || ''
+        }));
+        await writeResumeState(
+          options.resumeStatePath,
+          buildResumeState({
+            pages: options.pages,
+            reportLang,
+            outPath: options.outPath ? path.resolve(options.outPath) : null,
+            completedPages,
+            crossPageEvidence,
+            pageMeta,
+            criteriaIds,
+            createdAt: options.resumeState?.createdAt
+          })
+        );
+      }
       if (reporter && reporter.onPageEnd) {
         const counts = summarizeCounts(results);
         reporter.onPageEnd({ index: pageIndex, url, counts });
@@ -1011,16 +1143,22 @@ export async function runAudit(options) {
       reporter?.onAIStart?.({ criterion: pseudoCriterion });
       try {
         reporter?.onCrossPageUpdate?.({ done: 0, total: 1, current: criterion });
-        const evaluation = await aiReviewCrossPageCriterion({
-          model: options.ai?.model,
-          criterion,
-          pages: crossPageEvidence,
-          reportLang,
-          onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
-          onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
-          onError: (message) => reporter?.onError?.(message),
-          failFast,
-          signal
+        const evaluation = await withPauseRetry({
+          pauseController,
+          reporter,
+          label: `AI cross-page ${criterion.id}`,
+          fn: () =>
+            aiReviewCrossPageCriterion({
+              model: options.ai?.model,
+              criterion,
+              pages: crossPageEvidence,
+              reportLang,
+              onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
+              onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
+              onError: (message) => reporter?.onError?.(message),
+              failFast,
+              signal
+            })
         });
         if (evaluation.status === STATUS.ERR) {
           aiFailed += 1;

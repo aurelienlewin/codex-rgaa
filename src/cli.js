@@ -92,6 +92,40 @@ function formatRunId(date = new Date()) {
   return `${y}${m}${d}-${hh}${mm}${ss}`;
 }
 
+function formatResumeLabel(candidate) {
+  const updatedAt = candidate?.state?.updatedAt
+    ? new Date(candidate.state.updatedAt).toLocaleString()
+    : 'unknown time';
+  const totalPages = Array.isArray(candidate?.state?.pages) ? candidate.state.pages.length : 0;
+  const completedPages = Array.isArray(candidate?.state?.completedPages)
+    ? candidate.state.completedPages.length
+    : 0;
+  const filename = path.basename(candidate.path || '');
+  const pageInfo = totalPages ? `${completedPages}/${totalPages} pages` : `${completedPages} pages`;
+  return `${filename} • ${pageInfo} • ${updatedAt}`;
+}
+
+function findResumeCandidates({ root = 'out', limit = 8 } = {}) {
+  const entries = [];
+  if (!fs.existsSync(root)) return entries;
+  const dirs = fs.readdirSync(root, { withFileTypes: true });
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue;
+    const resumePath = path.join(root, dir.name, 'audit.resume.json');
+    if (!fs.existsSync(resumePath)) continue;
+    try {
+      const state = JSON.parse(fs.readFileSync(resumePath, 'utf-8'));
+      entries.push({ path: resumePath, state });
+    } catch {}
+  }
+  entries.sort((a, b) => {
+    const aTime = Date.parse(a?.state?.updatedAt || a?.state?.createdAt || '') || 0;
+    const bTime = Date.parse(b?.state?.updatedAt || b?.state?.createdAt || '') || 0;
+    return bTime - aTime;
+  });
+  return entries.slice(0, limit);
+}
+
 function createDebugLogger({ logPath }) {
   if (!logPath) return null;
   try {
@@ -191,6 +225,10 @@ function wrapReporterWithDebug({ reporter, logger }) {
       logger.log('inference-end');
       reporter.onInferenceEnd?.(payload);
     },
+    onPause(payload) {
+      logger.log('pause', payload?.paused ? '1' : '0');
+      reporter.onPause?.(payload);
+    },
     onSnapshotEnd(payload) {
       logger.log('snapshot-end', `${payload?.durationMs || 0}ms`);
       reporter.onSnapshotEnd?.(payload);
@@ -244,6 +282,40 @@ function wrapReporterWithDebug({ reporter, logger }) {
     }
   };
   return { reporter: wrapped, stop };
+}
+
+function createPauseController({ reporter }) {
+  let paused = false;
+  let resumePromise = null;
+  let resumeResolve = null;
+  const notify = (nextPaused) => {
+    if (reporter?.onPause) {
+      reporter.onPause({ paused: nextPaused });
+    }
+  };
+  return {
+    isPaused: () => paused,
+    pause: () => {
+      if (paused) return;
+      paused = true;
+      resumePromise = new Promise((resolve) => {
+        resumeResolve = resolve;
+      });
+      notify(true);
+    },
+    resume: () => {
+      if (!paused) return;
+      paused = false;
+      if (resumeResolve) resumeResolve();
+      resumeResolve = null;
+      resumePromise = null;
+      notify(false);
+    },
+    waitIfPaused: async () => {
+      if (!paused || !resumePromise) return;
+      await resumePromise;
+    }
+  };
 }
 
 function createAiWatchdog({ reporter, abortController, stallTimeoutMs, stageTimeoutMs }) {
@@ -783,6 +855,11 @@ async function main() {
       describe:
         'Target an existing Chrome page by id (as shown by chrome-devtools-mcp list_pages). If set, the snapshot is collected from that page (no navigation).'
     })
+    .option('resume', {
+      type: 'string',
+      describe:
+        'Resume an interrupted audit from a saved state JSON file.'
+    })
     .option('allow-partial', {
       type: 'boolean',
       default: false,
@@ -804,6 +881,31 @@ async function main() {
     process.env.AUDIT_HUMANIZE_FEED_MODEL ||
     '';
 
+  let resumeState = null;
+  let resumePath = '';
+  if (argv.resume) {
+    resumePath = path.resolve(String(argv.resume));
+    if (!fs.existsSync(resumePath)) {
+      throw new Error(`Resume file not found: ${resumePath}`);
+    }
+    try {
+      resumeState = JSON.parse(fs.readFileSync(resumePath, 'utf-8'));
+    } catch (err) {
+      throw new Error(`Failed to read resume file: ${resumePath}`);
+    }
+  } else if (interactive && guided) {
+    const candidates = findResumeCandidates();
+    if (candidates.length) {
+      const choices = ['Start a new audit', ...candidates.map(formatResumeLabel)];
+      const selection = await promptChoice('Resume a previous audit?', choices, { defaultIndex: 0 });
+      if (selection > 0) {
+        const chosen = candidates[selection - 1];
+        resumePath = chosen.path;
+        resumeState = chosen.state;
+      }
+    }
+  }
+
   if (argv.xlsx === false) {
     argv.out = null;
   } else if (!argv.out) {
@@ -812,8 +914,11 @@ async function main() {
   }
 
   let pages = argv.pages || [];
+  if (resumeState?.pages?.length) {
+    pages = resumeState.pages;
+  }
 
-  if (argv['pages-file']) {
+  if (argv['pages-file'] && !resumeState) {
     const filePath = path.resolve(argv['pages-file']);
     if (!fs.existsSync(filePath)) {
       throw new Error(`Pages file not found: ${filePath}`);
@@ -850,6 +955,9 @@ async function main() {
       arg === '--lang' ||
       arg.startsWith('--lang=')
   );
+  if (resumeState?.reportLang && !reportLangExplicit) {
+    reportLang = resumeState.reportLang;
+  }
 
   const mcpBrowserUrlExplicit = rawArgs.some(
     (arg) => arg === '--mcp-browser-url' || arg.startsWith('--mcp-browser-url=')
@@ -1017,7 +1125,13 @@ async function main() {
     process.exit(1);
   }
 
-  const outPath = argv.out ? path.resolve(argv.out) : null;
+  let outPath = argv.out ? path.resolve(argv.out) : null;
+  if (!argv.out && resumeState?.outPath) {
+    outPath = path.resolve(String(resumeState.outPath));
+  }
+  const resumeStatePath = resumePath
+    ? resumePath
+    : path.join(outPath ? path.dirname(outPath) : path.join('out', formatRunId()), 'audit.resume.json');
   const debugLogEnv = String(process.env.AUDIT_DEBUG_LOG || '').trim().toLowerCase();
   const debugLogEnabled = debugLogEnv
     ? debugLogEnv === '1' || debugLogEnv === 'true' || debugLogEnv === 'yes'
@@ -1073,6 +1187,7 @@ async function main() {
     humanizeFeedModel
   });
   const debugWrapped = wrapReporterWithDebug({ reporter, logger: debugLogger });
+  const pauseController = createPauseController({ reporter: debugWrapped.reporter });
   const aiStallRaw = Number(process.env.AUDIT_AI_STALL_TIMEOUT_MS || '');
   const aiStallTimeoutMs =
     Number.isFinite(aiStallRaw) && aiStallRaw > 0 ? Math.floor(aiStallRaw) : 0;
@@ -1094,7 +1209,37 @@ async function main() {
       codexModel,
       mcpMode: process.env.CODEX_MCP_MODE,
       auditMode: snapshotMode,
-      enrichmentEnabled
+      enrichmentEnabled,
+      resumePath: resumeStatePath
+    });
+  }
+
+  if (interactive && process.stdin.isTTY) {
+    readline.emitKeypressEvents(process.stdin);
+    if (typeof process.stdin.setRawMode === 'function') {
+      process.stdin.setRawMode(true);
+    }
+    const keyHandler = (_, key) => {
+      if (!key) return;
+      if (key.name === 'p') pauseController.pause();
+      if (key.name === 'r') pauseController.resume();
+    };
+    process.stdin.on('keypress', keyHandler);
+    process.on('exit', () => {
+      process.stdin.off('keypress', keyHandler);
+      if (typeof process.stdin.setRawMode === 'function') {
+        process.stdin.setRawMode(false);
+      }
+    });
+  }
+
+  if (reporter.onResumeState && resumeState?.completedPages?.length) {
+    reporter.onResumeState({
+      completedPages: resumeState.completedPages.length,
+      completedCriteria: resumeState.completedPages.reduce(
+        (sum, page) => sum + (Array.isArray(page?.results) ? page.results.length : 0),
+        0
+      )
     });
   }
 
@@ -1162,6 +1307,9 @@ async function main() {
       reporter: watchdog.reporter,
       signal: abortController.signal,
       snapshotMode,
+      resumeState,
+      resumeStatePath,
+      pauseController,
       mcp: {
         browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
         autoConnect: mcpAutoConnect,
