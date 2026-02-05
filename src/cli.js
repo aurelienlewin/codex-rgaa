@@ -230,7 +230,7 @@ async function waitForCdpReady({ port, timeoutMs = 6000 } = {}) {
   throw new Error(`Chrome launched but DevTools endpoint was not reachable on port ${port}.`);
 }
 
-async function openDevtoolsNewPage({ browserUrl, url } = {}) {
+async function openDevtoolsNewPage({ browserUrl, url, activate = true } = {}) {
   const target = String(url || '').trim();
   if (!target || !/^https?:\/\//i.test(target)) return;
   const base = String(browserUrl || '').trim().replace(/\/$/, '');
@@ -238,9 +238,66 @@ async function openDevtoolsNewPage({ browserUrl, url } = {}) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1000);
-    await fetch(`${base}/json/new?${encodeURIComponent(target)}`, { signal: controller.signal });
+    const res = await fetch(`${base}/json/new?${encodeURIComponent(target)}`, { signal: controller.signal });
     clearTimeout(timeout);
+    if (res && res.ok) {
+      const created = await res.json().catch(() => null);
+      const id = created?.id;
+      if (id && activate) {
+        const activateController = new AbortController();
+        const activateTimeout = setTimeout(() => activateController.abort(), 1000);
+        await fetch(`${base}/json/activate/${id}`, { signal: activateController.signal });
+        clearTimeout(activateTimeout);
+      }
+    }
   } catch {}
+}
+
+function normalizeUrlForCompare(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = '';
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return raw.replace(/\/$/, '');
+  }
+}
+
+async function ensureDevtoolsPage({ browserUrl, url, activate = true } = {}) {
+  const target = String(url || '').trim();
+  const isHttp = /^https?:\/\//i.test(target);
+  const isChrome = /^chrome:\/\//i.test(target);
+  if (!target || (!isHttp && !isChrome)) return false;
+  const base = String(browserUrl || '').trim().replace(/\/$/, '');
+  if (!base) return false;
+  const normalizedTarget = normalizeUrlForCompare(target);
+  try {
+    const listController = new AbortController();
+    const listTimeout = setTimeout(() => listController.abort(), 1000);
+    const listRes = await fetch(`${base}/json/list`, { signal: listController.signal });
+    clearTimeout(listTimeout);
+    if (listRes && listRes.ok) {
+      const list = await listRes.json().catch(() => null);
+      if (Array.isArray(list)) {
+        const match = list.find((entry) => normalizeUrlForCompare(entry?.url) === normalizedTarget);
+        if (match?.id) {
+          if (!activate) return true;
+          const activateController = new AbortController();
+          const activateTimeout = setTimeout(() => activateController.abort(), 1000);
+          await fetch(`${base}/json/activate/${match.id}`, { signal: activateController.signal });
+          clearTimeout(activateTimeout);
+          return true;
+        }
+      }
+    }
+  } catch {}
+  if (isHttp) {
+    await openDevtoolsNewPage({ browserUrl: base, url: target, activate });
+    return true;
+  }
+  return true;
 }
 
 async function launchChromeForGuided({ chromePath, port, userDataDir, initialUrl } = {}) {
@@ -1236,6 +1293,7 @@ async function main() {
       : parseEnvBool(process.env.AUDIT_AUTO_LAUNCH_CHROME, guided);
   let autoLaunchPlanned = false;
   let autoLaunchOpenedInitial = false;
+  const inspectUrl = 'chrome://inspect/#remote-debugging';
 
   if (interactive && guided) {
     if (!reportLangExplicit) {
@@ -1343,11 +1401,20 @@ async function main() {
       chromePath: argv['chrome-path'],
       port: argv['chrome-port'],
       userDataDir: chromeProfileDir,
-      initialUrl: pages[0]
+      initialUrl: inspectUrl
     });
-    autoLaunchOpenedInitial = /^https?:\/\//i.test(String(pages[0] || '').trim());
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
+    autoLaunchOpenedInitial = await ensureDevtoolsPage({
+      browserUrl: mcpBrowserUrlArg,
+      url: pages[0],
+      activate: false
+    });
+    await ensureDevtoolsPage({
+      browserUrl: mcpBrowserUrlArg,
+      url: inspectUrl,
+      activate: true
+    });
     await promptContinue('Chrome is ready. Open your tabs in this window now.', {
       title: 'Chrome Ready'
     });
