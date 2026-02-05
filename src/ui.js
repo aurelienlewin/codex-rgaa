@@ -695,7 +695,6 @@ function createFancyReporter(options = {}) {
   let overallDone = 0;
   let pageDone = 0;
   const tempCounts = { C: 0, NC: 0 };
-  const tempCounts = { C: 0, NC: 0 };
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageStartAt = 0;
