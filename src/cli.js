@@ -162,7 +162,8 @@ function buildChromeFlagsForGuided({ userDataDir } = {}) {
     '--no-default-browser-check',
     '--disable-background-networking',
     '--disable-component-update',
-    '--disable-breakpad'
+    '--disable-breakpad',
+    '--new-window'
   ];
   if (process.platform === 'linux') {
     flags.push('--no-sandbox');
@@ -200,38 +201,52 @@ async function waitForCdpReady({ port, timeoutMs = 6000 } = {}) {
 }
 
 async function launchChromeForGuided({ chromePath, port, userDataDir } = {}) {
+  const startingUrl = 'chrome://inspect/#remote-debugging';
   const chromeFlags = buildChromeFlagsForGuided({ userDataDir });
   const launch = async (p) =>
     chromeLauncher.launch({
       chromePath,
+      startingUrl,
       chromeFlags,
       ...(typeof p === 'number' && Number.isFinite(p) && p > 0 ? { port: p } : {})
     });
 
   let chrome = null;
   try {
+    const tryLaunch = async (preferredPort) => {
+      const instance = await launch(preferredPort);
+      await waitForCdpReady({ port: instance.port });
+      return instance;
+    };
+
     if (typeof port === 'number' && Number.isFinite(port) && port > 0) {
-      chrome = await launch(port);
-    } else {
-      try {
-        chrome = await launch(undefined);
-      } catch (err) {
-        if (!isPortProbePermissionError(err)) throw err;
-        const candidatePorts = Array.from({ length: 16 }, (_, i) => 9222 + i);
-        let lastErr = err;
-        for (const candidatePort of candidatePorts) {
-          try {
-            chrome = await launch(candidatePort);
-            break;
-          } catch (e) {
-            lastErr = e;
-          }
-        }
-        if (!chrome) throw lastErr;
-      }
+      chrome = await tryLaunch(port);
+      return chrome;
     }
-    await waitForCdpReady({ port: chrome.port });
-    return chrome;
+
+    try {
+      chrome = await tryLaunch(undefined);
+      return chrome;
+    } catch (err) {
+      if (!isPortProbePermissionError(err) && !String(err?.message || '').includes('DevTools endpoint')) {
+        throw err;
+      }
+      const candidatePorts = Array.from({ length: 16 }, (_, i) => 9222 + i);
+      let lastErr = err;
+      for (const candidatePort of candidatePorts) {
+        try {
+          chrome = await tryLaunch(candidatePort);
+          return chrome;
+        } catch (e) {
+          lastErr = e;
+          try {
+            if (chrome) await chrome.kill();
+          } catch {}
+          chrome = null;
+        }
+      }
+      throw lastErr;
+    }
   } catch (err) {
     try {
       if (chrome) await chrome.kill();
