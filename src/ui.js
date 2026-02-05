@@ -1140,7 +1140,7 @@ function createFancyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const reasoningLabel = `RGAA score (temp): ${formatTempScore(tempCounts)}`;
+      const reasoningLabel = `Temp score (C/(C+NC)): ${formatTempScore(tempCounts)}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
@@ -1687,7 +1687,7 @@ function createLegacyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const reasoningLabel = `RGAA score (temp): ${formatTempScore(tempCounts)}`;
+      const reasoningLabel = `Temp score (C/(C+NC)): ${formatTempScore(tempCounts)}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
@@ -2145,7 +2145,7 @@ function createPlainReporter(options = {}) {
       auditStartAt = nowMs();
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
-      line('RGAA score (temp):', formatTempScore(tempCounts));
+      line('Temp score (C/(C+NC)):', formatTempScore(tempCounts));
       line('Keys:', 'p pause • r resume • h help');
       if (resumePath) line('Resume file:', resumePath);
       line('MCP mode:', mcpModeFromCli || '(default)');
@@ -2301,7 +2301,7 @@ function createPlainReporter(options = {}) {
         status === 'NC' ||
         status === 'NA'
       ) {
-        line('RGAA score (temp):', formatTempScore(tempCounts));
+        line('Temp score (C/(C+NC)):', formatTempScore(tempCounts));
       }
     },
 
