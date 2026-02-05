@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import readline from 'node:readline';
+import * as tty from 'node:tty';
 import chalk from 'chalk';
 import boxen from 'boxen';
 import gradientString from 'gradient-string';
@@ -34,6 +35,34 @@ const promptPalette = {
 
 function isFancyTTY() {
   return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
+}
+
+function getHotkeyInput() {
+  if (process.stdin.isTTY) {
+    return { input: process.stdin, cleanup: () => {} };
+  }
+  const ttyPath = process.platform === 'win32' ? 'CONIN$' : '/dev/tty';
+  try {
+    const fd = fs.openSync(ttyPath, 'r');
+    const input = new tty.ReadStream(fd);
+    const cleanup = () => {
+      try {
+        if (typeof input.setRawMode === 'function') input.setRawMode(false);
+      } catch {}
+      try {
+        input.pause();
+      } catch {}
+      try {
+        input.destroy();
+      } catch {}
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    };
+    return { input, cleanup };
+  } catch {
+    return { input: null, cleanup: () => {} };
+  }
 }
 
 function installOutputErrorHandlers() {
@@ -1502,13 +1531,15 @@ async function main() {
     });
   }
 
-  if (interactive && process.stdin.isTTY) {
-    readline.emitKeypressEvents(process.stdin);
-    if (typeof process.stdin.setRawMode === 'function') {
-      process.stdin.setRawMode(true);
+  const hotkey = getHotkeyInput();
+  if (process.stdout.isTTY && hotkey.input) {
+    const input = hotkey.input;
+    readline.emitKeypressEvents(input);
+    if (typeof input.setRawMode === 'function') {
+      input.setRawMode(true);
     }
-    process.stdin.setEncoding('utf8');
-    process.stdin.resume();
+    input.setEncoding('utf8');
+    input.resume();
     let lastKeyAt = 0;
     const handleKey = (name) => {
       if (name === 'p') pauseController.pause();
@@ -1533,15 +1564,16 @@ async function main() {
         handleKey(ch.toLowerCase());
       }
     };
-    process.stdin.on('keypress', keyHandler);
-    process.stdin.on('data', dataHandler);
+    input.on('keypress', keyHandler);
+    input.on('data', dataHandler);
     process.on('exit', () => {
-      process.stdin.off('keypress', keyHandler);
-      process.stdin.off('data', dataHandler);
-      if (typeof process.stdin.setRawMode === 'function') {
-        process.stdin.setRawMode(false);
+      input.off('keypress', keyHandler);
+      input.off('data', dataHandler);
+      if (typeof input.setRawMode === 'function') {
+        input.setRawMode(false);
       }
-      process.stdin.pause();
+      input.pause();
+      hotkey.cleanup();
     });
   }
 
