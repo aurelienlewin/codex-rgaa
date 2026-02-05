@@ -1408,20 +1408,10 @@ async function main() {
       chromePath: argv['chrome-path'],
       port: argv['chrome-port'],
       userDataDir: chromeProfileDir,
-      initialUrl: pages[0]
+      initialUrl: inspectUrl
     });
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
-    autoLaunchOpenedInitial = await ensureDevtoolsPage({
-      browserUrl: mcpBrowserUrlArg,
-      url: pages[0],
-      activate: true
-    });
-    await ensureDevtoolsPage({
-      browserUrl: mcpBrowserUrlArg,
-      url: inspectUrl,
-      activate: false
-    });
     await promptContinue('Chrome is ready. Open your tabs in this window now.', {
       title: 'Chrome Ready'
     });
@@ -1519,7 +1509,16 @@ async function main() {
   }
 
   if (autoLaunchActive && !autoLaunchOpenedInitial) {
-    await openDevtoolsNewPage({ browserUrl: mcpBrowserUrl, url: pages[0] });
+    await ensureDevtoolsPage({
+      browserUrl: mcpBrowserUrl,
+      url: inspectUrl,
+      activate: true
+    });
+    autoLaunchOpenedInitial = await ensureDevtoolsPage({
+      browserUrl: mcpBrowserUrl,
+      url: pages[0],
+      activate: false
+    });
   }
 
   const skipListPagesDefault = pages.length > 0 || Number.isFinite(mcpPageIdArg);
