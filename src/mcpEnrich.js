@@ -99,10 +99,10 @@ function buildPrompt({ url, pageId, paths, cachedPages, skipListPages }) {
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `- select_page ${pageId}.`
       : normalizedCachedPages
-        ? '- Use the provided CACHED_PAGES list (do not call list_pages); select the page matching the URL with the lowest id; otherwise navigate_page to the URL.'
+        ? '- Use the provided CACHED_PAGES list (do not call list_pages); select the first page matching the URL in the given order; otherwise navigate_page to the URL.'
         : skipList
           ? '- Do not call list_pages; navigate_page directly to the URL.'
-          : '- list_pages; if a page matches the URL, select the one with the lowest id; otherwise navigate_page to the URL.',
+          : '- list_pages; if a page matches the URL, select the first in the returned order; otherwise navigate_page to the URL.',
     `2) Verify location.href matches the target (${targetLabel}); if not, navigate_page.`,
     '3) Collect evidence:',
     `- take_screenshot fullPage=true to "${paths.screenshot1}".`,

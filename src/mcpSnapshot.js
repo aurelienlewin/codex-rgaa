@@ -149,10 +149,10 @@ function buildPrompt({ url, pageId, cachedPages, skipListPages } = {}) {
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `- Sélectionne la page ${pageId} avec select_page.`
       : normalizedCachedPages
-        ? '- Utilise la liste CACHED_PAGES fournie (sans appeler list_pages); sélectionne la page qui correspond à l’URL avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.'
+        ? "- Utilise la liste CACHED_PAGES fournie (sans appeler list_pages); sélectionne la première page qui correspond à l’URL en respectant l’ordre fourni; sinon navigue vers l’URL avec navigate_page."
         : skipList
           ? '- N’appelle pas list_pages; navigue directement vers l’URL avec navigate_page.'
-          : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne celle avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.',
+          : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne la première dans l’ordre retourné; sinon navigue vers l’URL avec navigate_page.',
     `2) Vérifie que location.href correspond bien à la cible (${targetLabel}); si besoin navigue vers l’URL.`,
     '3) Exécute la fonction JS fournie via evaluate_script pour attendre le chargement et collecter le snapshot.',
     '4) Réponds uniquement avec le JSON retourné (pas de texte supplémentaire).',
