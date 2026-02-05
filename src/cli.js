@@ -18,7 +18,7 @@ import { createReporter, renderPromptFrame, chromeAutomationWarningLines } from 
 import { getI18n } from './i18n.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
-import { listMcpPages } from './mcpSnapshot.js';
+import { listMcpPages, navigateMcpToUrl } from './mcpSnapshot.js';
 
 let lastShutdownSignal = null;
 const fancyPromptState = { introShown: false };
@@ -233,84 +233,71 @@ async function waitForCdpReady({ port, timeoutMs = 6000 } = {}) {
   throw new Error(`Chrome launched but DevTools endpoint was not reachable on port ${port}.`);
 }
 
-async function openDevtoolsNewPage({ browserUrl, url, activate = true } = {}) {
+async function forceNavigateFirstPage({ browserUrl, url, timeoutMs = 6000 } = {}) {
   const target = String(url || '').trim();
-  if (!target || !/^https?:\/\//i.test(target)) return;
-  const base = String(browserUrl || '').trim().replace(/\/$/, '');
-  if (!base) return;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1000);
-    const res = await fetch(`${base}/json/new?${encodeURIComponent(target)}`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (res && res.ok) {
-      const created = await res.json().catch(() => null);
-      const id = created?.id;
-      if (id && activate) {
-        const activateController = new AbortController();
-        const activateTimeout = setTimeout(() => activateController.abort(), 1000);
-        await fetch(`${base}/json/activate/${id}`, { signal: activateController.signal });
-        clearTimeout(activateTimeout);
-      }
-    }
-  } catch {}
-}
-
-function normalizeUrlForCompare(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  try {
-    const parsed = new URL(raw);
-    parsed.hash = '';
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return raw.replace(/\/$/, '');
-  }
-}
-
-async function ensureDevtoolsPage({ browserUrl, url, activate = true } = {}) {
-  const target = String(url || '').trim();
+  if (!target) return false;
   const isHttp = /^https?:\/\//i.test(target);
   const isChrome = /^chrome:\/\//i.test(target);
-  if (!target || (!isHttp && !isChrome)) return false;
+  if (!isHttp && !isChrome) return false;
   const base = String(browserUrl || '').trim().replace(/\/$/, '');
   if (!base) return false;
-  const normalizedTarget = normalizeUrlForCompare(target);
   try {
     const listController = new AbortController();
     const listTimeout = setTimeout(() => listController.abort(), 1000);
     const listRes = await fetch(`${base}/json/list`, { signal: listController.signal });
     clearTimeout(listTimeout);
-    if (listRes && listRes.ok) {
-      const list = await listRes.json().catch(() => null);
-      if (Array.isArray(list)) {
-        const match = list.find((entry) => normalizeUrlForCompare(entry?.url) === normalizedTarget);
-        if (match?.id) {
-          if (!activate) return true;
-          const activateController = new AbortController();
-          const activateTimeout = setTimeout(() => activateController.abort(), 1000);
-          await fetch(`${base}/json/activate/${match.id}`, { signal: activateController.signal });
-          clearTimeout(activateTimeout);
-          return true;
-        }
-      }
-    }
+    if (!listRes || !listRes.ok) return false;
+    const list = await listRes.json().catch(() => null);
+    if (!Array.isArray(list) || list.length === 0) return false;
+    const page = list.find((entry) => entry?.type === 'page') || list[0];
+    const wsUrl = page?.webSocketDebuggerUrl;
+    if (!wsUrl || typeof WebSocket !== 'function') return false;
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const ok = await new Promise((resolve) => {
+      const socket = new WebSocket(wsUrl);
+      let done = false;
+      let nextId = 1;
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        try {
+          socket.close();
+        } catch {}
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify({ id: nextId++, method: 'Page.enable' }));
+        socket.send(JSON.stringify({ id: nextId++, method: 'Page.navigate', params: { url: target } }));
+      });
+      socket.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data?.method === 'Page.loadEventFired' || data?.id === 2) {
+            clearTimeout(timer);
+            finish(true);
+          }
+        } catch {}
+      });
+      socket.addEventListener('error', () => {
+        clearTimeout(timer);
+        finish(false);
+      });
+    });
+    return ok;
   } catch {}
-  if (isHttp) {
-    await openDevtoolsNewPage({ browserUrl: base, url: target, activate });
-    return true;
-  }
-  return true;
+  return false;
 }
 
 async function launchChromeForGuided({ chromePath, port, userDataDir, initialUrl } = {}) {
   const rawInitial = String(initialUrl || '').trim();
   const isHttp = /^https?:\/\//i.test(rawInitial);
   const isChrome = /^chrome:\/\//i.test(rawInitial);
-  const startingUrl = isHttp ? rawInitial : 'about:blank';
+  const startingUrl = 'about:blank';
   const chromeFlags = buildChromeFlagsForGuided({
     userDataDir,
-    appUrl: isChrome ? rawInitial : ''
+    appUrl: isHttp || isChrome ? rawInitial : ''
   });
   const launch = async (p) =>
     chromeLauncher.launch({
@@ -1391,6 +1378,11 @@ async function main() {
       )
     : undefined;
   let launchedChrome = null;
+  if (interactive && guided && autoLaunchPlanned && pages.length === 0) {
+    const promptResult = await promptPages({ tabs: [], guided });
+    pages = promptResult.urls;
+  }
+
   if (interactive && guided && autoLaunchPlanned) {
     const i18n = getI18n(reportLang);
     const warningLines = chromeAutomationWarningLines({
@@ -1408,10 +1400,14 @@ async function main() {
       chromePath: argv['chrome-path'],
       port: argv['chrome-port'],
       userDataDir: chromeProfileDir,
-      initialUrl: inspectUrl
+      initialUrl: 'about:blank'
     });
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
+    autoLaunchOpenedInitial = await forceNavigateFirstPage({
+      browserUrl: mcpBrowserUrlArg,
+      url: inspectUrl
+    });
     await promptContinue('Chrome is ready. Open your tabs in this window now.', {
       title: 'Chrome Ready'
     });
@@ -1509,16 +1505,24 @@ async function main() {
   }
 
   if (autoLaunchActive && !autoLaunchOpenedInitial) {
-    await ensureDevtoolsPage({
-      browserUrl: mcpBrowserUrl,
-      url: inspectUrl,
-      activate: true
-    });
-    autoLaunchOpenedInitial = await ensureDevtoolsPage({
-      browserUrl: mcpBrowserUrl,
-      url: pages[0],
-      activate: false
-    });
+    try {
+      const result = await navigateMcpToUrl({
+        url: pages[0],
+        model: argv['codex-model'],
+        mcp: {
+          browserUrl: mcpBrowserUrl,
+          autoConnect: false,
+          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
+        }
+      });
+      autoLaunchOpenedInitial = Boolean(result?.ok);
+    } catch {}
+    if (!autoLaunchOpenedInitial) {
+      autoLaunchOpenedInitial = await forceNavigateFirstPage({
+        browserUrl: mcpBrowserUrl,
+        url: pages[0]
+      });
+    }
   }
 
   const skipListPagesDefault = pages.length > 0 || Number.isFinite(mcpPageIdArg);
