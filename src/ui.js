@@ -44,6 +44,8 @@ function bumpTempCounts(counts, statusLabel) {
     counts.C += 1;
   } else if (label === 'Not conform' || label === 'NC') {
     counts.NC += 1;
+  } else if (label === 'Non applicable' || label === 'NA') {
+    counts.NA += 1;
   }
 }
 
@@ -694,7 +696,7 @@ function createFancyReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
-  const tempCounts = { C: 0, NC: 0 };
+  const tempCounts = { C: 0, NC: 0, NA: 0 };
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageStartAt = 0;
@@ -2099,7 +2101,7 @@ function createPlainReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
-  const tempCounts = { C: 0, NC: 0 };
+  const tempCounts = { C: 0, NC: 0, NA: 0 };
   let currentPageIndex = -1;
   let lastAILog = '';
   let lastAILogAt = 0;
@@ -2291,7 +2293,14 @@ function createPlainReporter(options = {}) {
       overallDone += 1;
       pageDone += 1;
       line(i18n.t('Result:', 'Result:'), `${criterion.id} ${status}${rationale}`);
-      if (status === 'Conform' || status === 'Not conform' || status === 'C' || status === 'NC') {
+      if (
+        status === 'Conform' ||
+        status === 'Not conform' ||
+        status === 'Non applicable' ||
+        status === 'C' ||
+        status === 'NC' ||
+        status === 'NA'
+      ) {
         line('RGAA score (temp):', formatTempScore(tempCounts));
       }
     },
