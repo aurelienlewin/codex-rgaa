@@ -943,7 +943,6 @@ function createFancyReporter(options = {}) {
           )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
-      `${padVisibleRight(palette.muted('RGAA'), 8)} ${palette.accent(formatTempScore(tempCounts))}`,
       `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted(
         showHelp ? 'p pause • r resume • h hide help' : 'p pause • r resume • h help'
       )}`,
