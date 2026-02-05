@@ -753,7 +753,9 @@ function createFancyReporter(options = {}) {
   let ticking = false;
   let resizeHandler = null;
   let exitHandler = null;
-  let elapsedTimer = null;
+  let animTimer = null;
+  let clockTimer = null;
+  let clockNow = nowMs();
 
   let totalCriteria = 0;
   let totalPages = 0;
@@ -785,6 +787,12 @@ function createFancyReporter(options = {}) {
   const uiTickRaw = Number(process.env.AUDIT_UI_TICK_MS || '');
   const uiTickMs =
     Number.isFinite(uiTickRaw) && uiTickRaw >= 60 ? Math.floor(uiTickRaw) : 750;
+  const animTickRaw = Number(process.env.AUDIT_UI_ANIM_MS || '');
+  const animTickMs =
+    Number.isFinite(animTickRaw) && animTickRaw >= 40 ? Math.floor(animTickRaw) : uiTickMs;
+  const clockTickRaw = Number(process.env.AUDIT_UI_CLOCK_MS || '');
+  const clockTickMs =
+    Number.isFinite(clockTickRaw) && clockTickRaw >= 250 ? Math.floor(clockTickRaw) : 1000;
   let showHelp = false;
   let currentCriterion = null;
   let secondPassActive = false;
@@ -805,6 +813,15 @@ function createFancyReporter(options = {}) {
   const humanizeKinds = new Set(['progress', 'stage', 'thinking']);
   const placeholderLine = i18n.t('Working…', 'Working…');
   const reasoningPlaceholder = i18n.t('detecting…', 'detecting…');
+  const pulseGlyphs = ['·', '•', '●', '•'];
+  const pulseColors = [palette.muted, palette.primary, palette.accent, palette.primary];
+  const hasAnimatedParts = () => {
+    if (isPaused) return false;
+    if (feed.length > 0) return true;
+    if (auditStartAt) return true;
+    if (secondPassActive) return true;
+    return false;
+  };
   const pendingLabel = (kind, normalized) => {
     const cleaned = clipInline(String(normalized || '').trim(), 120);
     if (cleaned) return cleaned;
@@ -818,7 +835,7 @@ function createFancyReporter(options = {}) {
     const base = humanizeKinds.has(kind) ? pendingLabel(kind, normalized) : normalized;
     const cleaned = clipInline(base, 320);
     if (!cleaned) return;
-    if (kind === 'progress') frame = frame ? 0 : 1;
+    if (kind === 'progress') frame = (frame + 1) % pulseGlyphs.length;
     const shouldHumanize = humanizeKinds.has(kind);
     const initialMessage = shouldHumanize && humanizeEnabled ? pendingLabel(kind, normalized) : normalized;
     const initialStatus = shouldHumanize ? (humanizeEnabled ? 'pending' : 'failed') : 'n/a';
@@ -885,12 +902,20 @@ function createFancyReporter(options = {}) {
     exitHandler = () => renderer.stop({ keepBlock: true });
     process.on('exit', exitHandler);
     process.stdout?.on?.('resize', resizeHandler);
-    elapsedTimer = setInterval(() => {
+    animTimer = setInterval(() => {
       if (!process.stdout.isTTY) return;
-      frame = frame ? 0 : 1;
-      scheduleRender();
-    }, uiTickMs);
-    if (typeof elapsedTimer.unref === 'function') elapsedTimer.unref();
+      frame = (frame + 1) % pulseGlyphs.length;
+      if (!hasAnimatedParts()) return;
+      scheduleRender({ refreshTime: false });
+    }, animTickMs);
+    clockTimer = setInterval(() => {
+      if (!process.stdout.isTTY) return;
+      clockNow = nowMs();
+      if (!hasAnimatedParts()) return;
+      scheduleRender({ refreshTime: false });
+    }, clockTickMs);
+    if (typeof animTimer.unref === 'function') animTimer.unref();
+    if (typeof clockTimer.unref === 'function') clockTimer.unref();
   };
 
   const stopTicking = () => {
@@ -898,10 +923,12 @@ function createFancyReporter(options = {}) {
     ticking = false;
     if (resizeHandler) process.stdout?.off?.('resize', resizeHandler);
     if (exitHandler) process.off?.('exit', exitHandler);
-    if (elapsedTimer) clearInterval(elapsedTimer);
+    if (animTimer) clearInterval(animTimer);
+    if (clockTimer) clearInterval(clockTimer);
     resizeHandler = null;
     exitHandler = null;
-    elapsedTimer = null;
+    animTimer = null;
+    clockTimer = null;
     feedHumanizer.stop();
   };
 
@@ -958,7 +985,7 @@ function createFancyReporter(options = {}) {
     const pagePct = totalCriteria ? Math.round((pageDone / totalCriteria) * 100) : 0;
     const pageLabel = totalPages ? `${Math.max(0, currentPageIndex + 1)}/${totalPages}` : '-/-';
 
-    const elapsed = auditStartAt ? formatElapsed(nowMs() - auditStartAt) : '';
+    const elapsed = auditStartAt ? formatElapsed(clockNow - auditStartAt) : '';
 
     const urlLine = currentUrl ? clipInline(currentUrl, width - 18) : '';
     const criterionLine = currentCriterion
@@ -1017,7 +1044,7 @@ function createFancyReporter(options = {}) {
               'Pause cancels in-flight AI/MCP calls and retries on resume.'
             )}`,
             `${padVisibleRight(palette.muted('Help'), 8)} ${palette.muted(
-              'Set AUDIT_UI_TICK_MS to adjust animation refresh rate.'
+              'Set AUDIT_UI_ANIM_MS to adjust animation speed.'
             )}`
           ]
         : []),
@@ -1026,7 +1053,7 @@ function createFancyReporter(options = {}) {
         : '',
       elapsed
         ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)} ${palette.muted(
-            frame ? '•' : '·'
+            pulseGlyphs[frame] || '·'
           )}`
         : ''
     ].filter(Boolean);
@@ -1040,7 +1067,7 @@ function createFancyReporter(options = {}) {
       `${palette.muted(padVisibleRight('Update', msgW))}`;
 
     const feedLines = [feedHeader, palette.muted('─'.repeat(Math.min(width - 2, visibleLen(feedHeader))))];
-    const now = nowMs();
+    const now = clockNow;
     const formatAge = (at) => {
       const s = Math.max(0, Math.round((now - at) / 1000));
       const mm = String(Math.floor(s / 60)).padStart(2, '0');
@@ -1057,8 +1084,7 @@ function createFancyReporter(options = {}) {
       if (kind === 'page') return '▣';
       return '•';
     };
-    const pulseOn = frame % 2 === 0;
-    const pulseColor = pulseOn ? palette.accent : palette.primary;
+    const pulseColor = pulseColors[frame] || palette.primary;
     const visibleFeed = feed.slice(-feedMax);
     for (let i = 0; i < visibleFeed.length; i += 1) {
       const row = visibleFeed[i];
@@ -1122,7 +1148,7 @@ function createFancyReporter(options = {}) {
                 )}`,
                 secondPassStartedAt
                   ? `${palette.muted('Elapsed')} ${palette.accent(
-                      formatElapsed(nowMs() - secondPassStartedAt)
+                      formatElapsed(clockNow - secondPassStartedAt)
                     )}`
                   : ''
               ].filter(Boolean),
@@ -1158,9 +1184,10 @@ function createFancyReporter(options = {}) {
     renderer.render(panels.join('\n'));
   };
 
-  const scheduleRender = () => {
+  const scheduleRender = ({ refreshTime = true } = {}) => {
     if (!process.stdout.isTTY) return;
     if (renderQueued) return;
+    if (refreshTime) clockNow = nowMs();
     renderQueued = true;
     setImmediate(() => {
       renderQueued = false;
@@ -2430,7 +2457,7 @@ function createPlainReporter(options = {}) {
       if (!helpVisible) return;
       line('Help:', 'Press h to hide help.');
       line('Pause:', 'Cancels in-flight AI/MCP calls and retries on resume.');
-      line('UI tick:', 'Set AUDIT_UI_TICK_MS to adjust animation refresh rate.');
+      line('UI anim:', 'Set AUDIT_UI_ANIM_MS to adjust animation speed.');
     },
 
     onPageEnd({ index, url, counts }) {

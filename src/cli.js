@@ -38,14 +38,17 @@ function isFancyTTY() {
 }
 
 function getHotkeyInput() {
+  const inputs = [];
+  const cleanups = [];
   if (process.stdin.isTTY) {
-    return { input: process.stdin, cleanup: () => {} };
+    inputs.push(process.stdin);
   }
   const ttyPath = process.platform === 'win32' ? 'CONIN$' : '/dev/tty';
   try {
     const fd = fs.openSync(ttyPath, 'r');
     const input = new tty.ReadStream(fd);
-    const cleanup = () => {
+    inputs.push(input);
+    cleanups.push(() => {
       try {
         if (typeof input.setRawMode === 'function') input.setRawMode(false);
       } catch {}
@@ -58,11 +61,19 @@ function getHotkeyInput() {
       try {
         fs.closeSync(fd);
       } catch {}
-    };
-    return { input, cleanup };
-  } catch {
-    return { input: null, cleanup: () => {} };
-  }
+    });
+  } catch {}
+  const unique = Array.from(new Set(inputs));
+  return {
+    inputs: unique,
+    cleanup: () => {
+      for (const fn of cleanups) {
+        try {
+          fn();
+        } catch {}
+      }
+    }
+  };
 }
 
 function installOutputErrorHandlers() {
@@ -1595,14 +1606,7 @@ async function main() {
   }
 
   const hotkey = getHotkeyInput();
-  if (process.stdout.isTTY && hotkey.input) {
-    const input = hotkey.input;
-    readline.emitKeypressEvents(input);
-    if (typeof input.setRawMode === 'function') {
-      input.setRawMode(true);
-    }
-    input.setEncoding('utf8');
-    input.resume();
+  if (process.stdout.isTTY && hotkey.inputs.length) {
     let lastKeyAt = 0;
     const handleKey = (name) => {
       if (name === 'p') pauseController.pause();
@@ -1627,15 +1631,25 @@ async function main() {
         handleKey(ch.toLowerCase());
       }
     };
-    input.on('keypress', keyHandler);
-    input.on('data', dataHandler);
-    process.on('exit', () => {
-      input.off('keypress', keyHandler);
-      input.off('data', dataHandler);
+    for (const input of hotkey.inputs) {
+      readline.emitKeypressEvents(input);
       if (typeof input.setRawMode === 'function') {
-        input.setRawMode(false);
+        input.setRawMode(true);
       }
-      input.pause();
+      input.setEncoding('utf8');
+      input.resume();
+      input.on('keypress', keyHandler);
+      input.on('data', dataHandler);
+    }
+    process.on('exit', () => {
+      for (const input of hotkey.inputs) {
+        input.off('keypress', keyHandler);
+        input.off('data', dataHandler);
+        if (typeof input.setRawMode === 'function') {
+          input.setRawMode(false);
+        }
+        input.pause();
+      }
       hotkey.cleanup();
     });
   }
