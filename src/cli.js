@@ -1408,19 +1408,19 @@ async function main() {
       chromePath: argv['chrome-path'],
       port: argv['chrome-port'],
       userDataDir: chromeProfileDir,
-      initialUrl: inspectUrl
+      initialUrl: pages[0]
     });
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
     autoLaunchOpenedInitial = await ensureDevtoolsPage({
       browserUrl: mcpBrowserUrlArg,
       url: pages[0],
-      activate: false
+      activate: true
     });
     await ensureDevtoolsPage({
       browserUrl: mcpBrowserUrlArg,
       url: inspectUrl,
-      activate: true
+      activate: false
     });
     await promptContinue('Chrome is ready. Open your tabs in this window now.', {
       title: 'Chrome Ready'
