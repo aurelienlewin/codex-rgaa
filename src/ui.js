@@ -29,6 +29,24 @@ function formatPercent(value) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatTempScore({ C, NC } = {}) {
+  const c = Number(C || 0);
+  const nc = Number(NC || 0);
+  const denom = c + nc;
+  if (denom <= 0) return 'n/a';
+  return formatPercent(c / denom);
+}
+
+function bumpTempCounts(counts, statusLabel) {
+  const label = String(statusLabel || '').trim();
+  if (!label) return;
+  if (label === 'Conform' || label === 'C') {
+    counts.C += 1;
+  } else if (label === 'Not conform' || label === 'NC') {
+    counts.NC += 1;
+  }
+}
+
 function formatSecondPassSummary(secondPass = {}) {
   const total = Number(secondPass.total || 0);
   const done = Number(secondPass.done || 0);
@@ -676,6 +694,8 @@ function createFancyReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
+  const tempCounts = { C: 0, NC: 0 };
+  const tempCounts = { C: 0, NC: 0 };
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageStartAt = 0;
@@ -923,6 +943,7 @@ function createFancyReporter(options = {}) {
           )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
+      `${padVisibleRight(palette.muted('RGAA'), 8)} ${palette.accent(formatTempScore(tempCounts))}`,
       `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted(
         showHelp ? 'p pause • r resume • h hide help' : 'p pause • r resume • h help'
       )}`,
@@ -1130,7 +1151,7 @@ function createFancyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const reasoningLabel = `Codex reasoning: ${codexReasoning || 'detecting…'}`;
+      const reasoningLabel = `RGAA score (temp): ${formatTempScore(tempCounts)}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
@@ -1295,12 +1316,6 @@ function createFancyReporter(options = {}) {
 
     onAIStage({ label, criterion }) {
       if (!label || isNoiseAiMessage(label)) return;
-      const reasoning = extractCodexReasoning(label);
-      if (reasoning && reasoning !== codexReasoning) {
-        codexReasoning = reasoning;
-      } else if (!codexReasoning) {
-        codexReasoning = 'n/a';
-      }
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
       if (criterion?.id === 'enrich') {
@@ -1312,12 +1327,6 @@ function createFancyReporter(options = {}) {
     },
 
     onAILog({ message, criterion }) {
-      const reasoning = extractCodexReasoning(message);
-      if (reasoning && reasoning !== codexReasoning) {
-        codexReasoning = reasoning;
-      } else if (!codexReasoning) {
-        codexReasoning = 'n/a';
-      }
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = clipInline(cleaned, 64);
@@ -1346,6 +1355,7 @@ function createFancyReporter(options = {}) {
       const statusLabel = evaluation.status || '';
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 120);
       const rationale = evaluation.ai?.rationale || '';
+      bumpTempCounts(tempCounts, statusLabel);
       overallDone += 1;
       pageDone += 1;
       lastDecision = { status: statusLabel, crit: critText, rationale };
@@ -1688,7 +1698,7 @@ function createLegacyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const reasoningLabel = `Codex reasoning: ${codexReasoning || 'detecting…'}`;
+      const reasoningLabel = `RGAA score (temp): ${formatTempScore(tempCounts)}`;
       const session = boxen(
         `${palette.muted('Session')}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
@@ -1888,18 +1898,6 @@ function createLegacyReporter(options = {}) {
 
     onAIStage({ label }) {
       if (!label || isNoiseAiMessage(label)) return;
-      const reasoning = extractCodexReasoning(label);
-      if (reasoning && reasoning !== codexReasoning) {
-        codexReasoning = reasoning;
-        const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
-        if (typeof bars.log === 'function') bars.log(lineText);
-        else console.log(lineText);
-      } else if (!codexReasoning) {
-        codexReasoning = 'n/a';
-        const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
-        if (typeof bars.log === 'function') bars.log(lineText);
-        else console.log(lineText);
-      }
       startStage(label);
       if (pageBar) pageBar.update(null, { crit: palette.muted(label) });
       pulseOnce();
@@ -1910,18 +1908,6 @@ function createLegacyReporter(options = {}) {
 
     onAILog({ message }) {
       if (!pageBar) return;
-      const reasoning = extractCodexReasoning(message);
-      if (reasoning && reasoning !== codexReasoning) {
-        codexReasoning = reasoning;
-        const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
-        if (typeof bars.log === 'function') bars.log(lineText);
-        else console.log(lineText);
-      } else if (!codexReasoning) {
-        codexReasoning = 'n/a';
-        const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
-        if (typeof bars.log === 'function') bars.log(lineText);
-        else console.log(lineText);
-      }
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = clipInline(cleaned, 64);
@@ -1947,6 +1933,7 @@ function createLegacyReporter(options = {}) {
       if (statusLabel === 'Non applicable') statusColor = palette.muted;
       if (statusLabel === 'Review') statusColor = palette.review;
       if (statusLabel === 'Error') statusColor = palette.error;
+      bumpTempCounts(tempCounts, statusLabel);
 
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 56);
       const rationale = evaluation.ai?.rationale || '';
@@ -2125,6 +2112,7 @@ function createPlainReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
+  const tempCounts = { C: 0, NC: 0 };
   let currentPageIndex = -1;
   let lastAILog = '';
   let lastAILogAt = 0;
@@ -2168,7 +2156,7 @@ function createPlainReporter(options = {}) {
       auditStartAt = nowMs();
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
-      line('Codex reasoning:', codexReasoning || '(detecting…)');
+      line('RGAA score (temp):', formatTempScore(tempCounts));
       line('Keys:', 'p pause • r resume • h help');
       if (resumePath) line('Resume file:', resumePath);
       line('MCP mode:', mcpModeFromCli || '(default)');
@@ -2283,14 +2271,6 @@ function createPlainReporter(options = {}) {
       if (label && !isNoiseAiMessage(label)) {
         const normalized = sanitizeStatusLine(label);
         line('Codex', normalized);
-        const reasoning = extractCodexReasoning(label);
-        if (reasoning && reasoning !== codexReasoning) {
-          codexReasoning = reasoning;
-          line('Codex reasoning:', codexReasoning);
-        } else if (!codexReasoning) {
-          codexReasoning = 'n/a';
-          line('Codex reasoning:', codexReasoning);
-        }
         feedHumanizer.request({
           kind: 'stage',
           text: normalized,
@@ -2300,14 +2280,6 @@ function createPlainReporter(options = {}) {
     },
 
     onAILog({ message }) {
-      const reasoning = extractCodexReasoning(message);
-      if (reasoning && reasoning !== codexReasoning) {
-        codexReasoning = reasoning;
-        line('Codex reasoning:', codexReasoning);
-      } else if (!codexReasoning) {
-        codexReasoning = 'n/a';
-        line('Codex reasoning:', codexReasoning);
-      }
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
       const clipped = clipInline(sanitizeStatusLine(cleaned), 120);
@@ -2332,9 +2304,13 @@ function createPlainReporter(options = {}) {
     onCriterion({ criterion, evaluation }) {
       const status = evaluation.status || '';
       const rationale = evaluation.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
+      bumpTempCounts(tempCounts, status);
       overallDone += 1;
       pageDone += 1;
       line(i18n.t('Result:', 'Result:'), `${criterion.id} ${status}${rationale}`);
+      if (status === 'Conform' || status === 'Not conform' || status === 'C' || status === 'NC') {
+        line('RGAA score (temp):', formatTempScore(tempCounts));
+      }
     },
 
     onCrossPageDecision({ criterion, evaluation }) {

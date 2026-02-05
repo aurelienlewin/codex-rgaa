@@ -288,6 +288,8 @@ You can disable fail-fast with `AUDIT_FAIL_FAST=0` (or `false`/`no`) to continue
 - All remaining criteria are evaluated by the AI reviewer using the collected DOM evidence.
 - Cross-page criteria (e.g., **12.5**) are handled in a **second pass** once all pages have been audited.
 - The UI shows a **Second pass** callout when this happens, indicating the AI is doing extra review work to reduce remaining **Review** items.
+- **Efficiency tip:** auditing multiple tabs in one run helps the second pass reason about the **global storefront** (navigation, global components, and cross‑page patterns). It also avoids re-launching Chrome and speeds up cross‑page analysis.
+- **CDP usage:** snapshotting and evidence collection are performed via Chrome DevTools Protocol (CDP) through the `chrome-devtools-mcp` server (MCP), which drives the browser without page‑injected scripts.
 - Performance note: with `gpt-5.2-codex` on **low reasoning**, expect **up to ~1 hour per page** on a **2019 MacBook Pro (Intel, 6 cores)**.
 - If the evidence is insufficient, the AI returns **Not conform** and notes what is missing.
 - If the audit tool encounters a technical failure (page load/snapshot/AI runner), the criterion is marked **Error**.
