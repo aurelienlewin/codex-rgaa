@@ -200,8 +200,23 @@ async function waitForCdpReady({ port, timeoutMs = 6000 } = {}) {
   throw new Error(`Chrome launched but DevTools endpoint was not reachable on port ${port}.`);
 }
 
-async function launchChromeForGuided({ chromePath, port, userDataDir } = {}) {
-  const startingUrl = 'chrome://inspect/#remote-debugging';
+async function openDevtoolsNewPage({ browserUrl, url } = {}) {
+  const target = String(url || '').trim();
+  if (!target || !/^https?:\/\//i.test(target)) return;
+  const base = String(browserUrl || '').trim().replace(/\/$/, '');
+  if (!base) return;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+    await fetch(`${base}/json/new?${encodeURIComponent(target)}`, { signal: controller.signal });
+    clearTimeout(timeout);
+  } catch {}
+}
+
+async function launchChromeForGuided({ chromePath, port, userDataDir, initialUrl } = {}) {
+  const startingUrl = /^https?:\/\//i.test(String(initialUrl || ''))
+    ? String(initialUrl).trim()
+    : 'about:blank';
   const chromeFlags = buildChromeFlagsForGuided({ userDataDir });
   const launch = async (p) =>
     chromeLauncher.launch({
@@ -1187,6 +1202,7 @@ async function main() {
       ? argv['auto-launch-chrome']
       : parseEnvBool(process.env.AUDIT_AUTO_LAUNCH_CHROME, guided);
   let autoLaunchPlanned = false;
+  let autoLaunchOpenedInitial = false;
 
   if (interactive && guided) {
     if (!reportLangExplicit) {
@@ -1282,8 +1298,10 @@ async function main() {
     launchedChrome = await launchChromeForGuided({
       chromePath: argv['chrome-path'],
       port: argv['chrome-port'],
-      userDataDir: chromeProfileDir
+      userDataDir: chromeProfileDir,
+      initialUrl: pages[0]
     });
+    autoLaunchOpenedInitial = /^https?:\/\//i.test(String(pages[0] || '').trim());
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
     await promptContinue('Chrome is ready. Open your tabs in this window now.', {
@@ -1380,6 +1398,10 @@ async function main() {
   if (pages.length === 0) {
     console.error('No pages provided.');
     process.exit(1);
+  }
+
+  if (autoLaunchActive && !autoLaunchOpenedInitial) {
+    await openDevtoolsNewPage({ browserUrl: mcpBrowserUrl, url: pages[0] });
   }
 
   const skipListPagesDefault = pages.length > 0 || Number.isFinite(mcpPageIdArg);
