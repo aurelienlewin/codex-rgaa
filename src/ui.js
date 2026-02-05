@@ -1036,7 +1036,6 @@ function createFancyReporter(options = {}) {
       }
     }
 
-    const chromeWarning = chromeAutomationWarningLines({ i18n, mcpMode });
     const panels = [
       ...(secondPassActive
         ? [
@@ -1072,16 +1071,6 @@ function createFancyReporter(options = {}) {
         width,
         borderColor: palette.muted
       }),
-      ...(chromeWarning
-        ? [
-            drawPanel({
-              title: i18n.t('Chrome permissions', 'Chrome permissions'),
-              lines: chromeWarning,
-              width,
-              borderColor: palette.warn
-            })
-          ]
-        : []),
       drawPanel({
         title: i18n.t('Live feed', 'Live feed'),
         lines: feedLines,
@@ -2159,10 +2148,6 @@ function createPlainReporter(options = {}) {
       if (resumePath) line('Resume file:', resumePath);
       line('MCP mode:', mcpModeFromCli || '(default)');
       line('Snapshot mode:', auditMode);
-      const chromeWarning = chromeAutomationWarningLines({ i18n, mcpMode });
-      if (chromeWarning) {
-        for (const msg of chromeWarning) line(msg);
-      }
       line(i18n.t('Launching Chrome…', 'Launching Chrome…'));
     },
 
