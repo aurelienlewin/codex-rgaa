@@ -686,11 +686,7 @@ export async function runAudit(options) {
       throw createAbortError();
     }
     if (reporter && reporter.onChromeReady) reporter.onChromeReady();
-    if (
-      mcpConfig &&
-      !mcpConfig?.pageId &&
-      (!Array.isArray(mcpConfig?.cachedPages) || mcpConfig.cachedPages.length === 0)
-    ) {
+    if (mcpConfig && !mcpConfig?.pageId && !Array.isArray(mcpConfig?.cachedPages)) {
       try {
         const list = await listMcpPages({
           model: options.ai?.model,
@@ -699,10 +695,13 @@ export async function runAudit(options) {
           onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
           signal
         });
-        if (Array.isArray(list?.pages) && list.pages.length) {
+        if (Array.isArray(list?.pages)) {
           mcpConfig.cachedPages = list.pages;
+        } else {
+          mcpConfig.cachedPages = [];
         }
       } catch (err) {
+        mcpConfig.cachedPages = [];
         reporter?.onAILog?.({
           criterion: { id: 'snapshot', title: 'MCP', theme: 'Debug' },
           message: `Cached list_pages failed: ${String(err?.message || err)}`

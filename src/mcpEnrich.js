@@ -76,7 +76,7 @@ function normalizeCachedPages(pages, maxEntries) {
   return trimmed.slice(0, maxEntries);
 }
 
-function buildPrompt({ url, pageId, paths, cachedPages }) {
+function buildPrompt({ url, pageId, paths, cachedPages, skipListPages }) {
   const htmlMaxRaw = Number(process.env.AUDIT_ENRICH_HTML_MAX || '');
   const htmlMax =
     Number.isFinite(htmlMaxRaw) && htmlMaxRaw > 0 ? Math.floor(htmlMaxRaw) : 20000;
@@ -84,6 +84,7 @@ function buildPrompt({ url, pageId, paths, cachedPages }) {
   const cachedMax =
     Number.isFinite(cachedMaxRaw) && cachedMaxRaw > 0 ? Math.floor(cachedMaxRaw) : 60;
   const normalizedCachedPages = normalizeCachedPages(cachedPages, cachedMax);
+  const skipList = Boolean(skipListPages);
   const targetLabel =
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `page id ${pageId}`
@@ -99,7 +100,9 @@ function buildPrompt({ url, pageId, paths, cachedPages }) {
       ? `- select_page ${pageId}.`
       : normalizedCachedPages
         ? '- Use the provided CACHED_PAGES list (do not call list_pages); select the page matching the URL with the lowest id; otherwise navigate_page to the URL.'
-        : '- list_pages; if a page matches the URL, select the one with the lowest id; otherwise navigate_page to the URL.',
+        : skipList
+          ? '- Do not call list_pages; navigate_page directly to the URL.'
+          : '- list_pages; if a page matches the URL, select the one with the lowest id; otherwise navigate_page to the URL.',
     `2) Verify location.href matches the target (${targetLabel}); if not, navigate_page.`,
     '3) Collect evidence:',
     `- take_screenshot fullPage=true to "${paths.screenshot1}".`,
@@ -300,7 +303,8 @@ async function runCodexEnrich({ url, model, mcp, onLog, onStage, signal }) {
         url,
         pageId: mcp?.pageId,
         paths: { screenshot1, screenshot2 },
-        cachedPages: mcp?.cachedPages
+        cachedPages: mcp?.cachedPages,
+        skipListPages: Boolean(mcp?.skipListPages)
       });
       onStage?.('AI: running MCP enrichment');
       onLog?.('Codex: running MCP enrichment');
@@ -370,14 +374,17 @@ export async function collectEnrichedEvidenceWithMcp({
   if (
     mcp &&
     !mcp?.pageId &&
-    (!Array.isArray(mcp?.cachedPages) || mcp.cachedPages.length === 0)
+    !Array.isArray(mcp?.cachedPages)
   ) {
     try {
       const list = await listMcpPages({ model, mcp, onLog, onStage, signal });
-      if (Array.isArray(list?.pages) && list.pages.length) {
+      if (Array.isArray(list?.pages)) {
         mcp.cachedPages = list.pages;
+      } else {
+        mcp.cachedPages = [];
       }
     } catch (err) {
+      mcp.cachedPages = [];
       onLog?.(`Codex: failed to prefetch MCP list_pages (${err?.message || 'unknown error'})`);
     }
   }

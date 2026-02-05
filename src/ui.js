@@ -108,12 +108,29 @@ function normalizeAiMessage(text) {
     .trim();
 }
 
+function normalizeReasoningValue(value) {
+  const cleaned = String(value || '').trim().toLowerCase();
+  if (!cleaned) return '';
+  const allowed = new Set(['low', 'medium', 'high', 'auto', 'minimal', 'none']);
+  return allowed.has(cleaned) ? cleaned : '';
+}
+
+function initialReasoningFromEnv() {
+  return normalizeReasoningValue(
+    process.env.AUDIT_CODEX_REASONING ||
+      process.env.CODEX_REASONING ||
+      process.env.OPENAI_REASONING ||
+      process.env.OPENAI_REASONING_EFFORT ||
+      ''
+  );
+}
+
 function extractCodexReasoning(text) {
   const cleaned = normalizeAiMessage(text);
   const match = cleaned.match(
-    /\breasoning(?:[_\s-]*(?:level|effort))?\s*[:=]?\s*(low|medium|high)\b/i
+    /\breasoning(?:[_\s-]*(?:level|effort))?\b[^a-z0-9]{0,6}(low|medium|high|auto|minimal|none)\b/i
   );
-  return match ? match[1].toLowerCase() : '';
+  return match ? normalizeReasoningValue(match[1]) : '';
 }
 
 function isNoiseAiMessage(text) {
@@ -176,6 +193,30 @@ function safeMoveCursor(dx, dy) {
   if (outputClosed || !process.stdout.isTTY) return;
   try {
     readline.moveCursor(process.stdout, dx, dy);
+  } catch (err) {
+    if (handleOutputError(err)) return;
+    throw err;
+  }
+}
+
+function safeCursorTo(x, y) {
+  if (outputClosed || !process.stdout.isTTY) return;
+  try {
+    if (typeof y === 'number') {
+      readline.cursorTo(process.stdout, x, y);
+    } else {
+      readline.cursorTo(process.stdout, x);
+    }
+  } catch (err) {
+    if (handleOutputError(err)) return;
+    throw err;
+  }
+}
+
+function safeClearLine() {
+  if (outputClosed || !process.stdout.isTTY) return;
+  try {
+    readline.clearLine(process.stdout, 0);
   } catch (err) {
     if (handleOutputError(err)) return;
     throw err;
@@ -523,6 +564,7 @@ function drawPanel({ title, lines, width, borderColor = palette.muted }) {
 
 function createLiveBlockRenderer() {
   let lastLineCount = 0;
+  let lastLines = null;
   let cursorHidden = false;
 
   const hideCursor = () => {
@@ -550,15 +592,50 @@ function createLiveBlockRenderer() {
         safeWrite(`${stripAnsi(block)}\n`);
         return;
       }
+      const lines = String(block).split('\n');
+      const renderFull = () => {
+        hideCursor();
+        clearPrevious();
+        safeWrite(`${block}\n`);
+        lastLineCount = lines.length;
+        lastLines = lines;
+      };
+      if (!lastLines || lastLines.length === 0) {
+        renderFull();
+        return;
+      }
+      if (lines.length !== lastLineCount) {
+        renderFull();
+        return;
+      }
+      const changed = [];
+      for (let i = 0; i < lines.length; i += 1) {
+        if (lines[i] !== lastLines[i]) changed.push(i);
+      }
+      if (!changed.length) return;
       hideCursor();
-      clearPrevious();
-      safeWrite(`${block}\n`);
-      lastLineCount = String(block).split('\n').length;
+      safeMoveCursor(0, -lastLineCount);
+      safeCursorTo(0);
+      let cursorLine = 0;
+      for (const idx of changed) {
+        const delta = idx - cursorLine;
+        if (delta) safeMoveCursor(0, delta);
+        safeCursorTo(0);
+        safeClearLine();
+        safeWrite(lines[idx]);
+        cursorLine = idx;
+      }
+      safeMoveCursor(0, -cursorLine);
+      safeMoveCursor(0, lastLineCount);
+      safeCursorTo(0);
+      lastLineCount = lines.length;
+      lastLines = lines;
     },
     stop({ keepBlock = true } = {}) {
       if (!keepBlock) clearPrevious();
       showCursor();
       lastLineCount = 0;
+      lastLines = null;
     }
   };
 }
@@ -596,7 +673,8 @@ function createFancyReporter(options = {}) {
   let auditStartAt = 0;
   let auditMode = 'mcp';
   let mcpMode = '';
-  let codexReasoning = '';
+  let codexReasoning = initialReasoningFromEnv();
+  let helpVisible = false;
   let enrichmentEnabled = false;
   let enrichmentDone = 0;
   let enrichmentStatus = 'idle';
@@ -612,6 +690,7 @@ function createFancyReporter(options = {}) {
   const uiTickRaw = Number(process.env.AUDIT_UI_TICK_MS || '');
   const uiTickMs =
     Number.isFinite(uiTickRaw) && uiTickRaw >= 60 ? Math.floor(uiTickRaw) : 750;
+  let showHelp = false;
   let currentCriterion = null;
   let secondPassActive = false;
   let secondPassTotal = 0;
@@ -834,7 +913,19 @@ function createFancyReporter(options = {}) {
           )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
       urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
       criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
-      `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted('p pause • r resume')}`,
+      `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted(
+        showHelp ? 'p pause • r resume • h hide help' : 'p pause • r resume • h help'
+      )}`,
+      ...(showHelp
+        ? [
+            `${padVisibleRight(palette.muted('Help'), 8)} ${palette.muted(
+              'Pause cancels in-flight AI/MCP calls and retries on resume.'
+            )}`,
+            `${padVisibleRight(palette.muted('Help'), 8)} ${palette.muted(
+              'Set AUDIT_UI_TICK_MS to adjust animation refresh rate.'
+            )}`
+          ]
+        : []),
       isPaused
         ? `${padVisibleRight(palette.warn('Status'), 8)} ${palette.warn('paused')}`
         : '',
@@ -1192,6 +1283,8 @@ function createFancyReporter(options = {}) {
       const reasoning = extractCodexReasoning(label);
       if (reasoning && reasoning !== codexReasoning) {
         codexReasoning = reasoning;
+      } else if (!codexReasoning) {
+        codexReasoning = 'n/a';
       }
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
@@ -1207,6 +1300,8 @@ function createFancyReporter(options = {}) {
       const reasoning = extractCodexReasoning(message);
       if (reasoning && reasoning !== codexReasoning) {
         codexReasoning = reasoning;
+      } else if (!codexReasoning) {
+        codexReasoning = 'n/a';
       }
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
       if (!cleaned || isNoiseAiMessage(cleaned)) return;
@@ -1295,6 +1390,11 @@ function createFancyReporter(options = {}) {
       if (!secondPassActive) secondPassNotice = '';
       if (!secondPassActive) secondPassStartedAt = 0;
       pushFeed('stage', i18n.t('Second-pass checks complete.', 'Second-pass checks complete.'));
+      scheduleRender();
+    },
+
+    onHelpToggle() {
+      showHelp = !showHelp;
       scheduleRender();
     },
 
@@ -1462,7 +1562,7 @@ function createLegacyReporter(options = {}) {
   let pageDone = 0;
   let lastAILog = '';
   let lastAILogAt = 0;
-  let codexReasoning = '';
+  let codexReasoning = initialReasoningFromEnv();
   let enrichmentEnabled = false;
   let enrichmentDone = 0;
   const aiLogRepeatRaw = Number(process.env.AUDIT_AI_LOG_REPEAT_MS || '');
@@ -1772,6 +1872,11 @@ function createLegacyReporter(options = {}) {
         const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
         if (typeof bars.log === 'function') bars.log(lineText);
         else console.log(lineText);
+      } else if (!codexReasoning) {
+        codexReasoning = 'n/a';
+        const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
+        if (typeof bars.log === 'function') bars.log(lineText);
+        else console.log(lineText);
       }
       startStage(label);
       if (pageBar) pageBar.update(null, { crit: palette.muted(label) });
@@ -1786,6 +1891,11 @@ function createLegacyReporter(options = {}) {
       const reasoning = extractCodexReasoning(message);
       if (reasoning && reasoning !== codexReasoning) {
         codexReasoning = reasoning;
+        const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
+        if (typeof bars.log === 'function') bars.log(lineText);
+        else console.log(lineText);
+      } else if (!codexReasoning) {
+        codexReasoning = 'n/a';
         const lineText = `${palette.muted('Codex reasoning')} ${palette.accent(codexReasoning)}`;
         if (typeof bars.log === 'function') bars.log(lineText);
         else console.log(lineText);
@@ -2009,6 +2119,9 @@ function createPlainReporter(options = {}) {
   let auditMode = 'mcp';
   let mcpMode = '';
 
+  let codexReasoning = initialReasoningFromEnv();
+  let helpVisible = false;
+
   const line = (label, value = '') =>
     console.log(`${palette.muted(label)}${value ? ` ${value}` : ''}`);
   const logAiFeed = (raw) => {
@@ -2034,7 +2147,7 @@ function createPlainReporter(options = {}) {
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
       line('Codex reasoning:', codexReasoning || '(detecting…)');
-      line('Keys:', 'p pause • r resume');
+      line('Keys:', 'p pause • r resume • h help');
       if (resumePath) line('Resume file:', resumePath);
       line('MCP mode:', mcpModeFromCli || '(default)');
       line('Snapshot mode:', auditMode);
@@ -2152,6 +2265,9 @@ function createPlainReporter(options = {}) {
         if (reasoning && reasoning !== codexReasoning) {
           codexReasoning = reasoning;
           line('Codex reasoning:', codexReasoning);
+        } else if (!codexReasoning) {
+          codexReasoning = 'n/a';
+          line('Codex reasoning:', codexReasoning);
         }
         feedHumanizer.request({
           kind: 'stage',
@@ -2165,6 +2281,9 @@ function createPlainReporter(options = {}) {
       const reasoning = extractCodexReasoning(message);
       if (reasoning && reasoning !== codexReasoning) {
         codexReasoning = reasoning;
+        line('Codex reasoning:', codexReasoning);
+      } else if (!codexReasoning) {
+        codexReasoning = 'n/a';
         line('Codex reasoning:', codexReasoning);
       }
       const cleaned = normalizeAiMessage(message).replace(/\s+/g, ' ').trim();
@@ -2226,6 +2345,14 @@ function createPlainReporter(options = {}) {
       if (Number.isFinite(total) && total > 0) secondPassTotal = total;
       if (Number.isFinite(done)) secondPassDone = done;
       line(i18n.t('Second-pass checks done', 'Second-pass checks done'), `${secondPassDone}/${secondPassTotal || 0}`);
+    },
+
+    onHelpToggle() {
+      helpVisible = !helpVisible;
+      if (!helpVisible) return;
+      line('Help:', 'Press h to hide help.');
+      line('Pause:', 'Cancels in-flight AI/MCP calls and retries on resume.');
+      line('UI tick:', 'Set AUDIT_UI_TICK_MS to adjust animation refresh rate.');
     },
 
     onPageEnd({ index, url, counts }) {

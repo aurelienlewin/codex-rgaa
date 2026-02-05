@@ -33,6 +33,19 @@ const CACHED_PAGES_MAX = (() => {
 
 const listPagesCache = new Map();
 
+function parseEnvBool(raw, fallback = false) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const text = String(raw).trim().toLowerCase();
+  if (text === '1' || text === 'true' || text === 'yes') return true;
+  if (text === '0' || text === 'false' || text === 'no') return false;
+  return fallback;
+}
+
+function shouldSkipListPages(mcp) {
+  if (mcp && typeof mcp.skipListPages === 'boolean') return mcp.skipListPages;
+  return parseEnvBool(process.env.AUDIT_MCP_SKIP_LIST_PAGES, false);
+}
+
 function hashCacheKey(cacheKey) {
   return crypto.createHash('sha256').update(cacheKey).digest('hex').slice(0, 16);
 }
@@ -52,7 +65,7 @@ async function getListPagesCacheDir() {
   return '';
 }
 
-async function readListPagesDiskCache(cacheKey) {
+async function readListPagesDiskCache(cacheKey, { allowExpired = false } = {}) {
   if (LIST_PAGES_CACHE_TTL_MS <= 0) return null;
   const dir = await getListPagesCacheDir();
   if (!dir) return null;
@@ -61,10 +74,10 @@ async function readListPagesDiskCache(cacheKey) {
     const raw = await fs.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.expiresAt && parsed.expiresAt > Date.now() && parsed.value) {
+    if (parsed.expiresAt && (parsed.expiresAt > Date.now() || allowExpired) && parsed.value) {
       return parsed;
     }
-    await fs.unlink(filePath).catch(() => {});
+    if (!allowExpired) await fs.unlink(filePath).catch(() => {});
   } catch {}
   return null;
 }
@@ -118,13 +131,14 @@ function normalizeCachedPages(pages) {
   return trimmed.slice(0, CACHED_PAGES_MAX);
 }
 
-function buildPrompt({ url, pageId, cachedPages } = {}) {
+function buildPrompt({ url, pageId, cachedPages, skipListPages } = {}) {
   const expression = getSnapshotExpression();
   const targetLabel =
     typeof pageId === 'number' && Number.isFinite(pageId)
       ? `page id ${pageId}`
       : `URL ${url}`;
   const normalizedCachedPages = normalizeCachedPages(cachedPages);
+  const skipList = Boolean(skipListPages);
   return [
     'Tu es un outil technique. Utilise uniquement le MCP chrome-devtools.',
     'Écris une courte narration explicative sur UNE ligne.',
@@ -136,7 +150,9 @@ function buildPrompt({ url, pageId, cachedPages } = {}) {
       ? `- Sélectionne la page ${pageId} avec select_page.`
       : normalizedCachedPages
         ? '- Utilise la liste CACHED_PAGES fournie (sans appeler list_pages); sélectionne la page qui correspond à l’URL avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.'
-        : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne celle avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.',
+        : skipList
+          ? '- N’appelle pas list_pages; navigue directement vers l’URL avec navigate_page.'
+          : '- Liste les pages avec list_pages; si une page correspond à l’URL, sélectionne celle avec l’ID le plus bas; sinon navigue vers l’URL avec navigate_page.',
     `2) Vérifie que location.href correspond bien à la cible (${targetLabel}); si besoin navigue vers l’URL.`,
     '3) Exécute la fonction JS fournie via evaluate_script pour attendre le chargement et collecter le snapshot.',
     '4) Réponds uniquement avec le JSON retourné (pas de texte supplémentaire).',
@@ -396,7 +412,12 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
         onLog?.(`Codex: stdin error (${err?.code || 'unknown'}).`);
       });
       child.stdin.write(
-        buildPrompt({ url, pageId: mcp?.pageId, cachedPages: mcp?.cachedPages })
+        buildPrompt({
+          url,
+          pageId: mcp?.pageId,
+          cachedPages: mcp?.cachedPages,
+          skipListPages: shouldSkipListPages(mcp)
+        })
       );
       child.stdin.end();
     });
@@ -474,14 +495,17 @@ export async function collectSnapshotWithMcp({ url, model, mcp, onLog, onStage, 
   if (
     mcp &&
     !mcp?.pageId &&
-    (!Array.isArray(mcp?.cachedPages) || mcp.cachedPages.length === 0)
+    !Array.isArray(mcp?.cachedPages)
   ) {
     try {
       const list = await listMcpPages({ model, mcp, onLog, onStage, signal });
-      if (Array.isArray(list?.pages) && list.pages.length) {
+      if (Array.isArray(list?.pages)) {
         mcp.cachedPages = list.pages;
+      } else {
+        mcp.cachedPages = [];
       }
     } catch (err) {
+      mcp.cachedPages = [];
       onLog?.(`Codex: failed to prefetch MCP list_pages (${err?.message || 'unknown error'})`);
     }
   }
@@ -492,6 +516,7 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
   if (signal?.aborted) {
     throw createAbortError();
   }
+  const skipList = shouldSkipListPages(mcp);
 
   if (LIST_PAGES_CACHE_TTL_MS > 0) {
     const cacheKey = JSON.stringify({
@@ -501,15 +526,15 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       channel: mcp?.channel || ''
     });
     const cached = listPagesCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && (cached.expiresAt > Date.now() || skipList)) {
       onLog?.('Codex: using cached MCP list_pages');
       if (typeof structuredClone === 'function') {
         return structuredClone(cached.value);
       }
       return JSON.parse(JSON.stringify(cached.value));
     }
-    const diskCached = await readListPagesDiskCache(cacheKey);
-    if (diskCached && diskCached.expiresAt > Date.now()) {
+    const diskCached = await readListPagesDiskCache(cacheKey, { allowExpired: skipList });
+    if (diskCached && (diskCached.expiresAt > Date.now() || skipList)) {
       onLog?.('Codex: using disk-cached MCP list_pages');
       listPagesCache.set(cacheKey, diskCached);
       if (typeof structuredClone === 'function') {
@@ -518,6 +543,11 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
       return JSON.parse(JSON.stringify(diskCached.value));
     }
     listPagesCache.delete(cacheKey);
+  }
+
+  if (skipList) {
+    onLog?.('Codex: skipping MCP list_pages (disabled).');
+    return { pages: [] };
   }
 
   await preflightSchemas(onLog);

@@ -1098,6 +1098,7 @@ async function main() {
   }
 
   let mcpTabs = [];
+  const skipListPagesEnv = parseEnvBool(process.env.AUDIT_MCP_SKIP_LIST_PAGES, false);
   if (interactive && guided && pages.length === 0) {
     try {
       console.log('\nChecking existing Chrome tabs (list_pages)…');
@@ -1106,7 +1107,8 @@ async function main() {
         mcp: {
           browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
           autoConnect: mcpAutoConnect,
-          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
+          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || '',
+          skipListPages: skipListPagesEnv
         }
       });
       const entries = Array.isArray(list?.pages) ? list.pages : [];
@@ -1144,6 +1146,12 @@ async function main() {
     console.error('No pages provided.');
     process.exit(1);
   }
+
+  const skipListPagesDefault = pages.length > 0;
+  const skipListPages = parseEnvBool(
+    process.env.AUDIT_MCP_SKIP_LIST_PAGES,
+    skipListPagesDefault
+  );
 
   let outPath = argv.out ? path.resolve(argv.out) : null;
   if (!argv.out && resumeState?.outPath) {
@@ -1227,11 +1235,14 @@ async function main() {
     if (typeof process.stdin.setRawMode === 'function') {
       process.stdin.setRawMode(true);
     }
+    process.stdin.setEncoding('utf8');
     process.stdin.resume();
-    const keyHandler = (_, key) => {
-      if (!key) return;
-      if (key.name === 'p') pauseController.pause();
-      if (key.name === 'r') pauseController.resume();
+    const keyHandler = (str, key) => {
+      const name = String(key?.name || key?.sequence || str || '').toLowerCase();
+      if (!name) return;
+      if (name === 'p') pauseController.pause();
+      if (name === 'r') pauseController.resume();
+      if (name === 'h' || name === '?') reporter.onHelpToggle?.();
     };
     process.stdin.on('keypress', keyHandler);
     process.on('exit', () => {
@@ -1325,7 +1336,8 @@ async function main() {
         autoConnect: mcpAutoConnect,
         channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || '',
         pageId: mcpPageIdArg,
-        cachedPages: mcpTabs.length ? mcpTabs : undefined
+        cachedPages: mcpTabs.length ? mcpTabs : undefined,
+        skipListPages
       },
       ai: {
         model: codexModel,
