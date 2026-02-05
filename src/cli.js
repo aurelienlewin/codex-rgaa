@@ -18,7 +18,7 @@ import { createReporter, renderPromptFrame, chromeAutomationWarningLines } from 
 import { getI18n } from './i18n.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
-import { listMcpPages, navigateMcpToUrl } from './mcpSnapshot.js';
+import { listMcpPages } from './mcpSnapshot.js';
 
 let lastShutdownSignal = null;
 const fancyPromptState = { introShown: false };
@@ -1505,24 +1505,10 @@ async function main() {
   }
 
   if (autoLaunchActive && !autoLaunchOpenedInitial) {
-    try {
-      const result = await navigateMcpToUrl({
-        url: pages[0],
-        model: argv['codex-model'],
-        mcp: {
-          browserUrl: mcpBrowserUrl,
-          autoConnect: false,
-          channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
-        }
-      });
-      autoLaunchOpenedInitial = Boolean(result?.ok);
-    } catch {}
-    if (!autoLaunchOpenedInitial) {
-      autoLaunchOpenedInitial = await forceNavigateFirstPage({
-        browserUrl: mcpBrowserUrl,
-        url: pages[0]
-      });
-    }
+    autoLaunchOpenedInitial = await forceNavigateFirstPage({
+      browserUrl: mcpBrowserUrl,
+      url: pages[0]
+    });
   }
 
   const skipListPagesDefault = pages.length > 0 || Number.isFinite(mcpPageIdArg);
