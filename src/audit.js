@@ -627,6 +627,7 @@ export async function runAudit(options) {
     throw createAbortError();
   }
 
+  let chromeInfo = null;
   const providedBrowserUrl = String(mcpConfig?.browserUrl || '').trim();
   const wantsAutoConnect = Boolean(mcpConfig?.autoConnect);
   if (!providedBrowserUrl && !wantsAutoConnect) {
@@ -660,7 +661,6 @@ export async function runAudit(options) {
     criteria: []
   };
   const pageMeta = [];
-  let chromeInfo = null;
   let resumeCompletedPages = 0;
 
   if (options.resumeState?.completedPages?.length) {
@@ -974,7 +974,7 @@ export async function runAudit(options) {
 
         const batchById = new Map();
         const batchSizeRaw = Number(process.env.AUDIT_AI_BATCH_SIZE || '');
-        const batchSize =
+        let batchSize =
           Number.isFinite(batchSizeRaw) && batchSizeRaw > 0 ? Math.floor(batchSizeRaw) : 6;
 
         const evaluationFromHit = (hit) => {
@@ -995,26 +995,18 @@ export async function runAudit(options) {
           if (pauseController) await pauseController.waitIfPaused();
           const chunk = pendingAI.slice(start, start + batchSize);
           try {
-            const batchResults = await withPauseRetry({
-              pauseController,
-              reporter,
-              label: 'AI batch',
-              retryOnAny: true,
+            const batchResults = await aiReviewCriteriaBatch({
+              model: options.ai.model,
+              url,
+              criteria: chunk.map((p) => p.criterion),
+              snapshot: page.snapshot,
+              reportLang,
+              onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
+              onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
+              onError: (message) => reporter?.onError?.(message),
+              failFast,
               signal,
-              fn: ({ signal: attemptSignal }) =>
-                aiReviewCriteriaBatch({
-                  model: options.ai.model,
-                  url,
-                  criteria: chunk.map((p) => p.criterion),
-                  snapshot: page.snapshot,
-                  reportLang,
-                  onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
-                  onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
-                  onError: (message) => reporter?.onError?.(message),
-                  failFast,
-                  signal: attemptSignal,
-                  mcp: mcpForAi
-                })
+              mcp: mcpForAi
             });
             for (const r of Array.isArray(batchResults) ? batchResults : []) {
               const key = String(r?.criterion_id || '');
@@ -1046,6 +1038,14 @@ export async function runAudit(options) {
               );
             }
           } catch (err) {
+            const errText = String(err?.message || err || '').toLowerCase();
+            if (batchSize > 1 && (errText.includes('timed out') || errText.includes('timeout'))) {
+              batchSize = 1;
+              reporter?.onAILog?.({
+                criterion: pseudoCriterion,
+                message: 'AI batch timed out; falling back to per-criterion calls.'
+              });
+            }
             reporter?.onAILog?.({
               criterion: pseudoCriterion,
               message: `Batch chunk failed (${start + 1}-${Math.min(

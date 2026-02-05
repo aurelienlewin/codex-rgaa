@@ -1494,16 +1494,35 @@ async function main() {
     }
     process.stdin.setEncoding('utf8');
     process.stdin.resume();
-    const keyHandler = (str, key) => {
-      const name = String(key?.name || key?.sequence || str || '').toLowerCase();
-      if (!name) return;
+    let lastKeyAt = 0;
+    const handleKey = (name) => {
       if (name === 'p') pauseController.pause();
       if (name === 'r') pauseController.resume();
       if (name === 'h' || name === '?') reporter.onHelpToggle?.();
     };
+    const keyHandler = (str, key) => {
+      const name = String(key?.name || key?.sequence || str || '').toLowerCase();
+      if (!name) return;
+      lastKeyAt = Date.now();
+      handleKey(name);
+    };
+    const dataHandler = (chunk) => {
+      if (!chunk) return;
+      if (Date.now() - lastKeyAt < 50) return;
+      const text = String(chunk);
+      for (const ch of text) {
+        if (ch === '\u0003') {
+          process.kill(process.pid, 'SIGINT');
+          return;
+        }
+        handleKey(ch.toLowerCase());
+      }
+    };
     process.stdin.on('keypress', keyHandler);
+    process.stdin.on('data', dataHandler);
     process.on('exit', () => {
       process.stdin.off('keypress', keyHandler);
+      process.stdin.off('data', dataHandler);
       if (typeof process.stdin.setRawMode === 'function') {
         process.stdin.setRawMode(false);
       }

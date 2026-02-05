@@ -1164,6 +1164,11 @@ function createFancyReporter(options = {}) {
 
     onPause({ paused } = {}) {
       isPaused = Boolean(paused);
+      if (isPaused) {
+        stopTicking();
+      } else {
+        startTicking();
+      }
       pushFeed('stage', isPaused ? 'Paused' : 'Resumed', { replaceLastIfSameKind: false });
       scheduleRender();
     },
@@ -1586,6 +1591,7 @@ function createLegacyReporter(options = {}) {
   let pulseTimer = null;
   let pulseLabel = '';
   let pulseDots = 0;
+  let pausedPulseLabel = '';
   let pageStartAt = 0;
   let stageStartAt = 0;
   let auditMode = 'mcp';
@@ -1598,7 +1604,6 @@ function createLegacyReporter(options = {}) {
   const stopPulse = () => {
     if (pulseTimer) clearInterval(pulseTimer);
     pulseTimer = null;
-    pulseLabel = '';
     pulseDots = 0;
   };
 
@@ -1854,6 +1859,13 @@ function createLegacyReporter(options = {}) {
 
     onPause({ paused } = {}) {
       isPaused = Boolean(paused);
+      if (isPaused) {
+        pausedPulseLabel = pulseLabel;
+        stopPulse();
+      } else if (pausedPulseLabel) {
+        startPulse(pausedPulseLabel);
+        pausedPulseLabel = '';
+      }
       const lineText = isPaused
         ? `${palette.warn('Paused')} ${palette.muted('(press r to resume)')}`
         : `${palette.ok('Resumed')}`;
