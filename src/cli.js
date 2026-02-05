@@ -749,8 +749,10 @@ function isHttpUrl(value) {
 
 async function promptPages({ tabs, guided = false } = {}) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 
@@ -860,8 +862,10 @@ async function promptPages({ tabs, guided = false } = {}) {
 
 async function promptYesNo(question, defaultValue = false) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 
@@ -896,8 +900,10 @@ async function promptYesNo(question, defaultValue = false) {
 
 async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 
@@ -943,8 +949,10 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
 
 async function promptOptionalNumber(question) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 
@@ -974,8 +982,10 @@ async function promptOptionalNumber(question) {
 
 async function promptContinue(question, { title = 'Continue', lines = null } = {}) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 
@@ -995,8 +1005,10 @@ async function promptContinue(question, { title = 'Continue', lines = null } = {
 
 async function promptMcpAutoConnectSetup({ channel } = {}) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 
@@ -1028,8 +1040,10 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
 
 async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
   await showFancyIntro();
+  const { inputs } = getHotkeyInput();
+  const input = inputs[0] || process.stdin;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input,
     output: process.stdout
   });
 

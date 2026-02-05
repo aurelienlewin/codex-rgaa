@@ -789,7 +789,7 @@ function createFancyReporter(options = {}) {
     Number.isFinite(uiTickRaw) && uiTickRaw >= 60 ? Math.floor(uiTickRaw) : 750;
   const animTickRaw = Number(process.env.AUDIT_UI_ANIM_MS || '');
   const animTickMs =
-    Number.isFinite(animTickRaw) && animTickRaw >= 40 ? Math.floor(animTickRaw) : uiTickMs;
+    Number.isFinite(animTickRaw) && animTickRaw >= 40 ? Math.floor(animTickRaw) : 120;
   const clockTickRaw = Number(process.env.AUDIT_UI_CLOCK_MS || '');
   const clockTickMs =
     Number.isFinite(clockTickRaw) && clockTickRaw >= 250 ? Math.floor(clockTickRaw) : 1000;
@@ -813,8 +813,29 @@ function createFancyReporter(options = {}) {
   const humanizeKinds = new Set(['progress', 'stage', 'thinking']);
   const placeholderLine = i18n.t('Working…', 'Working…');
   const reasoningPlaceholder = i18n.t('detecting…', 'detecting…');
-  const pulseGlyphs = ['·', '•', '●', '•'];
-  const pulseColors = [palette.muted, palette.primary, palette.accent, palette.primary];
+  const blendHex = (a, b, t) => {
+    const clamp = (v) => Math.max(0, Math.min(255, v));
+    const hexToRgb = (hex) => {
+      const clean = hex.replace('#', '');
+      const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean;
+      const n = parseInt(full, 16);
+      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+    };
+    const rgbToHex = ({ r, g, b }) =>
+      `#${[r, g, b].map((v) => clamp(v).toString(16).padStart(2, '0')).join('')}`;
+    const c1 = hexToRgb(a);
+    const c2 = hexToRgb(b);
+    return rgbToHex({
+      r: Math.round(c1.r + (c2.r - c1.r) * t),
+      g: Math.round(c1.g + (c2.g - c1.g) * t),
+      b: Math.round(c1.b + (c2.b - c1.b) * t)
+    });
+  };
+  const pulseSteps = [0.0, 0.35, 0.7, 1.0, 0.7, 0.35];
+  const pulseGlyphs = Array.from({ length: pulseSteps.length }, () => '●');
+  const pulseColors = pulseSteps.map((t) =>
+    chalk.hex(blendHex('#94a3b8', '#22d3ee', t))
+  );
   const hasAnimatedParts = () => {
     if (isPaused) return false;
     if (feed.length > 0) return true;
@@ -1052,9 +1073,9 @@ function createFancyReporter(options = {}) {
         ? `${padVisibleRight(palette.warn('Status'), 8)} ${palette.warn('paused')}`
         : '',
       elapsed
-        ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)} ${palette.muted(
-            pulseGlyphs[frame] || '·'
-          )}`
+        ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)} ${(
+            pulseColors[frame] || palette.muted
+          )(pulseGlyphs[frame] || '·')}`
         : ''
     ].filter(Boolean);
 
