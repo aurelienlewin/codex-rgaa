@@ -2035,7 +2035,9 @@ function createLegacyReporter(options = {}) {
       const reviewLine = `${palette.review('Remaining review')} ${palette.accent(String(reviewRemaining))}`;
 
       const summary = [scoreLine, reviewLine, secondPassLine].join('\n');
-      const title = `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline('Audit recap')}`;
+      const title = `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
+        i18n.t('Synthèse', 'Summary')
+      )}`;
       console.log(
         boxen(summary, {
           padding: 1,

@@ -24,6 +24,8 @@
 - **Global summary** (a criterion is conform only if it passes on **every** page)
 - **Score** computed as **C / (C + NC)**
 
+**Legend (statuses)**: C = Conform • NC = Not conform • NA = Non applicable • REV = Review • ERR = Error
+
 **Evidence collection**
 - **MCP** (Chrome DevTools MCP) using `chrome-devtools-mcp` started by Codex (handy when driving an existing Chrome session)
 
