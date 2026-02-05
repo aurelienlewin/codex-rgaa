@@ -64,8 +64,9 @@ npm install
 <details open>
 <summary><strong>Minimal run (guided)</strong></summary>
 
-Guided mode now auto‑launches a fresh Chrome instance by default (temporary profile, no saved data).
-Use `--no-auto-launch-chrome` if you prefer to connect to an existing Chrome window.
+Guided mode now auto‑launches a fresh Chrome instance by default.
+By default it stores the Chrome profile in the repo at `.chrome-profile/` so sessions are stable.
+Set `AUDIT_CHROME_PROFILE_DIR` to override, or use `--no-auto-launch-chrome` to connect to an existing Chrome window.
 
 If connecting to an existing Chrome, recommended prep:
 - Launch a dedicated Chrome with remote debugging enabled (separate profile is best).

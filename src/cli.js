@@ -1153,6 +1153,11 @@ async function main() {
         : Boolean(mcpAutoConnectArg)
       : Boolean(mcpAutoConnectArg);
   const autoLaunchActive = Boolean(autoLaunchChrome && !mcpBrowserUrl && !mcpAutoConnect);
+  const chromeProfileDir = autoLaunchActive
+    ? path.resolve(
+        String(process.env.AUDIT_CHROME_PROFILE_DIR || path.join(process.cwd(), '.chrome-profile'))
+      )
+    : undefined;
   const mcpCacheKey = JSON.stringify({
     browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
     autoConnect: mcpAutoConnect,
@@ -1418,6 +1423,7 @@ async function main() {
       criteria,
       chromePath: argv['chrome-path'],
       chromePort: argv['chrome-port'],
+      chromeProfileDir,
       timeoutMs: argv.timeout,
       reporter: watchdog.reporter,
       signal: abortController.signal,

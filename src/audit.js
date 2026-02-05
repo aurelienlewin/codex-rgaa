@@ -453,7 +453,7 @@ function formatPageFailure(error) {
   return `Page load failed: ${message} (${tail})`;
 }
 
-function buildChromeFlags() {
+function buildChromeFlags({ userDataDir } = {}) {
   const flags = [
     '--disable-gpu',
     '--disable-dev-shm-usage',
@@ -479,6 +479,10 @@ function buildChromeFlags() {
   // On macOS/Windows, it is unnecessary and can be destabilizing.
   if (process.platform === 'linux') {
     flags.push('--no-sandbox');
+  }
+
+  if (userDataDir) {
+    flags.push(`--user-data-dir=${userDataDir}`);
   }
 
   return flags;
@@ -514,8 +518,8 @@ async function waitForCdpReady({ port, timeoutMs = 5000, signal } = {}) {
   throw new Error(`Chrome launched but DevTools endpoint was not reachable on port ${port}.`);
 }
 
-async function launchChrome({ chromePath, port } = {}) {
-  const chromeFlags = buildChromeFlags();
+async function launchChrome({ chromePath, port, userDataDir } = {}) {
+  const chromeFlags = buildChromeFlags({ userDataDir });
   const launch = async (p) =>
     chromeLauncher.launch({
       chromePath,
@@ -626,9 +630,15 @@ export async function runAudit(options) {
   const providedBrowserUrl = String(mcpConfig?.browserUrl || '').trim();
   const wantsAutoConnect = Boolean(mcpConfig?.autoConnect);
   if (!providedBrowserUrl && !wantsAutoConnect) {
+    if (options.chromeProfileDir) {
+      try {
+        await fs.mkdir(options.chromeProfileDir, { recursive: true });
+      } catch {}
+    }
     chrome = await launchChrome({
       chromePath: options.chromePath,
-      port: options.chromePort
+      port: options.chromePort,
+      userDataDir: options.chromeProfileDir
     });
     mcpConfig = {
       ...mcpConfig,
