@@ -562,6 +562,16 @@ function drawPanel({ title, lines, width, borderColor = palette.muted }) {
   return out.join('\n');
 }
 
+export function renderPromptFrame({ title, lines, borderColor = 'accent', width } = {}) {
+  const cols = process.stdout?.columns || 100;
+  const panelWidth = width || Math.max(68, Math.min(cols - 2, 120));
+  const colorFn =
+    typeof borderColor === 'function'
+      ? borderColor
+      : palette[borderColor] || palette.accent;
+  return drawPanel({ title, lines, width: panelWidth, borderColor: colorFn });
+}
+
 function createLiveBlockRenderer() {
   let lastLineCount = 0;
   let lastLines = null;

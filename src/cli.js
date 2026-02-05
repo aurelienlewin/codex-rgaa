@@ -8,11 +8,12 @@ import chalk from 'chalk';
 import boxen from 'boxen';
 import gradientString from 'gradient-string';
 import chalkAnimation from 'chalk-animation';
+import chromeLauncher from 'chrome-launcher';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { runAudit } from './audit.js';
 import { loadCriteria } from './criteria.js';
-import { createReporter } from './ui.js';
+import { createReporter, renderPromptFrame } from './ui.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { listMcpPages } from './mcpSnapshot.js';
@@ -71,7 +72,11 @@ async function showFancyIntro() {
   console.log(gradientString(['#22d3ee', '#a78bfa', '#f472b6'])(title));
 }
 
-function renderPromptBox(title, lines, { borderColor = 'cyan' } = {}) {
+function renderPromptBox(title, lines, { borderColor = 'accent' } = {}) {
+  if (isFancyTTY()) {
+    clearScreen();
+    return renderPromptFrame({ title, lines, borderColor });
+  }
   const content = lines.join('\n');
   return boxen(content, {
     padding: 1,
@@ -145,6 +150,93 @@ function writeCachedMcpPageId(cacheKey, pageId) {
       fs.writeFileSync(filePath, JSON.stringify(payload), { mode: 0o600 });
       return;
     } catch {}
+  }
+}
+
+function buildChromeFlagsForGuided({ userDataDir } = {}) {
+  const flags = [
+    '--disable-gpu',
+    '--disable-dev-shm-usage',
+    '--disable-extensions',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-networking',
+    '--disable-component-update',
+    '--disable-breakpad'
+  ];
+  if (process.platform === 'linux') {
+    flags.push('--no-sandbox');
+  }
+  if (userDataDir) {
+    flags.push(`--user-data-dir=${userDataDir}`);
+  }
+  return flags;
+}
+
+function isPortProbePermissionError(err) {
+  const message = String(err?.message || '');
+  return (
+    (err && err.code === 'EPERM') ||
+    (message.includes('EPERM') && message.toLowerCase().includes('listen'))
+  );
+}
+
+async function waitForCdpReady({ port, timeoutMs = 6000 } = {}) {
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(`${baseUrl}/json/version`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res && res.ok) {
+        return;
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error(`Chrome launched but DevTools endpoint was not reachable on port ${port}.`);
+}
+
+async function launchChromeForGuided({ chromePath, port, userDataDir } = {}) {
+  const chromeFlags = buildChromeFlagsForGuided({ userDataDir });
+  const launch = async (p) =>
+    chromeLauncher.launch({
+      chromePath,
+      chromeFlags,
+      ...(typeof p === 'number' && Number.isFinite(p) && p > 0 ? { port: p } : {})
+    });
+
+  let chrome = null;
+  try {
+    if (typeof port === 'number' && Number.isFinite(port) && port > 0) {
+      chrome = await launch(port);
+    } else {
+      try {
+        chrome = await launch(undefined);
+      } catch (err) {
+        if (!isPortProbePermissionError(err)) throw err;
+        const candidatePorts = Array.from({ length: 16 }, (_, i) => 9222 + i);
+        let lastErr = err;
+        for (const candidatePort of candidatePorts) {
+          try {
+            chrome = await launch(candidatePort);
+            break;
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        if (!chrome) throw lastErr;
+      }
+    }
+    await waitForCdpReady({ port: chrome.port });
+    return chrome;
+  } catch (err) {
+    try {
+      if (chrome) await chrome.kill();
+    } catch {}
+    throw err;
   }
 }
 
@@ -1061,6 +1153,7 @@ async function main() {
     typeof argv['auto-launch-chrome'] === 'boolean'
       ? argv['auto-launch-chrome']
       : parseEnvBool(process.env.AUDIT_AUTO_LAUNCH_CHROME, guided);
+  let autoLaunchPlanned = false;
 
   if (interactive && guided) {
     if (!reportLangExplicit) {
@@ -1128,7 +1221,7 @@ async function main() {
       mcpChannelArg = mcpChannelArg || '';
     }
 
-    const autoLaunchPlanned = Boolean(autoLaunchChrome && !mcpBrowserUrlArg && !mcpAutoConnectArg);
+    autoLaunchPlanned = Boolean(autoLaunchChrome && !mcpBrowserUrlArg && !mcpAutoConnectArg);
     if (!mcpPageIdExplicit && !autoLaunchPlanned) {
       const wantsPageId = await promptYesNo(
         'Do you want to target a specific existing tab id (optional)?',
@@ -1145,6 +1238,23 @@ async function main() {
     }
   }
 
+  const chromeProfileDir = autoLaunchPlanned
+    ? path.resolve(
+        String(process.env.AUDIT_CHROME_PROFILE_DIR || path.join(process.cwd(), '.chrome-profile'))
+      )
+    : undefined;
+  let launchedChrome = null;
+  if (interactive && guided && autoLaunchPlanned) {
+    console.log('\nLaunching Chrome for guided audit…');
+    launchedChrome = await launchChromeForGuided({
+      chromePath: argv['chrome-path'],
+      port: argv['chrome-port'],
+      userDataDir: chromeProfileDir
+    });
+    mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
+    mcpAutoConnectArg = false;
+  }
+
   const mcpBrowserUrl = String(mcpBrowserUrlArg || '').trim();
   const mcpAutoConnect =
     !mcpBrowserUrl
@@ -1152,12 +1262,7 @@ async function main() {
         ? true
         : Boolean(mcpAutoConnectArg)
       : Boolean(mcpAutoConnectArg);
-  const autoLaunchActive = Boolean(autoLaunchChrome && !mcpBrowserUrl && !mcpAutoConnect);
-  const chromeProfileDir = autoLaunchActive
-    ? path.resolve(
-        String(process.env.AUDIT_CHROME_PROFILE_DIR || path.join(process.cwd(), '.chrome-profile'))
-      )
-    : undefined;
+  const autoLaunchActive = Boolean(launchedChrome);
   const mcpCacheKey = JSON.stringify({
     browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
     autoConnect: mcpAutoConnect,
@@ -1174,7 +1279,7 @@ async function main() {
     }
   }
 
-  if (interactive && guided && mcpBrowserUrl) {
+  if (interactive && guided && mcpBrowserUrl && !autoLaunchActive) {
     await promptMcpBrowserUrlSetup({ browserUrl: mcpBrowserUrl });
     const ok = await canReachChromeDebugEndpoint(mcpBrowserUrl);
     if (!ok) {
@@ -1470,6 +1575,11 @@ async function main() {
     debugWrapped.stop();
     terminateCodexChildren();
     if (forceExitTimer) clearTimeout(forceExitTimer);
+    if (launchedChrome) {
+      try {
+        await launchedChrome.kill();
+      } catch {}
+    }
   }
 
   if (!abortController.signal.aborted) {
