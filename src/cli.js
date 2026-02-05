@@ -850,6 +850,24 @@ async function promptOptionalNumber(question) {
   return Math.floor(n);
 }
 
+async function promptContinue(question, { title = 'Continue' } = {}) {
+  await showFancyIntro();
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  if (isFancyTTY()) {
+    console.log(renderPromptBox(title, [question, promptPalette.muted('Press Enter to continue.')], { borderColor: 'accent' }));
+  } else {
+    console.log(`${question}\n`);
+  }
+
+  await new Promise((resolve) => rl.question(isFancyTTY() ? promptPalette.primary('→ ') : '→ ', () => resolve()));
+  rl.close();
+  clearScreen();
+}
+
 async function promptMcpAutoConnectSetup({ channel } = {}) {
   await showFancyIntro();
   const rl = readline.createInterface({
@@ -1253,6 +1271,9 @@ async function main() {
     });
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
+    await promptContinue('Chrome is ready. Open your tabs in this window now.', {
+      title: 'Chrome Ready'
+    });
   }
 
   const mcpBrowserUrl = String(mcpBrowserUrlArg || '').trim();
