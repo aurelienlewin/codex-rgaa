@@ -1665,11 +1665,7 @@ export async function runAudit(options) {
     const scoreRowIndex = summaryTitleRow.number + 3;
     const scoreCell = summarySheet.getRow(scoreRowIndex).getCell(2);
     scoreCell.numFmt = '0.0%';
-    const countC = `COUNTIF(Audit!${auditRange},"${statusStyle(STATUS.C).icon}")`;
-    const countNC = `COUNTIF(Audit!${auditRange},"${statusStyle(STATUS.NC).icon}")`;
-    scoreCell.value = {
-      formula: `IF((${countC}+${countNC})=0,0,${countC}/(${countC}+${countNC}))`
-    };
+    scoreCell.value = globalScore;
     summarySheet.addRow([]);
     summarySheet.addRow([i18n.excel.globalStatus()]);
     const statusRows = [
@@ -1688,9 +1684,7 @@ export async function runAudit(options) {
       valueCell.font = { size: BASE_FONT_SIZE, bold: true };
       valueCell.alignment = { vertical: 'middle', horizontal: 'center' };
       const s = statusStyle(row.status);
-      valueCell.value = {
-        formula: `COUNTIF(Audit!${auditRange},"${s.icon}")`
-      };
+      valueCell.value = row.value;
       valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: s.bg } };
       valueCell.font = { size: BASE_FONT_SIZE, bold: true, color: { argb: s.fg } };
     }

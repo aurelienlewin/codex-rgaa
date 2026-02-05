@@ -183,7 +183,7 @@ function writeCachedMcpPageId(cacheKey, pageId) {
   }
 }
 
-function buildChromeFlagsForGuided({ userDataDir } = {}) {
+function buildChromeFlagsForGuided({ userDataDir, appUrl } = {}) {
   const flags = [
     '--disable-gpu',
     '--disable-dev-shm-usage',
@@ -195,6 +195,9 @@ function buildChromeFlagsForGuided({ userDataDir } = {}) {
     '--disable-breakpad',
     '--new-window'
   ];
+  if (appUrl) {
+    flags.push(`--app=${appUrl}`);
+  }
   if (process.platform === 'linux') {
     flags.push('--no-sandbox');
   }
@@ -301,10 +304,14 @@ async function ensureDevtoolsPage({ browserUrl, url, activate = true } = {}) {
 }
 
 async function launchChromeForGuided({ chromePath, port, userDataDir, initialUrl } = {}) {
-  const startingUrl = /^https?:\/\//i.test(String(initialUrl || ''))
-    ? String(initialUrl).trim()
-    : 'about:blank';
-  const chromeFlags = buildChromeFlagsForGuided({ userDataDir });
+  const rawInitial = String(initialUrl || '').trim();
+  const isHttp = /^https?:\/\//i.test(rawInitial);
+  const isChrome = /^chrome:\/\//i.test(rawInitial);
+  const startingUrl = isHttp ? rawInitial : 'about:blank';
+  const chromeFlags = buildChromeFlagsForGuided({
+    userDataDir,
+    appUrl: isChrome ? rawInitial : ''
+  });
   const launch = async (p) =>
     chromeLauncher.launch({
       chromePath,

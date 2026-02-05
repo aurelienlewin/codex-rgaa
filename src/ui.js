@@ -49,6 +49,69 @@ function bumpTempCounts(counts, statusLabel) {
   }
 }
 
+function normalizeStatusLabel(statusLabel) {
+  const label = String(statusLabel || '').trim();
+  if (!label) return '';
+  if (label === 'C' || label === 'Conform') return 'C';
+  if (label === 'NC' || label === 'Not conform') return 'NC';
+  if (label === 'NA' || label === 'Non applicable') return 'NA';
+  if (label === 'Review') return 'REVIEW';
+  if (label === 'Error') return 'ERR';
+  return label;
+}
+
+function createTempScoreTracker(totalPages = 0) {
+  const perCriterion = new Map();
+  const globalStatus = new Map();
+  const counts = { C: 0, NC: 0, NA: 0 };
+  const total = Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 0;
+
+  const applyStatus = (criterionId, nextStatus) => {
+    const current = globalStatus.get(criterionId) || '';
+    if (current === nextStatus) return false;
+    if (current === 'C' || current === 'NC' || current === 'NA') {
+      counts[current] = Math.max(0, counts[current] - 1);
+    }
+    if (nextStatus === 'C' || nextStatus === 'NC' || nextStatus === 'NA') {
+      counts[nextStatus] += 1;
+      globalStatus.set(criterionId, nextStatus);
+    } else if (nextStatus) {
+      globalStatus.set(criterionId, nextStatus);
+    } else {
+      globalStatus.delete(criterionId);
+    }
+    return true;
+  };
+
+  const onCriterion = (criterionId, statusLabel) => {
+    if (!criterionId) return false;
+    const status = normalizeStatusLabel(statusLabel);
+    if (!status) return false;
+    const entry =
+      perCriterion.get(criterionId) || { seen: 0, hasC: false, hasNC: false, hasNA: false };
+    if (status === 'C') entry.hasC = true;
+    if (status === 'NC') entry.hasNC = true;
+    if (status === 'NA') entry.hasNA = true;
+    entry.seen += 1;
+    perCriterion.set(criterionId, entry);
+    if (total > 0 && entry.seen >= total) {
+      if (entry.hasNC) return applyStatus(criterionId, 'NC');
+      if (entry.hasC) return applyStatus(criterionId, 'C');
+      if (entry.hasNA) return applyStatus(criterionId, 'NA');
+    }
+    return false;
+  };
+
+  const onGlobalDecision = (criterionId, statusLabel) => {
+    if (!criterionId) return false;
+    const status = normalizeStatusLabel(statusLabel);
+    if (!status) return false;
+    return applyStatus(criterionId, status);
+  };
+
+  return { counts, onCriterion, onGlobalDecision };
+}
+
 function formatSecondPassSummary(secondPass = {}) {
   const total = Number(secondPass.total || 0);
   const done = Number(secondPass.done || 0);
@@ -696,7 +759,8 @@ function createFancyReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
-  const tempCounts = { C: 0, NC: 0, NA: 0 };
+  let tempTracker = null;
+  let tempCounts = { C: 0, NC: 0, NA: 0 };
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageStartAt = 0;
@@ -1115,6 +1179,8 @@ function createFancyReporter(options = {}) {
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
+      tempTracker = createTempScoreTracker(totalPages);
+      tempCounts = tempTracker.counts;
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
       enrichmentEnabled = Boolean(enrichmentEnabledFromCli);
@@ -1344,7 +1410,7 @@ function createFancyReporter(options = {}) {
       const statusLabel = evaluation.status || '';
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 120);
       const rationale = evaluation.ai?.rationale || '';
-      bumpTempCounts(tempCounts, statusLabel);
+      if (tempTracker) tempTracker.onCriterion(criterion.id, statusLabel);
       overallDone += 1;
       pageDone += 1;
       lastDecision = { status: statusLabel, crit: critText, rationale };
@@ -1361,7 +1427,7 @@ function createFancyReporter(options = {}) {
       const statusLabel = evaluation?.status || '';
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 120);
       const rationale = evaluation?.ai?.rationale || '';
-      bumpTempCounts(tempCounts, statusLabel);
+      if (tempTracker) tempTracker.onGlobalDecision(criterion.id, statusLabel);
       lastDecision = { status: statusLabel, crit: critText, rationale };
       decisions.push({
         status: statusLabel,
@@ -1575,7 +1641,8 @@ function createLegacyReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
-  const tempCounts = { C: 0, NC: 0, NA: 0 };
+  let tempTracker = null;
+  let tempCounts = { C: 0, NC: 0, NA: 0 };
   let lastAILog = '';
   let lastAILogAt = 0;
   let codexReasoning = initialReasoningFromEnv();
@@ -1666,6 +1733,8 @@ function createLegacyReporter(options = {}) {
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
+      tempTracker = createTempScoreTracker(totalPages);
+      tempCounts = tempTracker.counts;
       auditMode = mode || 'mcp';
       enrichmentEnabled = Boolean(enrichmentEnabledFromCli);
       const headline = 'RGAA Website Auditor';
@@ -1924,7 +1993,7 @@ function createLegacyReporter(options = {}) {
       if (statusLabel === 'Non applicable') statusColor = palette.muted;
       if (statusLabel === 'Review') statusColor = palette.review;
       if (statusLabel === 'Error') statusColor = palette.error;
-      bumpTempCounts(tempCounts, statusLabel);
+      if (tempTracker) tempTracker.onCriterion(criterion.id, statusLabel);
 
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 56);
       const rationale = evaluation.ai?.rationale || '';
@@ -1949,7 +2018,7 @@ function createLegacyReporter(options = {}) {
       if (statusLabel === 'Non applicable') statusColor = palette.muted;
       if (statusLabel === 'Review') statusColor = palette.review;
       if (statusLabel === 'Error') statusColor = palette.error;
-      bumpTempCounts(tempCounts, statusLabel);
+      if (tempTracker) tempTracker.onGlobalDecision(criterion.id, statusLabel);
       const rationale = evaluation?.ai?.rationale || '';
       const line = `${palette.accent('AI second pass')} ${criterion.id} ${statusColor(statusLabel)} ${rationale}`;
       if (typeof bars.log === 'function') bars.log(line);
@@ -2106,7 +2175,8 @@ function createPlainReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
-  const tempCounts = { C: 0, NC: 0, NA: 0 };
+  let tempTracker = null;
+  let tempCounts = { C: 0, NC: 0, NA: 0 };
   let currentPageIndex = -1;
   let lastAILog = '';
   let lastAILogAt = 0;
@@ -2145,6 +2215,8 @@ function createPlainReporter(options = {}) {
     async onStart({ pages, criteriaCount, mcpMode: mcpModeFromCli, auditMode: mode, resumePath }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
+      tempTracker = createTempScoreTracker(totalPages);
+      tempCounts = tempTracker.counts;
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
       auditStartAt = nowMs();
@@ -2294,7 +2366,7 @@ function createPlainReporter(options = {}) {
     onCriterion({ criterion, evaluation }) {
       const status = evaluation.status || '';
       const rationale = evaluation.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
-      bumpTempCounts(tempCounts, status);
+      if (tempTracker) tempTracker.onCriterion(criterion.id, status);
       overallDone += 1;
       pageDone += 1;
       line(i18n.t('Result:', 'Result:'), `${criterion.id} ${status}${rationale}`);
@@ -2313,7 +2385,7 @@ function createPlainReporter(options = {}) {
     onCrossPageDecision({ criterion, evaluation }) {
       const status = evaluation?.status || '';
       const rationale = evaluation?.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
-      bumpTempCounts(tempCounts, status);
+      if (tempTracker) tempTracker.onGlobalDecision(criterion.id, status);
       line(i18n.t('Second-pass result:', 'Second-pass result:'), `${criterion.id} ${status}${rationale}`);
       if (
         status === 'Conform' ||
