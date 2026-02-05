@@ -64,6 +64,22 @@ npm install
 <details open>
 <summary><strong>Minimal run (guided)</strong></summary>
 
+Guided mode now auto‑launches a fresh Chrome instance by default (temporary profile, no saved data).
+Use `--no-auto-launch-chrome` if you prefer to connect to an existing Chrome window.
+
+If connecting to an existing Chrome, recommended prep:
+- Launch a dedicated Chrome with remote debugging enabled (separate profile is best).
+- Open the pages you want to audit in that Chrome window (optional; you can also paste URLs when prompted).
+
+Example commands (existing Chrome):
+```bash
+# macOS
+open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="/tmp/rgaa-audit-profile"
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="/tmp/rgaa-audit-profile"
+```
+
 ```bash
 npm run audit
 ```

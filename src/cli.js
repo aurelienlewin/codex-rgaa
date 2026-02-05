@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import readline from 'node:readline';
 import chalk from 'chalk';
 import boxen from 'boxen';
@@ -98,6 +100,52 @@ function parseEnvBool(raw, defaultValue) {
   if (['1', 'true', 'yes'].includes(cleaned)) return true;
   if (['0', 'false', 'no'].includes(cleaned)) return false;
   return defaultValue;
+}
+
+function getDefaultCodexHome() {
+  return path.join(os.homedir(), '.codex');
+}
+
+function getFallbackCodexHome() {
+  return path.join(os.tmpdir(), 'rgaa-auditor-codex-home');
+}
+
+function hashCacheKey(cacheKey) {
+  return crypto.createHash('sha256').update(cacheKey).digest('hex').slice(0, 16);
+}
+
+function getCodexCacheDirs() {
+  const preferred = process.env.CODEX_HOME || getDefaultCodexHome();
+  return [path.join(preferred, 'cache'), path.join(getFallbackCodexHome(), 'cache')];
+}
+
+function readCachedMcpPageId(cacheKey) {
+  const hash = hashCacheKey(cacheKey);
+  for (const dir of getCodexCacheDirs()) {
+    try {
+      const filePath = path.join(dir, `mcp-page-id-${hash}.json`);
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && Number.isFinite(parsed.pageId)) {
+        return parsed.pageId;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function writeCachedMcpPageId(cacheKey, pageId) {
+  if (!Number.isFinite(pageId)) return;
+  const hash = hashCacheKey(cacheKey);
+  for (const dir of getCodexCacheDirs()) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, `mcp-page-id-${hash}.json`);
+      const payload = { pageId, updatedAt: new Date().toISOString() };
+      fs.writeFileSync(filePath, JSON.stringify(payload), { mode: 0o600 });
+      return;
+    } catch {}
+  }
 }
 
 function formatResumeLabel(candidate) {
@@ -871,6 +919,11 @@ async function main() {
       describe:
         'Optional channel for chrome-devtools-mcp autoConnect (e.g. "beta" when using Chrome 144 Beta).'
     })
+    .option('auto-launch-chrome', {
+      type: 'boolean',
+      describe:
+        'In guided mode, auto-launch a fresh Chrome instance (default). Use --no-auto-launch-chrome to connect to an existing one.'
+    })
     .option('mcp-page-id', {
       type: 'number',
       describe:
@@ -987,6 +1040,10 @@ async function main() {
     (arg) => arg === '--mcp-auto-connect' || arg === '--no-mcp-auto-connect'
   );
 
+  const autoLaunchChromeExplicit = rawArgs.some(
+    (arg) => arg === '--auto-launch-chrome' || arg === '--no-auto-launch-chrome'
+  );
+
   const mcpChannelExplicit = rawArgs.some(
     (arg) => arg === '--mcp-channel' || arg.startsWith('--mcp-channel=')
   );
@@ -1000,6 +1057,10 @@ async function main() {
   let mcpAutoConnectArg = argv['mcp-auto-connect'];
   let mcpChannelArg = argv['mcp-channel'];
   let mcpPageIdArg = argv['mcp-page-id'];
+  const autoLaunchChrome =
+    typeof argv['auto-launch-chrome'] === 'boolean'
+      ? argv['auto-launch-chrome']
+      : parseEnvBool(process.env.AUDIT_AUTO_LAUNCH_CHROME, guided);
 
   if (interactive && guided) {
     if (!reportLangExplicit) {
@@ -1014,10 +1075,21 @@ async function main() {
     const hasBrowserUrl = Boolean(String(mcpBrowserUrlArg || '').trim());
     const hasAutoConnect = Boolean(mcpAutoConnectArg);
 
-    if (!mcpBrowserUrlExplicit && !mcpAutoConnectExplicit && !hasBrowserUrl && !hasAutoConnect) {
+    if (
+      !mcpBrowserUrlExplicit &&
+      !mcpAutoConnectExplicit &&
+      !autoLaunchChromeExplicit &&
+      !hasBrowserUrl &&
+      !hasAutoConnect
+    ) {
       if (guided) {
-        mcpAutoConnectArg = true;
-        mcpBrowserUrlArg = '';
+        if (autoLaunchChrome) {
+          mcpAutoConnectArg = false;
+          mcpBrowserUrlArg = '';
+        } else {
+          mcpAutoConnectArg = true;
+          mcpBrowserUrlArg = '';
+        }
       } else {
         const connectIndex = await promptChoice(
           'How should we connect to Chrome?',
@@ -1056,7 +1128,8 @@ async function main() {
       mcpChannelArg = mcpChannelArg || '';
     }
 
-    if (!mcpPageIdExplicit) {
+    const autoLaunchPlanned = Boolean(autoLaunchChrome && !mcpBrowserUrlArg && !mcpAutoConnectArg);
+    if (!mcpPageIdExplicit && !autoLaunchPlanned) {
       const wantsPageId = await promptYesNo(
         'Do you want to target a specific existing tab id (optional)?',
         false
@@ -1079,6 +1152,22 @@ async function main() {
         ? true
         : Boolean(mcpAutoConnectArg)
       : Boolean(mcpAutoConnectArg);
+  const autoLaunchActive = Boolean(autoLaunchChrome && !mcpBrowserUrl && !mcpAutoConnect);
+  const mcpCacheKey = JSON.stringify({
+    browserUrl: mcpBrowserUrl || process.env.AUDIT_MCP_BROWSER_URL || '',
+    autoConnect: mcpAutoConnect,
+    channel: mcpChannelArg || process.env.AUDIT_MCP_CHANNEL || ''
+  });
+  const useCachedPageId = parseEnvBool(process.env.AUDIT_MCP_USE_CACHED_PAGE_ID, true);
+  if (!mcpPageIdExplicit && useCachedPageId && !autoLaunchActive) {
+    const cachedPageId = readCachedMcpPageId(mcpCacheKey);
+    if (Number.isFinite(cachedPageId)) {
+      mcpPageIdArg = cachedPageId;
+      if (interactive && guided) {
+        console.log(`Using cached MCP page id ${cachedPageId} (set AUDIT_MCP_USE_CACHED_PAGE_ID=0 to ignore).`);
+      }
+    }
+  }
 
   if (interactive && guided && mcpBrowserUrl) {
     await promptMcpBrowserUrlSetup({ browserUrl: mcpBrowserUrl });
@@ -1099,7 +1188,7 @@ async function main() {
 
   let mcpTabs = [];
   const skipListPagesEnv = parseEnvBool(process.env.AUDIT_MCP_SKIP_LIST_PAGES, false);
-  if (interactive && guided && pages.length === 0) {
+  if (interactive && guided && pages.length === 0 && !skipListPagesEnv && !mcpPageIdArg) {
     try {
       console.log('\nChecking existing Chrome tabs (list_pages)…');
       const list = await listMcpPages({
@@ -1147,7 +1236,7 @@ async function main() {
     process.exit(1);
   }
 
-  const skipListPagesDefault = pages.length > 0;
+  const skipListPagesDefault = pages.length > 0 || Number.isFinite(mcpPageIdArg);
   const skipListPages = parseEnvBool(
     process.env.AUDIT_MCP_SKIP_LIST_PAGES,
     skipListPagesDefault
@@ -1314,6 +1403,11 @@ async function main() {
       `Codex CLI is required for AI-based criteria review (${codexBin} --version failed).`
     );
     process.exit(1);
+  }
+
+  const cachePageIdEnabled = parseEnvBool(process.env.AUDIT_MCP_CACHE_PAGE_ID, true);
+  if (cachePageIdEnabled && Number.isFinite(mcpPageIdArg) && !autoLaunchActive) {
+    writeCachedMcpPageId(mcpCacheKey, mcpPageIdArg);
   }
 
   try {
