@@ -1361,6 +1361,7 @@ function createFancyReporter(options = {}) {
       const statusLabel = evaluation?.status || '';
       const critText = `${criterion.id} ${criterion.title}`.slice(0, 120);
       const rationale = evaluation?.ai?.rationale || '';
+      bumpTempCounts(tempCounts, statusLabel);
       lastDecision = { status: statusLabel, crit: critText, rationale };
       decisions.push({
         status: statusLabel,
@@ -1574,6 +1575,7 @@ function createLegacyReporter(options = {}) {
   let totalPages = 0;
   let overallDone = 0;
   let pageDone = 0;
+  const tempCounts = { C: 0, NC: 0, NA: 0 };
   let lastAILog = '';
   let lastAILogAt = 0;
   let codexReasoning = initialReasoningFromEnv();
@@ -1947,6 +1949,7 @@ function createLegacyReporter(options = {}) {
       if (statusLabel === 'Non applicable') statusColor = palette.muted;
       if (statusLabel === 'Review') statusColor = palette.review;
       if (statusLabel === 'Error') statusColor = palette.error;
+      bumpTempCounts(tempCounts, statusLabel);
       const rationale = evaluation?.ai?.rationale || '';
       const line = `${palette.accent('AI second pass')} ${criterion.id} ${statusColor(statusLabel)} ${rationale}`;
       if (typeof bars.log === 'function') bars.log(line);
@@ -2310,7 +2313,18 @@ function createPlainReporter(options = {}) {
     onCrossPageDecision({ criterion, evaluation }) {
       const status = evaluation?.status || '';
       const rationale = evaluation?.ai?.rationale ? ` • ${evaluation.ai.rationale}` : '';
+      bumpTempCounts(tempCounts, status);
       line(i18n.t('Second-pass result:', 'Second-pass result:'), `${criterion.id} ${status}${rationale}`);
+      if (
+        status === 'Conform' ||
+        status === 'Not conform' ||
+        status === 'Non applicable' ||
+        status === 'C' ||
+        status === 'NC' ||
+        status === 'NA'
+      ) {
+        line('Temp score (C/(C+NC)):', formatTempScore(tempCounts));
+      }
     },
 
     onCrossPageStart({ total = 0, criteria = [] } = {}) {
