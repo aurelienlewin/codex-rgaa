@@ -13,7 +13,8 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { runAudit } from './audit.js';
 import { loadCriteria } from './criteria.js';
-import { createReporter, renderPromptFrame } from './ui.js';
+import { createReporter, renderPromptFrame, chromeAutomationWarningLines } from './ui.js';
+import { getI18n } from './i18n.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
 import { listMcpPages } from './mcpSnapshot.js';
@@ -880,7 +881,7 @@ async function promptOptionalNumber(question) {
   return Math.floor(n);
 }
 
-async function promptContinue(question, { title = 'Continue' } = {}) {
+async function promptContinue(question, { title = 'Continue', lines = null } = {}) {
   await showFancyIntro();
   const rl = readline.createInterface({
     input: process.stdin,
@@ -888,7 +889,10 @@ async function promptContinue(question, { title = 'Continue' } = {}) {
   });
 
   if (isFancyTTY()) {
-    console.log(renderPromptBox(title, [question, promptPalette.muted('Press Enter to continue.')], { borderColor: 'accent' }));
+    const content = Array.isArray(lines) && lines.length
+      ? [...lines, promptPalette.muted('Press Enter to continue.')]
+      : [question, promptPalette.muted('Press Enter to continue.')];
+    console.log(renderPromptBox(title, content, { borderColor: 'accent' }));
   } else {
     console.log(`${question}\n`);
   }
@@ -1294,6 +1298,17 @@ async function main() {
     : undefined;
   let launchedChrome = null;
   if (interactive && guided && autoLaunchPlanned) {
+    const i18n = getI18n(reportLang);
+    const warningLines = chromeAutomationWarningLines({
+      i18n,
+      mcpMode: process.env.CODEX_MCP_MODE || 'chrome'
+    });
+    if (warningLines && warningLines.length) {
+      await promptContinue('', {
+        title: i18n.t('Chrome permissions', 'Chrome permissions'),
+        lines: warningLines
+      });
+    }
     console.log('\nLaunching Chrome for guided audit…');
     launchedChrome = await launchChromeForGuided({
       chromePath: argv['chrome-path'],

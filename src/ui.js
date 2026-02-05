@@ -275,7 +275,7 @@ function renderBar({ value, total, width }) {
   return `${palette.accent(full)}${palette.muted(empty)}`;
 }
 
-function chromeAutomationWarningLines({ i18n, mcpMode }) {
+export function chromeAutomationWarningLines({ i18n, mcpMode }) {
   if (String(mcpMode || '').trim().toLowerCase() !== 'chrome') return null;
   const isMac = process.platform === 'darwin';
   if (isMac) {
