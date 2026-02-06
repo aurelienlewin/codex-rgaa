@@ -1620,7 +1620,7 @@ async function main() {
   }
 
   const hotkey = getHotkeyInput();
-  if (process.stdout.isTTY && hotkey.inputs.length) {
+  if (hotkey.inputs.length) {
     let lastKeyAt = 0;
     const handleKey = (name) => {
       if (name === 'p') pauseController.pause();
@@ -1647,7 +1647,7 @@ async function main() {
     };
     for (const input of hotkey.inputs) {
       readline.emitKeypressEvents(input);
-      if (typeof input.setRawMode === 'function') {
+      if (input.isTTY && typeof input.setRawMode === 'function') {
         input.setRawMode(true);
       }
       input.setEncoding('utf8');
@@ -1659,7 +1659,7 @@ async function main() {
       for (const input of hotkey.inputs) {
         input.off('keypress', keyHandler);
         input.off('data', dataHandler);
-        if (typeof input.setRawMode === 'function') {
+        if (input.isTTY && typeof input.setRawMode === 'function') {
           input.setRawMode(false);
         }
         input.pause();

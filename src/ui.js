@@ -33,7 +33,7 @@ function formatTempScore({ C, NC } = {}) {
   const c = Number(C || 0);
   const nc = Number(NC || 0);
   const denom = c + nc;
-  if (denom <= 0) return 'n/a';
+  if (denom <= 0) return formatPercent(0);
   return formatPercent(c / denom);
 }
 
@@ -64,7 +64,6 @@ function createTempScoreTracker(totalPages = 0) {
   const perCriterion = new Map();
   const globalStatus = new Map();
   const counts = { C: 0, NC: 0, NA: 0 };
-  const total = Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 0;
 
   const applyStatus = (criterionId, nextStatus) => {
     const current = globalStatus.get(criterionId) || '';
@@ -94,12 +93,10 @@ function createTempScoreTracker(totalPages = 0) {
     if (status === 'NA') entry.hasNA = true;
     entry.seen += 1;
     perCriterion.set(criterionId, entry);
-    if (total > 0 && entry.seen >= total) {
-      if (entry.hasNC) return applyStatus(criterionId, 'NC');
-      if (entry.hasC) return applyStatus(criterionId, 'C');
-      if (entry.hasNA) return applyStatus(criterionId, 'NA');
-    }
-    return false;
+    if (entry.hasNC) return applyStatus(criterionId, 'NC');
+    if (entry.hasC) return applyStatus(criterionId, 'C');
+    if (entry.hasNA) return applyStatus(criterionId, 'NA');
+    return applyStatus(criterionId, '');
   };
 
   const onGlobalDecision = (criterionId, statusLabel) => {
@@ -806,6 +803,9 @@ function createFancyReporter(options = {}) {
   let enrichmentActive = false;
   let enrichmentLabel = '';
   let enrichmentStartedAt = 0;
+  let aiActive = false;
+  let aiLabel = '';
+  let aiStartedAt = 0;
 
   const feedMax = 7;
   const feed = [];
@@ -841,6 +841,7 @@ function createFancyReporter(options = {}) {
     if (feed.length > 0) return true;
     if (auditStartAt) return true;
     if (secondPassActive) return true;
+    if (aiActive) return true;
     return false;
   };
   const pendingLabel = (kind, normalized) => {
@@ -1015,6 +1016,14 @@ function createFancyReporter(options = {}) {
     const enrichmentAge =
       enrichmentActive && enrichmentStartedAt ? formatElapsed(nowMs() - enrichmentStartedAt) : '';
 
+    const showAiPost = aiActive && !secondPassActive && pageDone >= totalCriteria && totalCriteria > 0;
+    const aiElapsed = aiStartedAt ? formatElapsed(clockNow - aiStartedAt) : '';
+    const aiLine = showAiPost
+      ? `${padVisibleRight(palette.accent('AI'), 8)} ${palette.primary(
+          clipInline(aiLabel || i18n.t('Working…', 'Working…'), width - 24)
+        )}${aiElapsed ? ` ${palette.muted('•')} ${palette.muted(aiElapsed)}` : ''}`
+      : '';
+
     const progressLines = [
       ...(secondPassActive
         ? [
@@ -1033,6 +1042,10 @@ function createFancyReporter(options = {}) {
       `${padVisibleRight(palette.primary('Overall'), 8)} ${renderBar({ value: overallDone, total: overallTotal, width: barW })} ${palette.muted(
         `${overallPct}% • ${overallDone}/${overallTotal || 0}`
       )}`,
+      `${padVisibleRight(palette.muted('Temp'), 8)} ${palette.accent(
+        `C/(C+NC) ${formatTempScore(tempCounts)}`
+      )}`,
+      aiLine,
       showEnrichmentSummary && enrichmentEnabled
         ? `${padVisibleRight(palette.glow('Enrich'), 8)} ${renderBar({
             value: enrichmentDone,
@@ -1402,6 +1415,9 @@ function createFancyReporter(options = {}) {
     onChecksEnd() {
       endStage('Checks');
       showEnrichmentSummary = enrichmentEnabled;
+      aiActive = false;
+      aiLabel = '';
+      aiStartedAt = 0;
       scheduleRender();
     },
 
@@ -1411,6 +1427,9 @@ function createFancyReporter(options = {}) {
         ? `${criterion.title}`.slice(0, 60)
         : `${criterion.id} ${criterion.title}`.slice(0, 60);
       currentCriterion = { id: criterion.id, title: criterion.title };
+      aiActive = true;
+      aiLabel = critText || i18n.t('Working…', 'Working…');
+      if (!aiStartedAt) aiStartedAt = nowMs();
       startStage(`AI thinking ${critText}`);
       if (!isBatch) {
         pushFeed('thinking', `${criterion.id} ${criterion.title}`.slice(0, 140));
@@ -1421,6 +1440,10 @@ function createFancyReporter(options = {}) {
       if (!label || isNoiseAiMessage(label)) return;
       startStage(label);
       pushFeed('stage', label, { replaceLastIfSameKind: false });
+      aiActive = true;
+      const cleaned = sanitizeStatusLine(label);
+      if (cleaned) aiLabel = cleaned;
+      if (!aiStartedAt) aiStartedAt = nowMs();
       if (criterion?.id === 'enrich') {
         enrichmentActive = true;
         enrichmentLabel = sanitizeStatusLine(label) || 'Enrichment';
@@ -1685,6 +1708,7 @@ function createLegacyReporter(options = {}) {
   let overallBar = null;
   let pageBar = null;
   let secondPassBar = null;
+  let aiPostBar = null;
   let totalCriteria = 0;
   let totalPages = 0;
   let overallDone = 0;
@@ -1716,6 +1740,7 @@ function createLegacyReporter(options = {}) {
   let enrichmentStatus = 'idle';
   let isPaused = false;
   let resumeOverallDone = 0;
+  let aiPostActive = false;
 
   const stopPulse = () => {
     if (pulseTimer) clearInterval(pulseTimer);
@@ -1973,6 +1998,10 @@ function createLegacyReporter(options = {}) {
           });
         }
       }
+      if (aiPostActive && aiPostBar) {
+        aiPostBar.update(1, { crit: '' });
+      }
+      aiPostActive = false;
     },
 
     onPause({ paused } = {}) {
@@ -2002,6 +2031,21 @@ function createLegacyReporter(options = {}) {
       if (!isBatch) {
         logAILine('thinking', `${criterion.id} ${criterion.title}`.slice(0, 80));
       }
+      if (pageDone >= totalCriteria && totalCriteria > 0 && !secondPassBar) {
+        aiPostActive = true;
+        if (!aiPostBar) {
+          aiPostBar = bars.create(1, 0, {
+            label: palette.glow(i18n.t('AI post', 'AI post')),
+            crit: palette.muted(critText || i18n.t('Working…', 'Working…'))
+          });
+        } else {
+          aiPostBar.setTotal(1);
+          aiPostBar.update(0, {
+            label: palette.glow(i18n.t('AI post', 'AI post')),
+            crit: palette.muted(critText || i18n.t('Working…', 'Working…'))
+          });
+        }
+      }
     },
 
     onAIStage({ label }) {
@@ -2012,6 +2056,9 @@ function createLegacyReporter(options = {}) {
       const line = `${palette.muted('•')} ${palette.muted(label)}`;
       if (typeof bars.log === 'function') bars.log(line);
       else console.log(line);
+      if (aiPostActive && aiPostBar) {
+        aiPostBar.update(0, { crit: palette.muted(label) });
+      }
     },
 
     onAILog({ message }) {
@@ -2029,6 +2076,9 @@ function createLegacyReporter(options = {}) {
           lastAILog = clipped;
           lastAILogAt = now;
           logAiFeed(cleaned, 'progress');
+        }
+        if (aiPostActive && aiPostBar) {
+          aiPostBar.update(0, { crit: palette.muted(clipped) });
         }
       }
     },
@@ -2369,18 +2419,27 @@ function createPlainReporter(options = {}) {
 
     onChecksEnd() {
       line(i18n.t('Stage:', 'Stage:'), 'Checks done');
+      if (aiPostActive) {
+        line('AI post:', 'done');
+      }
+      aiPostActive = false;
     },
 
     onAIStart({ criterion }) {
       const isBatch = typeof criterion?.id === 'string' && /^AI\\(\\d+\\)$/.test(criterion.id);
       const label = isBatch ? criterion.title : `${criterion.id} ${criterion.title}`;
       line('Codex', `thinking ${label}`);
+      if (pageDone >= totalCriteria && totalCriteria > 0) {
+        aiPostActive = true;
+        line('AI post:', label);
+      }
     },
 
     onAIStage({ label }) {
       if (label && !isNoiseAiMessage(label)) {
         const normalized = sanitizeStatusLine(label);
         line('Codex', normalized);
+        if (aiPostActive) line('AI post:', normalized);
         feedHumanizer.request({
           kind: 'stage',
           text: normalized,
