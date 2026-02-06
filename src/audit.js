@@ -66,6 +66,7 @@ function buildResumeState({
   crossPageEvidence,
   pageMeta,
   criteriaIds,
+  inProgressPage,
   createdAt,
   elapsedMs
 }) {
@@ -80,7 +81,8 @@ function buildResumeState({
     criteriaIds,
     completedPages,
     crossPageEvidence,
-    pageMeta
+    pageMeta,
+    inProgressPage: inProgressPage || null
   };
 }
 
@@ -702,7 +704,22 @@ export async function runAudit(options) {
     if (resumeCriteria.length && JSON.stringify(resumeCriteria) !== JSON.stringify(criteriaIds)) {
       throw new Error('Resume file does not match current criteria set.');
     }
-    const completed = options.resumeState.completedPages || [];
+    const requestedPages = Array.isArray(options.pages) ? options.pages : [];
+    let completed = options.resumeState.completedPages || [];
+    const inProgress = options.resumeState?.inProgressPage;
+    let inProgressIndex = null;
+    if (Number.isFinite(inProgress?.index)) {
+      inProgressIndex = Math.max(0, Math.floor(inProgress.index));
+    } else if (inProgress?.url && requestedPages.length) {
+      const idx = requestedPages.indexOf(inProgress.url);
+      if (idx >= 0) inProgressIndex = idx;
+    }
+    if (Number.isFinite(inProgressIndex) && completed.length > inProgressIndex) {
+      completed = completed.slice(0, inProgressIndex);
+    }
+    const completedUrls = new Set(
+      completed.map((page) => page?.url).filter((url) => url && typeof url === 'string')
+    );
     for (const page of completed) {
       if (!page?.url || !Array.isArray(page?.results)) continue;
       pageResults.push({
@@ -718,9 +735,68 @@ export async function runAudit(options) {
       }
     }
     if (Array.isArray(options.resumeState.crossPageEvidence)) {
-      crossPageEvidence.push(...options.resumeState.crossPageEvidence);
+      crossPageEvidence.push(
+        ...options.resumeState.crossPageEvidence.filter((item) => completedUrls.has(item?.url))
+      );
     }
     resumeCompletedPages = pageResults.length;
+  }
+
+  const requestedPages = Array.isArray(options.pages) ? options.pages : [];
+  let currentPageIndex = null;
+  let currentPageUrl = '';
+  let currentPageStartedAt = 0;
+  let resumeWritePromise = Promise.resolve();
+  const buildResumeSnapshot = () => {
+    const completedPages = pageResults.map((item) => ({
+      url: item.url,
+      results: item.results,
+      title: item.snapshot?.title || '',
+      lang: item.snapshot?.lang || ''
+    }));
+    const inProgressPage =
+      Number.isFinite(currentPageIndex) && currentPageIndex >= 0 && currentPageUrl
+        ? {
+            index: currentPageIndex,
+            url: currentPageUrl,
+            startedAt: currentPageStartedAt
+              ? new Date(currentPageStartedAt).toISOString()
+              : null
+          }
+        : null;
+    const baseElapsed = Number(options.resumeState?.elapsedMs || 0);
+    const elapsedMs = Date.now() - auditStartedAt.getTime() + baseElapsed;
+    return buildResumeState({
+      pages: requestedPages,
+      reportLang,
+      outPath,
+      completedPages,
+      crossPageEvidence: crossPageEvidence.slice(),
+      pageMeta: pageMeta.slice(),
+      criteriaIds,
+      inProgressPage,
+      createdAt: options.resumeState?.createdAt,
+      elapsedMs
+    });
+  };
+  const queueResumeWrite = () => {
+    if (!options.resumeStatePath) return Promise.resolve();
+    const state = buildResumeSnapshot();
+    resumeWritePromise = resumeWritePromise.then(() =>
+      writeResumeState(options.resumeStatePath, state)
+    );
+    return resumeWritePromise;
+  };
+
+  let removePauseListener = null;
+  if (pauseController?.onChange) {
+    removePauseListener = pauseController.onChange(({ paused }) => {
+      if (!paused) return;
+      queueResumeWrite();
+    });
+  }
+  if (pauseController?.isPaused?.()) {
+    queueResumeWrite();
   }
 
   const relaunchChrome = async ({ label, reason }) => {
@@ -810,6 +886,9 @@ export async function runAudit(options) {
       if (aborted || signal?.aborted) {
         throw createAbortError();
       }
+      currentPageIndex = pageIdx;
+      currentPageUrl = url;
+      currentPageStartedAt = Date.now();
       if (pauseController) await pauseController.waitIfPaused();
       const pageIndex = pageResults.length;
       if (reporter && reporter.onPageStart) reporter.onPageStart({ index: pageIndex, url });
@@ -1298,30 +1377,10 @@ export async function runAudit(options) {
         });
       }
       pageResults.push({ url, snapshot: compactSnapshot(page.snapshot), results });
-      if (options.resumeStatePath) {
-        const baseElapsed = Number(options.resumeState?.elapsedMs || 0);
-        const elapsedMs = Date.now() - auditStartedAt.getTime() + baseElapsed;
-        const completedPages = pageResults.map((item) => ({
-          url: item.url,
-          results: item.results,
-          title: item.snapshot?.title || '',
-          lang: item.snapshot?.lang || ''
-        }));
-        await writeResumeState(
-          options.resumeStatePath,
-          buildResumeState({
-            pages: options.pages,
-            reportLang,
-            outPath: options.outPath ? path.resolve(options.outPath) : null,
-            completedPages,
-            crossPageEvidence,
-            pageMeta,
-            criteriaIds,
-            createdAt: options.resumeState?.createdAt,
-            elapsedMs
-          })
-        );
-      }
+      currentPageIndex = null;
+      currentPageUrl = '';
+      currentPageStartedAt = 0;
+      await queueResumeWrite();
       if (incrementalXlsx && options.outPath) {
         await writeXlsxReport({ final: false });
       }
@@ -1331,6 +1390,10 @@ export async function runAudit(options) {
       }
     }
   } finally {
+    if (removePauseListener) {
+      removePauseListener();
+    }
+    await resumeWritePromise;
     if (signal) {
       signal.removeEventListener('abort', onAbort);
     }

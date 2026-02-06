@@ -8,6 +8,7 @@
 - Guided auto-launch (opens `chrome://inspect/#remote-debugging`, pauses, then continues after Enter)
 - Hotkeys (`p` pause, `r` resume, `h` help) still work when stdin is busy
 - Guided mode with existing tabs: list_pages auto-detects tabs and audits in tab order
+- Pause mid-page writes resume state and resume continues the same page on restart
 
 ## Environment checks
 - Codex CLI available (`codex --version` succeeds)

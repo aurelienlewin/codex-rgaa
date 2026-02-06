@@ -140,7 +140,8 @@ npm run audit -- --pages https://example.com --allow-remote-debug --report-lang 
 
 - Press `p` to pause, `r` to resume (displayed in the CLI).
 - Pause is reactive: it cancels in‑flight AI/MCP calls and retries them after resume.
-- A resume file is written after each page: `out/<run>/audit.resume.json`.
+- A resume file is written after each page and whenever you pause (captures in‑progress page info): `out/<run>/audit.resume.json`.
+- Resuming continues from the paused page, not the next one.
 - Resume later with:
 
 ```bash
