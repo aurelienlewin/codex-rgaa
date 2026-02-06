@@ -315,6 +315,7 @@ async function openChromeTabs({ browserUrl, urls, timeoutMs = 6000 } = {}) {
   const navigated = await forceNavigateFirstPage({ browserUrl: base, url: firstUrl, timeoutMs });
   let opened = 0;
   const startIndex = navigated ? 1 : 0;
+  const failed = [];
   for (const url of unique.slice(startIndex)) {
     try {
       const controller = new AbortController();
@@ -324,9 +325,89 @@ async function openChromeTabs({ browserUrl, urls, timeoutMs = 6000 } = {}) {
       });
       clearTimeout(timeout);
       if (res && res.ok) opened += 1;
+      else failed.push(url);
     } catch {}
   }
+  if (failed.length) {
+    const retry = await createTargetsViaWebSocket({
+      browserUrl: base,
+      urls: failed,
+      timeoutMs
+    });
+    if (retry?.created) opened += retry.created;
+  }
   return { attempted: unique.length, opened, navigated };
+}
+
+async function createTargetsViaWebSocket({ browserUrl, urls, timeoutMs = 6000 } = {}) {
+  const base = normalizeHttpBaseUrl(browserUrl);
+  const list = Array.isArray(urls) ? urls : [];
+  const unique = Array.from(
+    new Set(list.map((url) => String(url || '').trim()).filter((url) => isHttpUrl(url)))
+  );
+  if (!base || unique.length === 0 || typeof WebSocket !== 'function') {
+    return { attempted: unique.length, created: 0 };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`${base}/json/version`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res || !res.ok) return { attempted: unique.length, created: 0 };
+    const payload = await res.json().catch(() => null);
+    const wsUrl = payload?.webSocketDebuggerUrl;
+    if (!wsUrl) return { attempted: unique.length, created: 0 };
+
+    return await new Promise((resolve) => {
+      const socket = new WebSocket(wsUrl);
+      let nextId = 1;
+      const pending = new Set();
+      let created = 0;
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        try {
+          socket.close();
+        } catch {}
+        resolve({ attempted: unique.length, created });
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      socket.addEventListener('open', () => {
+        for (const url of unique) {
+          const id = nextId++;
+          pending.add(id);
+          socket.send(
+            JSON.stringify({
+              id,
+              method: 'Target.createTarget',
+              params: { url }
+            })
+          );
+        }
+      });
+      socket.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (pending.has(data?.id)) {
+            pending.delete(data.id);
+            if (data?.result?.targetId) created += 1;
+            if (pending.size === 0) {
+              clearTimeout(timer);
+              finish();
+            }
+          }
+        } catch {}
+      });
+      socket.addEventListener('error', () => {
+        clearTimeout(timer);
+        finish();
+      });
+    });
+  } catch {
+    return { attempted: unique.length, created: 0 };
+  }
 }
 
 async function launchChromeForGuided({ chromePath, port, userDataDir, initialUrl } = {}) {
