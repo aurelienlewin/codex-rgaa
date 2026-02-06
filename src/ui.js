@@ -135,6 +135,16 @@ function padVisibleRight(text, width) {
   return str + ' '.repeat(width - len);
 }
 
+function formatKeyValueRows(rows, gap = 2) {
+  const items = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!items.length) return '';
+  const keyWidth = Math.max(...items.map((row) => visibleLen(row.key)));
+  const spacer = ' '.repeat(Math.max(1, gap));
+  return items
+    .map(({ key, value }) => `${padVisibleRight(key, keyWidth)}${spacer}${value}`)
+    .join('\n');
+}
+
 function joinBoxenColumns(left, right) {
   const leftLines = String(left || '').split('\n');
   const rightLines = String(right || '').split('\n');
@@ -1265,15 +1275,21 @@ function createFancyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const reasoningLabel = `Temp score (C/(C+NC)): ${formatTempScore(tempCounts)}`;
-      const sessionHeader = outDirName
-        ? `${palette.muted('Session')} ${palette.accent(outDirName)}`
-        : palette.muted('Session');
+      const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
+      const sessionRows = formatKeyValueRows([
+        {
+          key: palette.muted('Session'),
+          value: outDirName ? palette.accent(outDirName) : palette.muted('—')
+        },
+        { key: palette.muted(i18n.t('Pages', 'Pages')), value: chalk.bold(String(pages)) },
+        {
+          key: palette.muted(i18n.t('Critères', 'Criteria')),
+          value: chalk.bold(String(criteriaCount))
+        },
+        { key: palette.muted(tempScoreLabel), value: chalk.bold(formatTempScore(tempCounts)) }
+      ]);
       const session = boxen(
-        `${sessionHeader}\n` +
-          `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
-          `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(reasoningLabel)}`,
+        sessionRows,
         { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
       console.log(joinBoxenColumns(title, session));
@@ -1833,15 +1849,21 @@ function createLegacyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const reasoningLabel = `Temp score (C/(C+NC)): ${formatTempScore(tempCounts)}`;
-      const sessionHeader = outDirName
-        ? `${palette.muted('Session')} ${palette.accent(outDirName)}`
-        : palette.muted('Session');
+      const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
+      const sessionRows = formatKeyValueRows([
+        {
+          key: palette.muted('Session'),
+          value: outDirName ? palette.accent(outDirName) : palette.muted('—')
+        },
+        { key: palette.muted(i18n.t('Pages', 'Pages')), value: chalk.bold(String(pages)) },
+        {
+          key: palette.muted(i18n.t('Critères', 'Criteria')),
+          value: chalk.bold(String(criteriaCount))
+        },
+        { key: palette.muted(tempScoreLabel), value: chalk.bold(formatTempScore(tempCounts)) }
+      ]);
       const session = boxen(
-        `${sessionHeader}\n` +
-          `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
-          `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
-          `${palette.muted(reasoningLabel)}`,
+        sessionRows,
         { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
       );
       console.log(joinBoxenColumns(title, session));
