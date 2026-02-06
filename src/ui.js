@@ -1217,7 +1217,7 @@ function createFancyReporter(options = {}) {
     }
 
     const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
-    const sessionRows = formatKeyValueRows(
+    const sessionRowsText = formatKeyValueRows(
       [
         {
           key: palette.muted('Session'),
@@ -1231,7 +1231,7 @@ function createFancyReporter(options = {}) {
         { key: palette.muted(tempScoreLabel), value: chalk.bold(formatTempScore(tempCounts)) }
       ],
       2
-    ).split('\n');
+    );
     const headerBox = headerContent
       ? boxen(headerContent, {
           padding: 1,
@@ -1240,7 +1240,7 @@ function createFancyReporter(options = {}) {
           width: half
         })
       : '';
-    const sessionBox = boxen(sessionRows, {
+    const sessionBox = boxen(sessionRowsText, {
       padding: 1,
       borderStyle: 'round',
       borderColor: 'cyan',
