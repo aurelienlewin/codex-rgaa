@@ -314,7 +314,8 @@ async function openChromeTabs({ browserUrl, urls, timeoutMs = 6000 } = {}) {
   const firstUrl = unique[0];
   const navigated = await forceNavigateFirstPage({ browserUrl: base, url: firstUrl, timeoutMs });
   let opened = 0;
-  for (const url of unique.slice(1)) {
+  const startIndex = navigated ? 1 : 0;
+  for (const url of unique.slice(startIndex)) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1500);
@@ -1265,6 +1266,8 @@ async function main() {
   let pages = argv.pages || [];
   if (resumeState?.pages?.length) {
     pages = resumeState.pages;
+  } else if (resumeState?.completedPages?.length) {
+    pages = resumeState.completedPages.map((page) => page?.url).filter(Boolean);
   }
 
   if (argv['pages-file'] && !resumeState) {
@@ -1456,9 +1459,7 @@ async function main() {
     });
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
-    const resumeTabs = Array.isArray(resumeState?.pages)
-      ? resumeState.pages.filter((url) => isHttpUrl(url))
-      : [];
+    const resumeTabs = resumeState ? pages.filter((url) => isHttpUrl(url)) : [];
     if (resumeTabs.length) {
       console.log(`\nRestoring ${resumeTabs.length} tabs from resume file…`);
       const restored = await openChromeTabs({

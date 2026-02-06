@@ -1348,24 +1348,7 @@ function createFancyReporter(options = {}) {
           `${glowLine}`,
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
-      const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
-      const sessionRows = formatKeyValueRows([
-        {
-          key: palette.muted('Session'),
-          value: outDirName ? palette.accent(outDirName) : palette.muted('—')
-        },
-        { key: palette.muted(i18n.t('Pages', 'Pages')), value: chalk.bold(String(pages)) },
-        {
-          key: palette.muted(i18n.t('Critères', 'Criteria')),
-          value: chalk.bold(String(criteriaCount))
-        },
-        { key: palette.muted(tempScoreLabel), value: chalk.bold(formatTempScore(tempCounts)) }
-      ]);
-      const session = boxen(
-        sessionRows,
-        { padding: 1, borderStyle: 'round', borderColor: 'cyan', width: half }
-      );
-      console.log(joinBoxenColumns(title, session));
+      console.log(title);
       spinner.start();
       spinner.text = i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…');
     },
