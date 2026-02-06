@@ -1357,7 +1357,13 @@ function createFancyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
-      const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline('━'.repeat(42));
+      const cols = process.stdout.columns || 100;
+      const totalWidth = Math.max(76, Math.min(cols - 2, 120));
+      const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
+      const glowLen = Math.max(12, Math.min(42, half - 4));
+      const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
+        '━'.repeat(glowLen)
+      );
       headerContent =
         `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(headline)}\n` +
           `${palette.muted(subtitle)}\n` +
@@ -1923,12 +1929,13 @@ function createLegacyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
-      const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
-        '━'.repeat(42)
-      );
       const cols = process.stdout.columns || 100;
       const totalWidth = Math.max(76, Math.min(cols - 2, 120));
       const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
+      const glowLen = Math.max(12, Math.min(42, half - 4));
+      const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
+        '━'.repeat(glowLen)
+      );
       const title = boxen(
         `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(headline)}\n` +
           `${palette.muted(subtitle)}\n` +
