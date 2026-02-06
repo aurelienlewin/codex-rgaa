@@ -587,6 +587,7 @@ export async function runAudit(options) {
   const signal = options.signal || null;
   const pauseController = options.pauseController || null;
   const auditStartedAt = new Date();
+  const outPath = options.outPath ? path.resolve(options.outPath) : null;
   let aborted = false;
   let chrome = null;
   let mcpConfig = options.mcp || {};
@@ -613,9 +614,7 @@ export async function runAudit(options) {
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim() === '1' ||
     String(process.env.AUDIT_DEBUG_SNAPSHOTS || '').trim().toLowerCase() === 'true';
   const debugSnapshotsDir =
-    wantsDebugSnapshots && options.outPath
-      ? path.join(path.dirname(path.resolve(options.outPath)), 'snapshots')
-      : '';
+    wantsDebugSnapshots && outPath ? path.join(path.dirname(outPath), 'snapshots') : '';
   const incrementalXlsxRaw = String(process.env.AUDIT_XLS_INCREMENTAL || '').trim().toLowerCase();
   const incrementalXlsx =
     incrementalXlsxRaw === ''
@@ -1349,7 +1348,6 @@ export async function runAudit(options) {
     return { pageResultsById, globalByCriterion, globalCounts, globalScore, errorSummary };
   }
 
-  const outPath = options.outPath ? path.resolve(options.outPath) : null;
   const auditFinishedAt = new Date();
 
 
@@ -1823,5 +1821,6 @@ export async function runAudit(options) {
     }
   }
 
+  const { globalCounts, globalScore, errorSummary } = computeGlobalSummary();
   return { outPath, globalScore, counts: globalCounts, errors: errorSummary };
 }
