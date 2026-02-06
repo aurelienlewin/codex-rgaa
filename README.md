@@ -69,6 +69,8 @@ npm install
 Guided mode now auto‑launches a fresh Chrome instance by default.
 By default it stores the Chrome profile in the repo at `.chrome-profile/` so sessions are stable.
 Set `AUDIT_CHROME_PROFILE_DIR` to override, or use `--no-auto-launch-chrome` to connect to an existing Chrome window.
+When auto-launch is enabled, the auditor opens Chrome on `chrome://inspect/#remote-debugging` and pauses so you can open the tabs you want to audit.
+Press Enter when ready and the audit continues.
 
 If connecting to an existing Chrome, recommended prep:
 - Launch a dedicated Chrome with remote debugging enabled (separate profile is best).
@@ -146,6 +148,7 @@ npm run audit -- --resume out/<run>/audit.resume.json
 ```
 
 In guided mode, the CLI will offer recent resume files automatically.
+Hotkeys are read from the active TTY, so `p`, `r`, and `h` work even if stdin is busy.
 </details>
 
 ## UX moments
@@ -156,6 +159,8 @@ In guided mode, the CLI will offer recent resume files automatically.
 - **Live feed**: Human‑readable AI activity stream (collapsed or verbose).
 - **Second pass**: A dedicated callout panel when cross‑page checks run.
 - **End recap**: A modern summary line with Score + C/NC/NA/REV/ERR + remaining Review.
+- **Temp score**: Live C/(C+NC) updates after each decision.
+- **Pause**: UI animations stop while paused to keep the display stable.
 </details>
 
 ## Run
@@ -206,6 +211,7 @@ Note: in non-interactive runs (no TTY), autoConnect can’t be guided by prompts
 
 #### Guided mode + existing tabs (MCP)
 If guided mode detects open Chrome tabs via MCP, it **audits all detected tabs by default** (no selection prompt). To audit specific URLs instead, provide `--pages` or `--pages-file`.
+Tabs are audited in their current tab order; when auto-launching, the inspector tab is kept first to keep the order stable.
 
 #### Connect to an existing Chrome session (port 9222)
 If you already have Chrome running with remote debugging (e.g. `--remote-debugging-port=9222`),
@@ -236,8 +242,10 @@ By default, the generated XLSX is opened automatically; disable with `AUDIT_OPEN
 
 The Excel file contains:
 - **Summary** (first tab): global counts + score, color-coded status chips.
-- **Audit**: rows = criteria, columns = pages, with **✅ / ❌ / ➖ / 🟡 / ⚠️** icons, color-coded cells, and a per-cell dropdown for quick edits. Page URLs are stored as header cell comments; page names appear in the header row.
+- **Audit**: rows = criteria, columns = pages, with **✅ / ❌ / ➖ / 🟡 / ⚠️** icons, color-coded cells, and a per-cell dropdown for quick edits. Page labels appear in the header row; evidence notes are stored per cell.
 - **Evidence**: one row per criterion + page with status, rationale, evidence bullets, and links to stored screenshots when available.
+
+Workbook labels follow the report language and the Summary sheet includes a legend.
 
 When evidence is still insufficient after MCP tools (a11y tree, targeted DOM, OCR), criteria are marked **Review** (🟡) for human review.
 Enrichment‑based evidence in cell notes is **humanized** (e.g., “liens sans nom”, “taux de mouvement”, “pire contraste”) for easier review.

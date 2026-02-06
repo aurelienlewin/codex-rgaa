@@ -5,12 +5,16 @@
 - Run with multiple URLs (mix of 200/404/redirect)
 - Run with a markdown file input (URL per line, with comments and bullets)
 - Run with invalid lines (should be skipped, warning shown)
+- Guided auto-launch (opens `chrome://inspect/#remote-debugging`, pauses, then continues after Enter)
+- Hotkeys (`p` pause, `r` resume, `h` help) still work when stdin is busy
+- Guided mode with existing tabs: list_pages auto-detects tabs and audits in tab order
 
 ## Environment checks
 - Codex CLI available (`codex --version` succeeds)
 - Chrome present and launchable
 - XLS export default (`rgaa-audit.xlsx`) and `--no-xlsx`
 - Headless + non-headless modes
+- Repo-local Chrome profile created at `.chrome-profile/` (override with `AUDIT_CHROME_PROFILE_DIR`)
 
 ## RGAA logic
 - Criteria list = 106 unique IDs
@@ -26,6 +30,7 @@
 - Matrix rows match criteria IDs
 - Matrix columns match pages order
 - Values mapping: C=1, NA=0, NC=-1, ERR=-2
+- Summary labels and legend are localized to the report language
 
 ## Automated coverage
 - `npm test` includes an end-to-end audit against local fixture pages
