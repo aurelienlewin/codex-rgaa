@@ -1122,7 +1122,11 @@ function createFancyReporter(options = {}) {
 
     progressRows.push({
       key: palette.muted('Keys'),
-      value: palette.muted(showHelp ? 'p pause • r resume • h hide help' : 'p pause • r resume • h help')
+      value: palette.muted(
+        showHelp
+          ? 'p pause • r resume • q quit • h hide help'
+          : 'p pause • r resume • q quit • h help'
+      )
     });
 
     if (showHelp) {
@@ -2453,7 +2457,7 @@ function createPlainReporter(options = {}) {
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
       line('Temp score (C/(C+NC)):', formatTempScore(tempCounts));
-      line('Keys:', 'p pause • r resume • h help');
+      line('Keys:', 'p pause • r resume • q quit • h help');
       if (resumePath) line('Resume file:', resumePath);
       line('MCP mode:', mcpModeFromCli || '(default)');
       line('Snapshot mode:', auditMode);
@@ -2680,6 +2684,7 @@ function createPlainReporter(options = {}) {
       if (!helpVisible) return;
       line('Help:', 'Press h to hide help.');
       line('Pause:', 'Cancels in-flight AI/MCP calls and retries on resume.');
+      line('Quit:', 'Press q to pause and quit (resume later with the resume file).');
       line('UI anim:', 'Set AUDIT_UI_ANIM_MS to adjust animation speed.');
     },
 

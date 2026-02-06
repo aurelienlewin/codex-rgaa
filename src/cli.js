@@ -1750,66 +1750,6 @@ async function main() {
     });
   }
 
-  const hotkey = getHotkeyInput();
-  if (hotkey.inputs.length) {
-    let lastKeyAt = 0;
-    const handleKey = (name) => {
-      if (name === 'p') pauseController.pause();
-      if (name === 'r') pauseController.resume();
-      if (name === 'h' || name === '?') reporter.onHelpToggle?.();
-    };
-    const keyHandler = (str, key) => {
-      const name = String(key?.name || key?.sequence || str || '').toLowerCase();
-      if (!name) return;
-      lastKeyAt = Date.now();
-      handleKey(name);
-    };
-    const dataHandler = (chunk) => {
-      if (!chunk) return;
-      if (Date.now() - lastKeyAt < 50) return;
-      const text = String(chunk);
-      for (const ch of text) {
-        if (ch === '\u0003') {
-          process.kill(process.pid, 'SIGINT');
-          return;
-        }
-        handleKey(ch.toLowerCase());
-      }
-    };
-    for (const input of hotkey.inputs) {
-      readline.emitKeypressEvents(input);
-      if (input.isTTY && typeof input.setRawMode === 'function') {
-        input.setRawMode(true);
-      }
-      input.setEncoding('utf8');
-      input.resume();
-      input.on('keypress', keyHandler);
-      input.on('data', dataHandler);
-    }
-    process.on('exit', () => {
-      for (const input of hotkey.inputs) {
-        input.off('keypress', keyHandler);
-        input.off('data', dataHandler);
-        if (input.isTTY && typeof input.setRawMode === 'function') {
-          input.setRawMode(false);
-        }
-        input.pause();
-      }
-      hotkey.cleanup();
-    });
-  }
-
-  if (reporter.onResumeState && resumeState?.completedPages?.length) {
-    reporter.onResumeState({
-      completedPages: resumeState.completedPages.length,
-      completedCriteria: resumeState.completedPages.reduce(
-        (sum, page) => sum + (Array.isArray(page?.results) ? page.results.length : 0),
-        0
-      ),
-      completedPagesData: resumeState.completedPages
-    });
-  }
-
   const abortController = new AbortController();
   const watchdog = createAiWatchdog({
     reporter: debugWrapped.reporter,
@@ -1850,6 +1790,74 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('exit', () => terminateCodexChildren());
+
+  const hotkey = getHotkeyInput();
+  if (hotkey.inputs.length) {
+    const handleKey = (name) => {
+      if (name === 'p') pauseController.pause();
+      if (name === 'r') pauseController.resume();
+      if (name === 'q') {
+        pauseController.pause();
+        shutdown('SIGTERM');
+      }
+      if (name === 'h' || name === '?') reporter.onHelpToggle?.();
+    };
+    const keyHandler = (str, key) => {
+      if (key?.sequence === '\u0003' || (key?.ctrl && key?.name === 'c')) {
+        process.kill(process.pid, 'SIGINT');
+        return;
+      }
+      const name = String(key?.name || key?.sequence || str || '').toLowerCase();
+      if (!name) return;
+      handleKey(name);
+    };
+    const dataHandler = (chunk) => {
+      if (!chunk) return;
+      const text = String(chunk);
+      for (const ch of text) {
+        if (ch === '\u0003') {
+          process.kill(process.pid, 'SIGINT');
+          return;
+        }
+        handleKey(ch.toLowerCase());
+      }
+    };
+    for (const input of hotkey.inputs) {
+      readline.emitKeypressEvents(input);
+      if (input.isTTY && typeof input.setRawMode === 'function') {
+        input.setRawMode(true);
+      }
+      input.setEncoding('utf8');
+      input.resume();
+      if (input.isTTY) {
+        input.on('keypress', keyHandler);
+      } else {
+        input.on('data', dataHandler);
+      }
+    }
+    process.on('exit', () => {
+      for (const input of hotkey.inputs) {
+        input.off('keypress', keyHandler);
+        input.off('data', dataHandler);
+        if (input.isTTY && typeof input.setRawMode === 'function') {
+          input.setRawMode(false);
+        }
+        input.pause();
+      }
+      hotkey.cleanup();
+    });
+  }
+
+  if (reporter.onResumeState && resumeState?.completedPages?.length) {
+    reporter.onResumeState({
+      completedPages: resumeState.completedPages.length,
+      completedCriteria: resumeState.completedPages.reduce(
+        (sum, page) => sum + (Array.isArray(page?.results) ? page.results.length : 0),
+        0
+      ),
+      completedPagesData: resumeState.completedPages
+    });
+  }
 
   const { spawnSync } = await import('node:child_process');
   ensureCodexHomeDir();
