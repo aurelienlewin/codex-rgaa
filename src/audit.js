@@ -169,6 +169,18 @@ function sanitizeSheetName(name) {
   return cleaned.slice(0, 31) || 'Page';
 }
 
+function toExcelColumn(index) {
+  const safeIndex = Number.isFinite(index) ? Math.floor(index) : 0;
+  let n = Math.max(1, safeIndex);
+  let result = '';
+  while (n > 0) {
+    const mod = (n - 1) % 26;
+    result = String.fromCharCode(65 + mod) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
 function summarizeCounts(results) {
   const counts = { C: 0, NC: 0, NA: 0, ERR: 0, REVIEW: 0 };
   for (const res of results) {
