@@ -789,6 +789,7 @@ function createFancyReporter(options = {}) {
   let tempCounts = { C: 0, NC: 0, NA: 0 };
   let sessionName = '';
   let resumeTempApplied = false;
+  let headerContent = '';
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageStartAt = 0;
@@ -1029,6 +1030,8 @@ function createFancyReporter(options = {}) {
     if (!process.stdout.isTTY) return;
     const cols = process.stdout.columns || 100;
     const width = Math.max(76, Math.min(cols - 1, 120));
+    const headerWidth = Math.max(76, Math.min(cols - 2, 120));
+    const half = Math.max(32, Math.floor((headerWidth - 2) / 2));
     const barW = Math.max(12, Math.min(28, Math.floor((width - 24) / 2)));
 
     const overallTotal = totalPages * totalCriteria;
@@ -1229,6 +1232,21 @@ function createFancyReporter(options = {}) {
       ],
       2
     ).split('\n');
+    const headerBox = headerContent
+      ? boxen(headerContent, {
+          padding: 1,
+          borderStyle: 'double',
+          borderColor: 'magenta',
+          width: half
+        })
+      : '';
+    const sessionBox = boxen(sessionRows, {
+      padding: 1,
+      borderStyle: 'round',
+      borderColor: 'cyan',
+      width: half
+    });
+    const headerRow = headerBox ? joinBoxenColumns(headerBox, sessionBox) : sessionBox;
 
     const panels = [
       ...(secondPassActive
@@ -1260,12 +1278,6 @@ function createFancyReporter(options = {}) {
           ]
         : []),
       drawPanel({
-        title: i18n.t('Session', 'Session'),
-        lines: sessionRows,
-        width,
-        borderColor: palette.primary
-      }),
-      drawPanel({
         title: i18n.t('Progress', 'Progress'),
         lines: progressLines,
         width,
@@ -1289,7 +1301,7 @@ function createFancyReporter(options = {}) {
         : [])
     ];
 
-    renderer.render(panels.join('\n'));
+    renderer.render([headerRow, ...panels].join('\n'));
   };
 
   const scheduleRender = ({ refreshTime = true } = {}) => {
@@ -1326,7 +1338,8 @@ function createFancyReporter(options = {}) {
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
       enrichmentEnabled = Boolean(enrichmentEnabledFromCli);
-      auditStartAt = nowMs();
+      const resumeElapsedMs = Number(resumeState?.elapsedMs || 0);
+      auditStartAt = resumeElapsedMs > 0 ? nowMs() - resumeElapsedMs : nowMs();
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
       const subtitle = i18n.t(
@@ -1335,20 +1348,12 @@ function createFancyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
-      const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
-        '━'.repeat(42)
-      );
-      const cols = process.stdout.columns || 100;
-      const totalWidth = Math.max(76, Math.min(cols - 2, 120));
-      const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
-      const title = boxen(
+      const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline('━'.repeat(42));
+      headerContent =
         `${gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(headline)}\n` +
           `${palette.muted(subtitle)}\n` +
           `${palette.muted(credit)}\n` +
-          `${glowLine}`,
-        { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
-      );
-      console.log(title);
+          `${glowLine}`;
       spinner.start();
       spinner.text = i18n.t('Démarrage de Chrome (MCP)…', 'Starting MCP Chrome…');
     },
@@ -1359,6 +1364,9 @@ function createFancyReporter(options = {}) {
         'MCP Chrome ready. Auditing pages…'
       );
       spinner.stop();
+      if (process.stdout.isTTY) {
+        safeWrite('\x1b[2J\x1b[0;0H');
+      }
       startTicking();
       pushFeed('progress', i18n.t('Chrome ready. Starting pages…', 'Chrome ready. Starting pages…'));
       scheduleRender();
@@ -2433,7 +2441,8 @@ function createPlainReporter(options = {}) {
       );
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
-      auditStartAt = nowMs();
+      const resumeElapsedMs = Number(resumeState?.elapsedMs || 0);
+      auditStartAt = resumeElapsedMs > 0 ? nowMs() - resumeElapsedMs : nowMs();
       line(i18n.t('Pages:', 'Pages:'), String(pages));
       line(i18n.t('Criteria:', 'Criteria:'), String(criteriaCount));
       line('Temp score (C/(C+NC)):', formatTempScore(tempCounts));

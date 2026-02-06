@@ -66,12 +66,14 @@ function buildResumeState({
   crossPageEvidence,
   pageMeta,
   criteriaIds,
-  createdAt
+  createdAt,
+  elapsedMs
 }) {
   return {
     version: 1,
     createdAt: createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    elapsedMs: Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs)) : 0,
     pages,
     reportLang,
     outPath,
@@ -1297,6 +1299,8 @@ export async function runAudit(options) {
       }
       pageResults.push({ url, snapshot: compactSnapshot(page.snapshot), results });
       if (options.resumeStatePath) {
+        const baseElapsed = Number(options.resumeState?.elapsedMs || 0);
+        const elapsedMs = Date.now() - auditStartedAt.getTime() + baseElapsed;
         const completedPages = pageResults.map((item) => ({
           url: item.url,
           results: item.results,
@@ -1313,7 +1317,8 @@ export async function runAudit(options) {
             crossPageEvidence,
             pageMeta,
             criteriaIds,
-            createdAt: options.resumeState?.createdAt
+            createdAt: options.resumeState?.createdAt,
+            elapsedMs
           })
         );
       }
