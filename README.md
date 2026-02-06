@@ -138,7 +138,7 @@ npm run audit -- --pages https://example.com --allow-remote-debug --report-lang 
 <details>
 <summary><strong>Pause / resume & continue later</strong></summary>
 
-- Press `p` to pause, `r` to resume (displayed in the CLI).
+- Press `p` to pause, `r` to resume, `q` to pause + quit (displayed in the CLI).
 - Pause is reactive: it cancels in‑flight AI/MCP calls and retries them after resume.
 - A resume file is written after each page and whenever you pause (captures in‑progress page info): `out/<run>/audit.resume.json`.
 - Resuming continues from the paused page, not the next one.
@@ -150,7 +150,7 @@ npm run audit -- --resume out/<run>/audit.resume.json
 
 In guided mode, the CLI will offer recent resume files automatically.
 When the guided flow auto‑launches Chrome, resume URLs are restored in separate tabs.
-Hotkeys are read from the active TTY, so `p`, `r`, and `h` work even if stdin is busy.
+Hotkeys are read from the active TTY, so `p`, `r`, `q`, and `h` work even if stdin is busy.
 </details>
 
 ## UX moments
