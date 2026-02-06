@@ -326,7 +326,9 @@ async function openChromeTabs({ browserUrl, urls, timeoutMs = 6000 } = {}) {
       clearTimeout(timeout);
       if (res && res.ok) opened += 1;
       else failed.push(url);
-    } catch {}
+    } catch {
+      failed.push(url);
+    }
   }
   if (failed.length) {
     const retry = await createTargetsViaWebSocket({
