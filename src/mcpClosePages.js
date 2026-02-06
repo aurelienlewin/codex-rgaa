@@ -15,6 +15,28 @@ import { validateStrictOutputSchema } from './schemaValidate.js';
 import { applyCodexBaseUrlFromConfig, maybeHandleMissingAuth } from './codexAuth.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('../data/mcp-close-pages-schema.json', import.meta.url));
+const childKillTimers = new WeakMap();
+
+function terminateChild(child, useGroup) {
+  if (!child || child.killed) return;
+  const pid = child.pid;
+  const killWith = (signal) => {
+    try {
+      if (useGroup && pid) {
+        process.kill(-pid, signal);
+      } else {
+        child.kill(signal);
+      }
+    } catch {}
+  };
+
+  killWith('SIGTERM');
+  if (!childKillTimers.has(child)) {
+    const timer = setTimeout(() => killWith('SIGKILL'), 2000);
+    if (typeof timer.unref === 'function') timer.unref();
+    childKillTimers.set(child, timer);
+  }
+}
 
 function looksLikeCodexHomePermissionError(stderr) {
   const text = String(stderr || '');
@@ -271,7 +293,12 @@ async function runCodexClosePages({ urls, model, mcp, onLog, onStage, signal }) 
 
   const runOnce = async (env, args) =>
     new Promise((resolve, reject) => {
-      const child = spawn(codexPath, args, { stdio: ['pipe', 'ignore', 'pipe'], env });
+      const useProcessGroup = process.platform !== 'win32';
+      const child = spawn(codexPath, args, {
+        stdio: ['pipe', 'ignore', 'pipe'],
+        detached: useProcessGroup,
+        env
+      });
       let settled = false;
       let stderrText = '';
       let abortHandler = null;
@@ -279,6 +306,7 @@ async function runCodexClosePages({ urls, model, mcp, onLog, onStage, signal }) 
         if (settled) return;
         settled = true;
         if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
+        terminateChild(child, useProcessGroup);
         if (err) {
           err.stderr = stderrText;
           reject(err);
@@ -289,9 +317,7 @@ async function runCodexClosePages({ urls, model, mcp, onLog, onStage, signal }) 
 
       abortHandler = () => {
         onLog?.('Codex: abort signal received');
-        try {
-          child.kill('SIGTERM');
-        } catch {}
+        terminateChild(child, useProcessGroup);
       };
       if (signal) signal.addEventListener('abort', abortHandler, { once: true });
 

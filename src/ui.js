@@ -340,6 +340,11 @@ function safeClearScreenDown() {
   }
 }
 
+function clearTerminal() {
+  if (outputClosed || !process.stdout.isTTY || process.env.TERM === 'dumb') return;
+  safeWrite('\x1b[2J\x1b[0;0H');
+}
+
 function formatElapsed(ms) {
   const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
   const hh = Math.floor(totalSeconds / 3600);
@@ -1373,6 +1378,7 @@ function createFancyReporter(options = {}) {
     },
 
     onChromeRecovered() {
+      clearTerminal();
       pushFeed('stage', i18n.t('Chrome récupéré.', 'Recovered Chrome.'));
       scheduleRender();
     },
@@ -1968,6 +1974,7 @@ function createLegacyReporter(options = {}) {
     },
 
     onChromeRecovered() {
+      clearTerminal();
       const line = `${palette.warn('●')} ${palette.accent(i18n.t('Recovered Chrome', 'Recovered Chrome'))}`;
       if (typeof bars.log === 'function') bars.log(line);
       else console.log(line);
@@ -2458,6 +2465,7 @@ function createPlainReporter(options = {}) {
     },
 
     onChromeRecovered() {
+      clearTerminal();
       line('Chrome:', i18n.t('Recovered', 'Recovered'));
     },
 

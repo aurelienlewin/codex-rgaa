@@ -32,6 +32,28 @@ const CACHED_PAGES_MAX = (() => {
 })();
 
 const listPagesCache = new Map();
+const childKillTimers = new WeakMap();
+
+function terminateChild(child, useGroup) {
+  if (!child || child.killed) return;
+  const pid = child.pid;
+  const killWith = (signal) => {
+    try {
+      if (useGroup && pid) {
+        process.kill(-pid, signal);
+      } else {
+        child.kill(signal);
+      }
+    } catch {}
+  };
+
+  killWith('SIGTERM');
+  if (!childKillTimers.has(child)) {
+    const timer = setTimeout(() => killWith('SIGKILL'), 2000);
+    if (typeof timer.unref === 'function') timer.unref();
+    childKillTimers.set(child, timer);
+  }
+}
 
 function parseEnvBool(raw, fallback = false) {
   if (raw === undefined || raw === null || raw === '') return fallback;
@@ -347,8 +369,10 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
   const runOnce = async (env, args) =>
     new Promise((resolve, reject) => {
       onStage?.('AI: spawning Codex');
+      const useProcessGroup = process.platform !== 'win32';
       const child = spawn(codexPath, args, {
         stdio: ['pipe', 'ignore', 'pipe'],
+        detached: useProcessGroup,
         env
       });
 
@@ -361,6 +385,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
         if (signal && abortHandler) {
           signal.removeEventListener('abort', abortHandler);
         }
+        terminateChild(child, useProcessGroup);
         if (err) {
           err.stderr = stderrText;
           reject(err);
@@ -371,9 +396,7 @@ async function runCodexSnapshot({ url, model, mcp, onLog, onStage, signal }) {
 
       abortHandler = () => {
         onLog?.('Codex: abort signal received');
-        try {
-          child.kill('SIGTERM');
-        } catch {}
+        terminateChild(child, useProcessGroup);
       };
 
       if (signal) {
@@ -587,8 +610,10 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
   const runOnce = async (env, args) =>
     new Promise((resolve, reject) => {
       onStage?.('AI: spawning Codex');
+      const useProcessGroup = process.platform !== 'win32';
       const child = spawn(codexPath, args, {
         stdio: ['pipe', 'ignore', 'pipe'],
+        detached: useProcessGroup,
         env
       });
 
@@ -601,6 +626,7 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
         if (signal && abortHandler) {
           signal.removeEventListener('abort', abortHandler);
         }
+        terminateChild(child, useProcessGroup);
         if (err) {
           err.stderr = stderrText;
           reject(err);
@@ -611,9 +637,7 @@ export async function listMcpPages({ model, mcp, onLog, onStage, signal }) {
 
       abortHandler = () => {
         onLog?.('Codex: abort signal received');
-        try {
-          child.kill('SIGTERM');
-        } catch {}
+        terminateChild(child, useProcessGroup);
       };
 
       if (signal) {
