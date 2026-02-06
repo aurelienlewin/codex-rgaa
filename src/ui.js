@@ -1352,15 +1352,15 @@ function createFancyReporter(options = {}) {
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
       const subtitle = i18n.t(
-        `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
-        `MCP-driven audit • ${criteriaLabel} • French pages`
+        `Audit piloté par MCP • ${criteriaLabel}`,
+        `MCP-driven audit • ${criteriaLabel}`
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
       const cols = process.stdout.columns || 100;
       const totalWidth = Math.max(76, Math.min(cols - 2, 120));
       const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
-      const glowLen = Math.max(12, Math.min(42, half - 4));
+      const glowLen = Math.max(12, Math.min(42, half - 6));
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(glowLen)
       );
@@ -1924,15 +1924,15 @@ function createLegacyReporter(options = {}) {
       const headline = 'RGAA Website Auditor';
       const criteriaLabel = i18n.t(`${criteriaCount} critères`, `${criteriaCount} criteria`);
       const subtitle = i18n.t(
-        `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
-        `MCP-driven audit • ${criteriaLabel} • French pages`
+        `Audit piloté par MCP • ${criteriaLabel}`,
+        `MCP-driven audit • ${criteriaLabel}`
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
       const cols = process.stdout.columns || 100;
       const totalWidth = Math.max(76, Math.min(cols - 2, 120));
       const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
-      const glowLen = Math.max(12, Math.min(42, half - 4));
+      const glowLen = Math.max(12, Math.min(42, half - 6));
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(glowLen)
       );
