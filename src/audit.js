@@ -1470,8 +1470,9 @@ export async function runAudit(options) {
     evidenceSheet.columns = [
       { header: i18n.excel.criterionId(), key: 'id', width: 10 },
       { header: i18n.excel.criterionTheme(), key: 'theme', width: 18 },
-      { header: i18n.excel.criterionTitle(), key: 'title', width: 64 },
+      { header: i18n.excel.criterionTitle(), key: 'title', width: 56 },
       { header: i18n.excel.pageLabel(), key: 'page', width: 6 },
+      { header: i18n.excel.pageTitle(), key: 'pageTitle', width: 40 },
       { header: i18n.excel.pageUrl(), key: 'url', width: 60 },
       { header: i18n.excel.status(), key: 'status', width: 12 },
       { header: i18n.excel.summary(), key: 'summary', width: 56 },
@@ -1606,12 +1607,14 @@ export async function runAudit(options) {
 
         const evidencePayload = buildEvidencePayload(res);
         const pageUrl = pageResults[pageIndex]?.url || '';
+        const pageTitle = pageMeta[pageIndex]?.title || '';
         const evidenceLinks = evidenceLinksByPage[pageIndex] || {};
         const evidenceRow = evidenceSheet.addRow([
           criterion.id,
           criterion.theme,
           criterion.title,
           pageLabels[pageIndex],
+          pageTitle,
           pageUrl,
           evidencePayload.status,
           evidencePayload.summary,
@@ -1621,7 +1624,7 @@ export async function runAudit(options) {
           evidenceLinks.screenshot2 || ''
         ]);
 
-        for (let c = 1; c <= 11; c += 1) {
+        for (let c = 1; c <= 12; c += 1) {
           const cell = evidenceRow.getCell(c);
           cell.alignment = { vertical: 'top', wrapText: true };
           cell.border = {
@@ -1633,17 +1636,17 @@ export async function runAudit(options) {
         }
 
         if (pageUrl) {
-          const urlCell = evidenceRow.getCell(5);
+          const urlCell = evidenceRow.getCell(6);
           urlCell.value = { text: pageUrl, hyperlink: pageUrl };
           applyHyperlinkStyle(urlCell);
         }
         if (evidenceLinks.screenshot1) {
-          const shotCell = evidenceRow.getCell(10);
+          const shotCell = evidenceRow.getCell(11);
           shotCell.value = { text: evidenceLinks.screenshot1, hyperlink: evidenceLinks.screenshot1 };
           applyHyperlinkStyle(shotCell);
         }
         if (evidenceLinks.screenshot2) {
-          const shotCell = evidenceRow.getCell(11);
+          const shotCell = evidenceRow.getCell(12);
           shotCell.value = { text: evidenceLinks.screenshot2, hyperlink: evidenceLinks.screenshot2 };
           applyHyperlinkStyle(shotCell);
         }
@@ -1653,12 +1656,12 @@ export async function runAudit(options) {
     const auditRange = `D2:${lastCol}${uiSheet.rowCount}`;
 
     const summaryTitleRow = summarySheet.addRow([i18n.excel.summaryTitle()]);
-    summarySheet.getColumn(1).width = 30;
-    summarySheet.getColumn(2).width = 20;
+    summarySheet.getColumn(1).width = 34;
+    summarySheet.getColumn(2).width = 26;
     summarySheet.mergeCells('A1:B1');
     summaryTitleRow.font = { size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
-    summaryTitleRow.alignment = { vertical: 'middle', horizontal: 'center' };
-    summaryTitleRow.height = 28;
+    summaryTitleRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    summaryTitleRow.height = 32;
     summaryTitleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
 
     const infoRows = [
@@ -1670,16 +1673,22 @@ export async function runAudit(options) {
     for (const row of infoRows) {
       const r = summarySheet.addRow(row);
       r.getCell(1).font = { size: BASE_FONT_SIZE, bold: true };
-      r.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
-      r.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
+      r.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      r.getCell(2).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       r.getCell(2).font = { size: BASE_FONT_SIZE, bold: true };
+      r.height = 22;
     }
     const scoreRowIndex = summaryTitleRow.number + 3;
     const scoreCell = summarySheet.getRow(scoreRowIndex).getCell(2);
     scoreCell.numFmt = '0.0%';
     scoreCell.value = globalScore;
     summarySheet.addRow([]);
-    summarySheet.addRow([i18n.excel.globalStatus()]);
+    const globalHeaderRow = summarySheet.addRow([i18n.excel.globalStatus()]);
+    summarySheet.mergeCells(`A${globalHeaderRow.number}:B${globalHeaderRow.number}`);
+    globalHeaderRow.font = { size: BASE_FONT_SIZE + 1, bold: true, color: { argb: COLORS.headerFg } };
+    globalHeaderRow.alignment = { vertical: 'middle', horizontal: 'left' };
+    globalHeaderRow.height = 24;
+    globalHeaderRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
     const statusRows = [
       { status: STATUS.C, label: i18n.excel.conform(), value: globalCounts.C },
       { status: STATUS.NC, label: i18n.excel.notConform(), value: globalCounts.NC },
@@ -1715,7 +1724,12 @@ export async function runAudit(options) {
     }
 
     summarySheet.addRow([]);
-    summarySheet.addRow([i18n.t('Légende', 'Legend')]);
+    const legendHeaderRow = summarySheet.addRow([i18n.t('Légende', 'Legend')]);
+    summarySheet.mergeCells(`A${legendHeaderRow.number}:B${legendHeaderRow.number}`);
+    legendHeaderRow.font = { size: BASE_FONT_SIZE + 1, bold: true, color: { argb: COLORS.headerFg } };
+    legendHeaderRow.alignment = { vertical: 'middle', horizontal: 'left' };
+    legendHeaderRow.height = 24;
+    legendHeaderRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
     const legend = [
       [statusStyle(STATUS.C).icon, i18n.statusLabel(STATUS.C)],
       [statusStyle(STATUS.NC).icon, i18n.statusLabel(STATUS.NC)],
@@ -1735,6 +1749,18 @@ export async function runAudit(options) {
         });
       });
     }
+
+    summarySheet.eachRow((row) => {
+      row.eachCell((cell, col) => {
+        const base = cell.alignment || {};
+        cell.alignment = {
+          ...base,
+          vertical: base.vertical || 'middle',
+          horizontal: base.horizontal || (col === 1 ? 'left' : 'center'),
+          wrapText: base.wrapText !== undefined ? base.wrapText : true
+        };
+      });
+    });
 
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await workbook.xlsx.writeFile(outPath);
