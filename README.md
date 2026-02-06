@@ -161,6 +161,7 @@ Hotkeys are read from the active TTY, so `p`, `r`, and `h` work even if stdin is
 - **End recap**: A modern summary line with Score + C/NC/NA/REV/ERR + remaining Review.
 - **Temp score**: Live C/(C+NC) updates after each decision.
 - **Pause**: UI animations stop while paused to keep the display stable.
+- **Recovery**: If Chrome disconnects, the auditor relaunches it and shows a “Recovered Chrome” badge.
 </details>
 
 ## Run

@@ -87,6 +87,25 @@ function isRetryableAiError(err) {
   return text.includes('timed out') || text.includes('timeout') || text.includes('stalled');
 }
 
+function isMcpDisconnectError(err) {
+  const text = String(err?.message || err || '').toLowerCase();
+  return (
+    text.includes('chrome-devtools') ||
+    text.includes('mcp') ||
+    text.includes('cdp')
+  ) && (
+    text.includes('disconnected') ||
+    text.includes('disconnect') ||
+    text.includes('stream disconnected') ||
+    text.includes('connection refused') ||
+    text.includes('econnrefused') ||
+    text.includes('socket hang up') ||
+    text.includes('target closed') ||
+    text.includes('mcp server unavailable') ||
+    text.includes('failed to connect')
+  );
+}
+
 function createPauseAwareSignal({ signal, pauseController }) {
   if (!pauseController) {
     return { signal, cleanup: () => {}, wasPausedAbort: () => false };
@@ -603,7 +622,7 @@ export async function runAudit(options) {
     failFastRaw === ''
       ? true
       : !(failFastRaw === '0' || failFastRaw === 'false' || failFastRaw === 'no');
-  const mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr, utils: aiUseUtils } : null;
+  let mcpForAi = aiUseMcp ? { ...mcpConfig, ocr: aiUseOcr, utils: aiUseUtils } : null;
   const totalPages = Array.isArray(options.pages) ? options.pages.length : 0;
   let pagesFailed = 0;
   let aiFailed = 0;
@@ -702,6 +721,61 @@ export async function runAudit(options) {
     resumeCompletedPages = pageResults.length;
   }
 
+  const relaunchChrome = async ({ label, reason }) => {
+    if (!chrome) return false;
+    reporter?.onAILog?.({
+      criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
+      message: `${label} failed (Chrome disconnected). Relaunching Chrome…`
+    });
+    try {
+      await chrome.kill();
+    } catch {}
+    try {
+      chrome = await launchChrome({
+        chromePath: options.chromePath,
+        port: options.chromePort,
+        userDataDir: options.chromeProfileDir
+      });
+      mcpConfig = {
+        ...mcpConfig,
+        browserUrl: `http://127.0.0.1:${chrome.port}`,
+        autoConnect: false
+      };
+      mcpConfig.cachedPages = [];
+      if (mcpForAi) {
+        mcpForAi = {
+          ...mcpForAi,
+          browserUrl: mcpConfig.browserUrl,
+          autoConnect: false
+        };
+        mcpForAi.cachedPages = [];
+      }
+      reporter?.onAILog?.({
+        criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
+        message: 'Chrome relaunched; retrying.'
+      });
+      reporter?.onChromeRecovered?.();
+      return true;
+    } catch (err) {
+      reporter?.onAILog?.({
+        criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
+        message: `Chrome relaunch failed: ${String(err?.message || err || reason || 'unknown error')}`
+      });
+      return false;
+    }
+  };
+
+  const withMcpRecovery = async ({ label, fn }) => {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isMcpDisconnectError(err)) throw err;
+      const recovered = await relaunchChrome({ label, reason: err });
+      if (!recovered) throw err;
+      return fn();
+    }
+  };
+
   try {
     if (aborted || signal?.aborted) {
       throw createAbortError();
@@ -751,13 +825,17 @@ export async function runAudit(options) {
           retryOnAny: true,
           signal,
           fn: ({ signal: attemptSignal }) =>
-            collectSnapshotWithMcp({
-              url,
-              model: options.ai?.model,
-              mcp: mcpConfig,
-              onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
-              onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
-              signal: attemptSignal
+            withMcpRecovery({
+              label: 'Snapshot',
+              fn: () =>
+                collectSnapshotWithMcp({
+                  url,
+                  model: options.ai?.model,
+                  mcp: mcpConfig,
+                  onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'snapshot' }, message }),
+                  onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'snapshot' }, label }),
+                  signal: attemptSignal
+                })
             })
         });
         const wantsHtmlValidation =
@@ -781,13 +859,17 @@ export async function runAudit(options) {
               retryOnAny: true,
               signal,
               fn: ({ signal: attemptSignal }) =>
-                collectEnrichedEvidenceWithMcp({
-                  url,
-                  model: options.ai?.model,
-                  mcp: mcpConfig,
-                  onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'enrich' }, message }),
-                  onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
-                  signal: attemptSignal
+                withMcpRecovery({
+                  label: 'Enrichment',
+                  fn: () =>
+                    collectEnrichedEvidenceWithMcp({
+                      url,
+                      model: options.ai?.model,
+                      mcp: mcpConfig,
+                      onLog: (message) => reporter?.onAILog?.({ criterion: { id: 'enrich' }, message }),
+                      onStage: (label) => reporter?.onAIStage?.({ criterion: { id: 'enrich' }, label }),
+                      signal: attemptSignal
+                    })
                 })
             });
             const cacheKey = buildEnrichmentCacheKey(enriched);
@@ -1006,18 +1088,22 @@ export async function runAudit(options) {
           if (pauseController) await pauseController.waitIfPaused();
           const chunk = pendingAI.slice(start, start + batchSize);
           try {
-            const batchResults = await aiReviewCriteriaBatch({
-              model: options.ai.model,
-              url,
-              criteria: chunk.map((p) => p.criterion),
-              snapshot: page.snapshot,
-              reportLang,
-              onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
-              onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
-              onError: (message) => reporter?.onError?.(message),
-              failFast,
-              signal,
-              mcp: mcpForAi
+            const batchResults = await withMcpRecovery({
+              label: 'AI batch',
+              fn: () =>
+                aiReviewCriteriaBatch({
+                  model: options.ai.model,
+                  url,
+                  criteria: chunk.map((p) => p.criterion),
+                  snapshot: page.snapshot,
+                  reportLang,
+                  onLog: (message) => reporter?.onAILog?.({ criterion: pseudoCriterion, message }),
+                  onStage: (label) => reporter?.onAIStage?.({ criterion: pseudoCriterion, label }),
+                  onError: (message) => reporter?.onError?.(message),
+                  failFast,
+                  signal,
+                  mcp: mcpForAi
+                })
             });
             for (const r of Array.isArray(batchResults) ? batchResults : []) {
               const key = String(r?.criterion_id || '');
@@ -1088,18 +1174,22 @@ export async function runAudit(options) {
               retryOnAny: true,
               signal,
               fn: ({ signal: attemptSignal }) =>
-                aiReviewCriterion({
-                  model: options.ai.model,
-                  url,
-                  criterion,
-                  snapshot: page.snapshot,
-                  reportLang,
-                  onLog: (message) => reporter?.onAILog?.({ criterion, message }),
-                  onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
-                  onError: (message) => reporter?.onError?.(message),
-                  failFast,
-                  signal: attemptSignal,
-                  mcp: mcpForAi
+                withMcpRecovery({
+                  label: `AI criterion ${criterion.id}`,
+                  fn: () =>
+                    aiReviewCriterion({
+                      model: options.ai.model,
+                      url,
+                      criterion,
+                      snapshot: page.snapshot,
+                      reportLang,
+                      onLog: (message) => reporter?.onAILog?.({ criterion, message }),
+                      onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+                      onError: (message) => reporter?.onError?.(message),
+                      failFast,
+                      signal: attemptSignal,
+                      mcp: mcpForAi
+                    })
                 })
             });
           }
@@ -1140,19 +1230,23 @@ export async function runAudit(options) {
             retryOnAny: true,
             signal,
             fn: ({ signal: attemptSignal }) =>
-              aiReviewCriterion({
-                model: options.ai.model,
-                url,
-                criterion,
-                snapshot: page.snapshot,
-                reportLang,
-                onLog: (message) => reporter?.onAILog?.({ criterion, message }),
-                onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
-                onError: (message) => reporter?.onError?.(message),
-                failFast,
-                signal: attemptSignal,
-                mcp: mcpForAi,
-                retry: true
+              withMcpRecovery({
+                label: `AI retry ${criterion.id}`,
+                fn: () =>
+                  aiReviewCriterion({
+                    model: options.ai.model,
+                    url,
+                    criterion,
+                    snapshot: page.snapshot,
+                    reportLang,
+                    onLog: (message) => reporter?.onAILog?.({ criterion, message }),
+                    onStage: (label) => reporter?.onAIStage?.({ criterion, label }),
+                    onError: (message) => reporter?.onError?.(message),
+                    failFast,
+                    signal: attemptSignal,
+                    mcp: mcpForAi,
+                    retry: true
+                  })
               })
           });
           if (evaluation.status === STATUS.ERR) {

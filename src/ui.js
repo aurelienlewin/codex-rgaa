@@ -1028,76 +1028,107 @@ function createFancyReporter(options = {}) {
 
     const showAiPost = aiActive && !secondPassActive && pageDone >= totalCriteria && totalCriteria > 0;
     const aiElapsed = aiStartedAt ? formatElapsed(clockNow - aiStartedAt) : '';
-    const aiLine = showAiPost
-      ? `${padVisibleRight(palette.accent('AI'), 8)} ${palette.primary(
+
+    const progressRows = [];
+    if (secondPassActive) {
+      if (secondPassNotice) {
+        progressRows.push({
+          key: palette.muted('Note'),
+          value: palette.glow(clipInline(secondPassNotice, width - 18))
+        });
+      }
+      progressRows.push({
+        key: palette.glow(i18n.t('Second pass', 'Second pass')),
+        value:
+          `${renderBar({ value: secondPassDone, total: secondPassTotal, width: barW })} ` +
+          `${palette.muted(`${secondPassDone}/${secondPassTotal || 0}`)}` +
+          `${secondPassCurrent ? ` ${palette.muted('•')} ${palette.accent(secondPassCurrent)}` : ''}`
+      });
+    }
+
+    progressRows.push({
+      key: palette.primary('Overall'),
+      value:
+        `${renderBar({ value: overallDone, total: overallTotal, width: barW })} ` +
+        `${palette.muted(`${overallPct}% • ${overallDone}/${overallTotal || 0}`)}`
+    });
+
+    if (showAiPost) {
+      progressRows.push({
+        key: palette.accent('AI'),
+        value: `${palette.primary(
           clipInline(aiLabel || i18n.t('Working…', 'Working…'), width - 24)
         )}${aiElapsed ? ` ${palette.muted('•')} ${palette.muted(aiElapsed)}` : ''}`
-      : '';
+      });
+    }
 
-    const progressLines = [
-      ...(secondPassActive
-        ? [
-            secondPassNotice
-              ? `${padVisibleRight(palette.muted('Note'), 8)} ${palette.glow(clipInline(secondPassNotice, width - 18))}`
-              : '',
-            `${padVisibleRight(palette.glow(i18n.t('Second pass', 'Second pass')), 8)} ${renderBar({
-              value: secondPassDone,
-              total: secondPassTotal,
-              width: barW
-            })} ${palette.muted(
-              `${secondPassDone}/${secondPassTotal || 0}`
-            )}${secondPassCurrent ? ` ${palette.muted('•')} ${palette.accent(secondPassCurrent)}` : ''}`
-          ]
-        : []),
-      `${padVisibleRight(palette.primary('Overall'), 8)} ${renderBar({ value: overallDone, total: overallTotal, width: barW })} ${palette.muted(
-        `${overallPct}% • ${overallDone}/${overallTotal || 0}`
-      )}`,
-      aiLine,
-      showEnrichmentSummary && enrichmentEnabled
-        ? `${padVisibleRight(palette.glow('Enrich'), 8)} ${renderBar({
-            value: enrichmentDone,
-            total: 1,
-            width: barW
-          })} ${palette.muted(
-            `${enrichmentDone}/1`
-          )} ${palette.muted('•')} ${
+    if (showEnrichmentSummary && enrichmentEnabled) {
+      progressRows.push({
+        key: palette.glow('Enrich'),
+        value:
+          `${renderBar({ value: enrichmentDone, total: 1, width: barW })} ` +
+          `${palette.muted(`${enrichmentDone}/1`)} ${palette.muted('•')} ` +
+          `${
             enrichmentStatus === 'failed'
               ? palette.warn('failed')
               : enrichmentStatus === 'done'
                 ? palette.ok('done')
                 : palette.muted('pending')
           }`
-        : `${padVisibleRight(palette.accent('Page'), 8)} ${renderBar({
-            value: pageDone,
-            total: totalCriteria,
-            width: barW
-          })} ${palette.muted(
-            `${pagePct}% • ${pageDone}/${totalCriteria || 0}`
-          )} ${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`,
-      urlLine ? `${padVisibleRight(palette.muted('URL'), 8)} ${chalk.bold(urlLine)}` : '',
-      criterionLine ? `${padVisibleRight(palette.muted('Criterion'), 8)} ${palette.accent(criterionLine)}` : '',
-      `${padVisibleRight(palette.muted('Keys'), 8)} ${palette.muted(
-        showHelp ? 'p pause • r resume • h hide help' : 'p pause • r resume • h help'
-      )}`,
-      ...(showHelp
-        ? [
-            `${padVisibleRight(palette.muted('Help'), 8)} ${palette.muted(
-              'Pause cancels in-flight AI/MCP calls and retries on resume.'
-            )}`,
-            `${padVisibleRight(palette.muted('Help'), 8)} ${palette.muted(
-              'Set AUDIT_UI_ANIM_MS to adjust animation speed.'
-            )}`
-          ]
-        : []),
-      isPaused
-        ? `${padVisibleRight(palette.warn('Status'), 8)} ${palette.warn('paused')}`
-        : '',
-      elapsed
-        ? `${padVisibleRight(palette.muted(i18n.t('Durée', 'Elapsed')), 8)} ${palette.accent(elapsed)} ${(
-            pulseColors[frame] || palette.muted
-          )(pulseGlyphs[frame] || '·')}`
-        : ''
-    ].filter(Boolean);
+      });
+    } else {
+      progressRows.push({
+        key: palette.accent('Page'),
+        value:
+          `${renderBar({ value: pageDone, total: totalCriteria, width: barW })} ` +
+          `${palette.muted(`${pagePct}% • ${pageDone}/${totalCriteria || 0}`)} ` +
+          `${palette.muted('•')} ${palette.muted(i18n.t('Page', 'Page'))} ${palette.accent(pageLabel)}`
+      });
+    }
+
+    const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
+    progressRows.push({
+      key: palette.muted(tempScoreLabel),
+      value: chalk.bold(formatTempScore(tempCounts))
+    });
+
+    if (urlLine) {
+      progressRows.push({ key: palette.muted('URL'), value: chalk.bold(urlLine) });
+    }
+    if (criterionLine) {
+      progressRows.push({ key: palette.muted('Criterion'), value: palette.accent(criterionLine) });
+    }
+
+    progressRows.push({
+      key: palette.muted('Keys'),
+      value: palette.muted(showHelp ? 'p pause • r resume • h hide help' : 'p pause • r resume • h help')
+    });
+
+    if (showHelp) {
+      progressRows.push({
+        key: palette.muted('Help'),
+        value: palette.muted('Pause cancels in-flight AI/MCP calls and retries on resume.')
+      });
+      progressRows.push({
+        key: palette.muted('Help'),
+        value: palette.muted('Set AUDIT_UI_ANIM_MS to adjust animation speed.')
+      });
+    }
+
+    if (isPaused) {
+      progressRows.push({ key: palette.warn('Status'), value: palette.warn('paused') });
+    }
+
+    if (elapsed) {
+      progressRows.push({
+        key: palette.muted(i18n.t('Durée', 'Elapsed')),
+        value: `${palette.accent(elapsed)} ${(pulseColors[frame] || palette.muted)(
+          pulseGlyphs[frame] || '·'
+        )}`
+      });
+    }
+
+    const progressLines = formatKeyValueRows(progressRows, 2).split('\n');
 
     const timeW = 5;
     const typeW = 11;
@@ -1305,6 +1336,11 @@ function createFancyReporter(options = {}) {
       spinner.stop();
       startTicking();
       pushFeed('progress', i18n.t('Chrome ready. Starting pages…', 'Chrome ready. Starting pages…'));
+      scheduleRender();
+    },
+
+    onChromeRecovered() {
+      pushFeed('stage', i18n.t('Chrome récupéré.', 'Recovered Chrome.'));
       scheduleRender();
     },
 
@@ -1890,6 +1926,12 @@ function createLegacyReporter(options = {}) {
       }
     },
 
+    onChromeRecovered() {
+      const line = `${palette.warn('●')} ${palette.accent(i18n.t('Recovered Chrome', 'Recovered Chrome'))}`;
+      if (typeof bars.log === 'function') bars.log(line);
+      else console.log(line);
+    },
+
     onResumeState({ completedCriteria = 0 } = {}) {
       resumeOverallDone = completedCriteria;
       overallDone = completedCriteria;
@@ -2357,6 +2399,10 @@ function createPlainReporter(options = {}) {
 
     onChromeReady() {
       line(i18n.t('Chrome ready. Auditing pages…', 'Chrome ready. Auditing pages…'));
+    },
+
+    onChromeRecovered() {
+      line('Chrome:', i18n.t('Recovered', 'Recovered'));
     },
 
     onResumeState({ completedPages = 0, completedCriteria = 0 } = {}) {
