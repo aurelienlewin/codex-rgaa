@@ -1042,9 +1042,6 @@ function createFancyReporter(options = {}) {
       `${padVisibleRight(palette.primary('Overall'), 8)} ${renderBar({ value: overallDone, total: overallTotal, width: barW })} ${palette.muted(
         `${overallPct}% • ${overallDone}/${overallTotal || 0}`
       )}`,
-      `${padVisibleRight(palette.muted('Temp'), 8)} ${palette.accent(
-        `C/(C+NC) ${formatTempScore(tempCounts)}`
-      )}`,
       aiLine,
       showEnrichmentSummary && enrichmentEnabled
         ? `${padVisibleRight(palette.glow('Enrich'), 8)} ${renderBar({
@@ -1236,7 +1233,8 @@ function createFancyReporter(options = {}) {
       mcpMode: mcpModeFromCli,
       auditMode: mode,
       enrichmentEnabled: enrichmentEnabledFromCli,
-      resumePath
+      resumePath,
+      outDirName
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
@@ -1252,7 +1250,7 @@ function createFancyReporter(options = {}) {
         `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
         `MCP-driven audit • ${criteriaLabel} • French pages`
       );
-      const credit = 'Aurélien Lewin <aurelien.lewin@osf.digital>';
+      const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(42)
@@ -1268,8 +1266,11 @@ function createFancyReporter(options = {}) {
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
       const reasoningLabel = `Temp score (C/(C+NC)): ${formatTempScore(tempCounts)}`;
+      const sessionHeader = outDirName
+        ? `${palette.muted('Session')} ${palette.accent(outDirName)}`
+        : palette.muted('Session');
       const session = boxen(
-        `${palette.muted('Session')}\n` +
+        `${sessionHeader}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
           `${palette.muted(reasoningLabel)}`,
@@ -1802,7 +1803,8 @@ function createLegacyReporter(options = {}) {
       mcpMode,
       auditMode: mode,
       enrichmentEnabled: enrichmentEnabledFromCli,
-      resumePath
+      resumePath,
+      outDirName
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
@@ -1816,7 +1818,7 @@ function createLegacyReporter(options = {}) {
         `Audit piloté par MCP • ${criteriaLabel} • Pages FR`,
         `MCP-driven audit • ${criteriaLabel} • French pages`
       );
-      const credit = 'Aurélien Lewin <aurelien.lewin@osf.digital>';
+      const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(42)
@@ -1832,8 +1834,11 @@ function createLegacyReporter(options = {}) {
         { padding: 1, borderStyle: 'double', borderColor: 'magenta', width: half }
       );
       const reasoningLabel = `Temp score (C/(C+NC)): ${formatTempScore(tempCounts)}`;
+      const sessionHeader = outDirName
+        ? `${palette.muted('Session')} ${palette.accent(outDirName)}`
+        : palette.muted('Session');
       const session = boxen(
-        `${palette.muted('Session')}\n` +
+        `${sessionHeader}\n` +
           `${palette.muted(i18n.t('Pages', 'Pages'))}      ${chalk.bold(String(pages))}\n` +
           `${palette.muted(i18n.t('Critères', 'Criteria'))}   ${chalk.bold(String(criteriaCount))}\n` +
           `${palette.muted(reasoningLabel)}`,

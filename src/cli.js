@@ -1546,6 +1546,8 @@ async function main() {
   if (!argv.out && resumeState?.outPath) {
     outPath = path.resolve(String(resumeState.outPath));
   }
+  const outDir = outPath ? path.dirname(outPath) : defaultOutDir;
+  const outDirName = path.basename(outDir);
   const resumeStatePath = resumePath
     ? resumePath
     : path.join(outPath ? path.dirname(outPath) : defaultOutDir, 'audit.resume.json');
@@ -1615,7 +1617,8 @@ async function main() {
       mcpMode: process.env.CODEX_MCP_MODE,
       auditMode: snapshotMode,
       enrichmentEnabled,
-      resumePath: resumeStatePath
+      resumePath: resumeStatePath,
+      outDirName
     });
   }
 
