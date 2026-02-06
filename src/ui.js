@@ -1360,7 +1360,8 @@ function createFancyReporter(options = {}) {
       const cols = process.stdout.columns || 100;
       const totalWidth = Math.max(76, Math.min(cols - 2, 120));
       const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
-      const glowLen = Math.max(12, Math.min(42, half - 6));
+      const innerWidth = Math.max(1, half - 2);
+      const glowLen = Math.max(8, Math.min(32, innerWidth - 4));
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(glowLen)
       );
@@ -1932,7 +1933,8 @@ function createLegacyReporter(options = {}) {
       const cols = process.stdout.columns || 100;
       const totalWidth = Math.max(76, Math.min(cols - 2, 120));
       const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
-      const glowLen = Math.max(12, Math.min(42, half - 6));
+      const innerWidth = Math.max(1, half - 2);
+      const glowLen = Math.max(8, Math.min(32, innerWidth - 4));
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
         '━'.repeat(glowLen)
       );

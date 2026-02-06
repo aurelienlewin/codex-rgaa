@@ -1824,16 +1824,15 @@ async function main() {
     };
     for (const input of hotkey.inputs) {
       readline.emitKeypressEvents(input);
-      if (input.isTTY && typeof input.setRawMode === 'function') {
-        input.setRawMode(true);
+      if (typeof input.setRawMode === 'function') {
+        try {
+          input.setRawMode(true);
+        } catch {}
       }
       input.setEncoding('utf8');
       input.resume();
-      if (input.isTTY) {
-        input.on('keypress', keyHandler);
-      } else {
-        input.on('data', dataHandler);
-      }
+      input.on('keypress', keyHandler);
+      input.on('data', dataHandler);
     }
     process.on('exit', () => {
       for (const input of hotkey.inputs) {
