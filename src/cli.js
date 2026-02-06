@@ -301,6 +301,33 @@ async function forceNavigateFirstPage({ browserUrl, url, timeoutMs = 6000 } = {}
   return false;
 }
 
+async function openChromeTabs({ browserUrl, urls, timeoutMs = 6000 } = {}) {
+  const base = normalizeHttpBaseUrl(browserUrl);
+  const list = Array.isArray(urls) ? urls : [];
+  const unique = Array.from(
+    new Set(list.map((url) => String(url || '').trim()).filter((url) => isHttpUrl(url)))
+  );
+  if (!base || unique.length === 0) {
+    return { attempted: 0, opened: 0, navigated: false };
+  }
+
+  const firstUrl = unique[0];
+  const navigated = await forceNavigateFirstPage({ browserUrl: base, url: firstUrl, timeoutMs });
+  let opened = 0;
+  for (const url of unique.slice(1)) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch(`${base}/json/new?${encodeURIComponent(url)}`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (res && res.ok) opened += 1;
+    } catch {}
+  }
+  return { attempted: unique.length, opened, navigated };
+}
+
 async function launchChromeForGuided({ chromePath, port, userDataDir, initialUrl } = {}) {
   const rawInitial = String(initialUrl || '').trim();
   const isHttp = /^https?:\/\//i.test(rawInitial);
@@ -1429,13 +1456,29 @@ async function main() {
     });
     mcpBrowserUrlArg = `http://127.0.0.1:${launchedChrome.port}`;
     mcpAutoConnectArg = false;
-    autoLaunchOpenedInitial = await forceNavigateFirstPage({
-      browserUrl: mcpBrowserUrlArg,
-      url: inspectUrl
-    });
-    await promptContinue('Chrome is ready. Open your tabs in this window now.', {
-      title: 'Chrome Ready'
-    });
+    const resumeTabs = Array.isArray(resumeState?.pages)
+      ? resumeState.pages.filter((url) => isHttpUrl(url))
+      : [];
+    if (resumeTabs.length) {
+      console.log(`\nRestoring ${resumeTabs.length} tabs from resume file…`);
+      const restored = await openChromeTabs({
+        browserUrl: mcpBrowserUrlArg,
+        urls: resumeTabs
+      });
+      autoLaunchOpenedInitial =
+        restored.attempted > 0 && (restored.navigated || restored.opened > 0);
+      await promptContinue('Chrome is ready with restored tabs.', {
+        title: 'Chrome Ready'
+      });
+    } else {
+      autoLaunchOpenedInitial = await forceNavigateFirstPage({
+        browserUrl: mcpBrowserUrlArg,
+        url: inspectUrl
+      });
+      await promptContinue('Chrome is ready. Open your tabs in this window now.', {
+        title: 'Chrome Ready'
+      });
+    }
   }
 
   const mcpBrowserUrl = String(mcpBrowserUrlArg || '').trim();
@@ -1618,7 +1661,8 @@ async function main() {
       auditMode: snapshotMode,
       enrichmentEnabled,
       resumePath: resumeStatePath,
-      outDirName
+      outDirName,
+      resumeState
     });
   }
 
@@ -1677,7 +1721,8 @@ async function main() {
       completedCriteria: resumeState.completedPages.reduce(
         (sum, page) => sum + (Array.isArray(page?.results) ? page.results.length : 0),
         0
-      )
+      ),
+      completedPagesData: resumeState.completedPages
     });
   }
 

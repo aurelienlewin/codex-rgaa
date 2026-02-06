@@ -109,6 +109,23 @@ function createTempScoreTracker(totalPages = 0) {
   return { counts, onCriterion, onGlobalDecision };
 }
 
+function seedTempTrackerFromCompletedPages(tempTracker, completedPages) {
+  if (!tempTracker || !Array.isArray(completedPages) || completedPages.length === 0) {
+    return false;
+  }
+  let updated = false;
+  for (const page of completedPages) {
+    const results = Array.isArray(page?.results) ? page.results : [];
+    for (const res of results) {
+      const criterionId = res?.id || res?.criterionId || res?.criterion?.id;
+      const status = res?.status || res?.evaluation?.status;
+      if (!criterionId || !status) continue;
+      if (tempTracker.onCriterion(criterionId, status)) updated = true;
+    }
+  }
+  return updated;
+}
+
 function formatSecondPassSummary(secondPass = {}) {
   const total = Number(secondPass.total || 0);
   const done = Number(secondPass.done || 0);
@@ -770,6 +787,8 @@ function createFancyReporter(options = {}) {
   let pageDone = 0;
   let tempTracker = null;
   let tempCounts = { C: 0, NC: 0, NA: 0 };
+  let sessionName = '';
+  let resumeTempApplied = false;
   let currentPageIndex = -1;
   let currentUrl = '';
   let stageStartAt = 0;
@@ -1086,12 +1105,6 @@ function createFancyReporter(options = {}) {
       });
     }
 
-    const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
-    progressRows.push({
-      key: palette.muted(tempScoreLabel),
-      value: chalk.bold(formatTempScore(tempCounts))
-    });
-
     if (urlLine) {
       progressRows.push({ key: palette.muted('URL'), value: chalk.bold(urlLine) });
     }
@@ -1200,6 +1213,23 @@ function createFancyReporter(options = {}) {
       }
     }
 
+    const tempScoreLabel = i18n.t('Score temp (C/(C+NC))', 'Temp score (C/(C+NC))');
+    const sessionRows = formatKeyValueRows(
+      [
+        {
+          key: palette.muted('Session'),
+          value: sessionName ? palette.accent(sessionName) : palette.muted('—')
+        },
+        { key: palette.muted(i18n.t('Pages', 'Pages')), value: chalk.bold(String(totalPages)) },
+        {
+          key: palette.muted(i18n.t('Critères', 'Criteria')),
+          value: chalk.bold(String(totalCriteria))
+        },
+        { key: palette.muted(tempScoreLabel), value: chalk.bold(formatTempScore(tempCounts)) }
+      ],
+      2
+    ).split('\n');
+
     const panels = [
       ...(secondPassActive
         ? [
@@ -1229,6 +1259,12 @@ function createFancyReporter(options = {}) {
             })
           ]
         : []),
+      drawPanel({
+        title: i18n.t('Session', 'Session'),
+        lines: sessionRows,
+        width,
+        borderColor: palette.primary
+      }),
       drawPanel({
         title: i18n.t('Progress', 'Progress'),
         lines: progressLines,
@@ -1275,12 +1311,18 @@ function createFancyReporter(options = {}) {
       auditMode: mode,
       enrichmentEnabled: enrichmentEnabledFromCli,
       resumePath,
-      outDirName
+      outDirName,
+      resumeState
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
       tempTracker = createTempScoreTracker(totalPages);
       tempCounts = tempTracker.counts;
+      sessionName = outDirName ? String(outDirName) : '';
+      resumeTempApplied = seedTempTrackerFromCompletedPages(
+        tempTracker,
+        resumeState?.completedPages
+      );
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
       enrichmentEnabled = Boolean(enrichmentEnabledFromCli);
@@ -1344,11 +1386,14 @@ function createFancyReporter(options = {}) {
       scheduleRender();
     },
 
-    onResumeState({ completedPages = 0, completedCriteria = 0 } = {}) {
+    onResumeState({ completedPages = 0, completedCriteria = 0, completedPagesData } = {}) {
       resumeCompletedPages = completedPages;
       resumeOverallDone = completedCriteria;
       overallDone = completedCriteria;
       currentPageIndex = completedPages - 1;
+      if (!resumeTempApplied) {
+        resumeTempApplied = seedTempTrackerFromCompletedPages(tempTracker, completedPagesData);
+      }
       scheduleRender();
     },
 
@@ -1856,12 +1901,17 @@ function createLegacyReporter(options = {}) {
       auditMode: mode,
       enrichmentEnabled: enrichmentEnabledFromCli,
       resumePath,
-      outDirName
+      outDirName,
+      resumeState
     }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
       tempTracker = createTempScoreTracker(totalPages);
       tempCounts = tempTracker.counts;
+      resumeTempApplied = seedTempTrackerFromCompletedPages(
+        tempTracker,
+        resumeState?.completedPages
+      );
       auditMode = mode || 'mcp';
       enrichmentEnabled = Boolean(enrichmentEnabledFromCli);
       const headline = 'RGAA Website Auditor';
@@ -1932,9 +1982,12 @@ function createLegacyReporter(options = {}) {
       else console.log(line);
     },
 
-    onResumeState({ completedCriteria = 0 } = {}) {
+    onResumeState({ completedCriteria = 0, completedPagesData } = {}) {
       resumeOverallDone = completedCriteria;
       overallDone = completedCriteria;
+      if (!resumeTempApplied) {
+        resumeTempApplied = seedTempTrackerFromCompletedPages(tempTracker, completedPagesData);
+      }
     },
 
     onPageStart({ index, url }) {
@@ -2379,11 +2432,22 @@ function createPlainReporter(options = {}) {
   };
 
   return {
-    async onStart({ pages, criteriaCount, mcpMode: mcpModeFromCli, auditMode: mode, resumePath }) {
+    async onStart({
+      pages,
+      criteriaCount,
+      mcpMode: mcpModeFromCli,
+      auditMode: mode,
+      resumePath,
+      resumeState
+    }) {
       totalPages = pages;
       totalCriteria = criteriaCount;
       tempTracker = createTempScoreTracker(totalPages);
       tempCounts = tempTracker.counts;
+      resumeTempApplied = seedTempTrackerFromCompletedPages(
+        tempTracker,
+        resumeState?.completedPages
+      );
       auditMode = mode || 'mcp';
       mcpMode = mcpModeFromCli || '';
       auditStartAt = nowMs();
@@ -2405,12 +2469,18 @@ function createPlainReporter(options = {}) {
       line('Chrome:', i18n.t('Recovered', 'Recovered'));
     },
 
-    onResumeState({ completedPages = 0, completedCriteria = 0 } = {}) {
+    onResumeState({ completedPages = 0, completedCriteria = 0, completedPagesData } = {}) {
       if (completedPages > 0 || completedCriteria > 0) {
         line(
           i18n.t('Resuming:', 'Resuming:'),
           `${completedPages} pages • ${completedCriteria} criteria`
         );
+      }
+      if (!resumeTempApplied) {
+        resumeTempApplied = seedTempTrackerFromCompletedPages(tempTracker, completedPagesData);
+        if (resumeTempApplied) {
+          line('Temp score (C/(C+NC)):', formatTempScore(tempCounts));
+        }
       }
     },
 

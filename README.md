@@ -148,6 +148,7 @@ npm run audit -- --resume out/<run>/audit.resume.json
 ```
 
 In guided mode, the CLI will offer recent resume files automatically.
+When the guided flow auto‑launches Chrome, resume URLs are restored in separate tabs.
 Hotkeys are read from the active TTY, so `p`, `r`, and `h` work even if stdin is busy.
 </details>
 
