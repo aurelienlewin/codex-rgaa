@@ -1,5 +1,7 @@
 const DEFAULT_PUSH_MS = 2000;
 const DEFAULT_KEY = 'rgaa-monitor:state';
+const INFO_PREFIX = '[remote]';
+const ERROR_COOLDOWN_MS = 10000;
 
 function normalizeStatus(status) {
   const raw = String(status || '').trim();
@@ -27,6 +29,14 @@ function computeScore(counts) {
   const denom = (counts.C || 0) + (counts.NC || 0);
   if (!denom) return 0;
   return (counts.C || 0) / denom;
+}
+
+function logRemoteInfo(message) {
+  console.log(`${INFO_PREFIX} ${message}`);
+}
+
+function logRemoteWarn(message) {
+  console.warn(`${INFO_PREFIX} ${message}`);
 }
 
 function getUpstashConfig() {
@@ -67,6 +77,20 @@ function pushFeed(feed, entry) {
 
 export function createRemoteStatusReporter({ reporter }) {
   if (!shouldEnable()) return { reporter, stop: () => {} };
+
+  const { url, token, key } = getUpstashConfig();
+  const configured = Boolean(url && token);
+  let lastErrorAt = 0;
+  let didLogSuccess = false;
+
+  if (!configured) {
+    logRemoteWarn(
+      'Remote status enabled but missing Upstash creds (AUDIT_UPSTASH_REST_URL/AUDIT_UPSTASH_REST_TOKEN or UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN).'
+    );
+    return { reporter, stop: () => {} };
+  }
+
+  logRemoteInfo(`Remote status enabled. Upstash key: ${key}.`);
 
   const counts = { C: 0, NC: 0, NA: 0, REVIEW: 0, ERR: 0 };
   const totals = {
@@ -124,7 +148,17 @@ export function createRemoteStatusReporter({ reporter }) {
     lastPushAt = now;
     try {
       await upstashSet(buildPayload());
-    } catch {}
+      if (!didLogSuccess) {
+        didLogSuccess = true;
+        logRemoteInfo('Upstash sync OK.');
+      }
+    } catch (err) {
+      const errorNow = Date.now();
+      if (errorNow - lastErrorAt >= ERROR_COOLDOWN_MS) {
+        lastErrorAt = errorNow;
+        logRemoteWarn(`Upstash sync failed: ${String(err?.message || err)}`);
+      }
+    }
   };
 
   const wrapped = {
