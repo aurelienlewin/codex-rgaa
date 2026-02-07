@@ -1360,7 +1360,14 @@ function createFancyReporter(options = {}) {
         : [])
     ];
     const mergedPanels = headerRow
-      ? panels.map((panel, idx) => (idx === 0 ? panel.split('\n').slice(1).join('\n') : panel))
+      ? panels.map((panel, idx) => {
+          if (idx !== 0) return panel;
+          const lines = String(panel || '').split('\n');
+          if (lines.length === 0) return panel;
+          const trimmed = lines.slice(1);
+          if (trimmed.length >= 2 && /├.*┤/.test(trimmed[1])) trimmed.splice(1, 1);
+          return trimmed.join('\n');
+        })
       : panels;
 
     renderer.render([headerRow, ...mergedPanels].filter(Boolean).join('\n'));
