@@ -172,6 +172,8 @@ export AUDIT_UPSTASH_KEY="rgaa-monitor:state"
 
 The CLI logs sync status at startup, on first successful push, and on errors.
 The webapp (`codex-rgaa-monitor`) should be configured with the same Upstash credentials/key and `AUDIT_MONITOR_REMOTE=1`.
+
+If a sibling `codex-rgaa-monitor/.env.local` exists, the CLI will auto-load Upstash creds from it when missing.
 </details>
 
 ## UX moments
