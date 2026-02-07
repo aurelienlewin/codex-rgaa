@@ -688,6 +688,7 @@ function createLiveBlockRenderer() {
   let lastLineCount = 0;
   let lastLines = null;
   let cursorHidden = false;
+  let wrapDisabled = false;
 
   const hideCursor = () => {
     if (!cursorHidden && process.stdout.isTTY) {
@@ -699,6 +700,20 @@ function createLiveBlockRenderer() {
     if (cursorHidden && process.stdout.isTTY) {
       safeWrite('\x1b[?25h');
       cursorHidden = false;
+    }
+  };
+
+  const disableWrap = () => {
+    if (!wrapDisabled && process.stdout.isTTY) {
+      safeWrite('\x1b[?7l');
+      wrapDisabled = true;
+    }
+  };
+
+  const enableWrap = () => {
+    if (wrapDisabled && process.stdout.isTTY) {
+      safeWrite('\x1b[?7h');
+      wrapDisabled = false;
     }
   };
 
@@ -717,6 +732,7 @@ function createLiveBlockRenderer() {
       const lines = String(block).split('\n');
       const renderFull = () => {
         hideCursor();
+        disableWrap();
         clearPrevious();
         safeWrite(`${block}\n`);
         lastLineCount = lines.length;
@@ -736,6 +752,7 @@ function createLiveBlockRenderer() {
       }
       if (!changed.length) return;
       hideCursor();
+      disableWrap();
       safeMoveCursor(0, -lastLineCount);
       safeCursorTo(0);
       let cursorLine = 0;
@@ -755,6 +772,7 @@ function createLiveBlockRenderer() {
     },
     stop({ keepBlock = true } = {}) {
       if (!keepBlock) clearPrevious();
+      enableWrap();
       showCursor();
       lastLineCount = 0;
       lastLines = null;
