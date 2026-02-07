@@ -34,6 +34,39 @@ const promptPalette = {
   muted: chalk.hex('#94a3b8')
 };
 
+function loadMonitorEnvFromSibling() {
+  const hasUrl = Boolean(process.env.UPSTASH_REDIS_REST_URL || process.env.AUDIT_UPSTASH_REST_URL);
+  const hasToken = Boolean(process.env.UPSTASH_REDIS_REST_TOKEN || process.env.AUDIT_UPSTASH_REST_TOKEN);
+  if (hasUrl && hasToken) return;
+  const candidate = path.resolve(process.cwd(), '..', 'codex-rgaa-monitor', '.env.local');
+  if (!fs.existsSync(candidate)) return;
+  let data = '';
+  try {
+    data = fs.readFileSync(candidate, 'utf-8');
+  } catch {
+    return;
+  }
+  const lines = data.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    let value = trimmed.slice(idx + 1).trim();
+    if ((value.startsWith(') && value.endsWith(')) || (value.startsWith(") && value.endsWith("))) {
+      value = value.slice(1, -1);
+    }
+    if (!key || process.env[key] !== undefined) continue;
+    process.env[key] = value;
+  }
+  const loadedUrl = Boolean(process.env.UPSTASH_REDIS_REST_URL || process.env.AUDIT_UPSTASH_REST_URL);
+  const loadedToken = Boolean(process.env.UPSTASH_REDIS_REST_TOKEN || process.env.AUDIT_UPSTASH_REST_TOKEN);
+  if (loadedUrl && loadedToken) {
+    console.log('[remote] Loaded Upstash creds from codex-rgaa-monitor/.env.local');
+  }
+}
+
 function isFancyTTY() {
   return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
 }
@@ -1247,6 +1280,7 @@ async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
 
 async function main() {
   installOutputErrorHandlers();
+  loadMonitorEnvFromSibling();
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const rawArgs = hideBin(process.argv).map((v) => String(v));
   const argv = yargs(rawArgs)
