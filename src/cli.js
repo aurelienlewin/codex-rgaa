@@ -1862,6 +1862,23 @@ async function main() {
   process.on('exit', () => terminateCodexChildren());
 
   const hotkey = getHotkeyInput();
+  let hotkeyKeyHandler = null;
+  let hotkeyDataHandler = null;
+  const stopHotkeys = () => {
+    for (const input of hotkey.inputs) {
+      if (hotkeyKeyHandler) input.off('keypress', hotkeyKeyHandler);
+      if (hotkeyDataHandler) input.off('data', hotkeyDataHandler);
+      if (input.isTTY && typeof input.setRawMode === 'function') {
+        try {
+          input.setRawMode(false);
+        } catch {}
+      }
+      try {
+        input.pause();
+      } catch {}
+    }
+    hotkey.cleanup();
+  };
   if (hotkey.inputs.length) {
     const handleKey = (name) => {
       if (name === 'p') pauseController.pause();
@@ -1872,7 +1889,7 @@ async function main() {
       }
       if (name === 'h' || name === '?') reporter.onHelpToggle?.();
     };
-    const keyHandler = (str, key) => {
+    hotkeyKeyHandler = (str, key) => {
       if (key?.sequence === '\u0003' || (key?.ctrl && key?.name === 'c')) {
         process.kill(process.pid, 'SIGINT');
         return;
@@ -1881,7 +1898,7 @@ async function main() {
       if (!name) return;
       handleKey(name);
     };
-    const dataHandler = (chunk) => {
+    hotkeyDataHandler = (chunk) => {
       if (!chunk) return;
       const text = String(chunk);
       for (const ch of text) {
@@ -1901,20 +1918,10 @@ async function main() {
       }
       input.setEncoding('utf8');
       input.resume();
-      input.on('keypress', keyHandler);
-      input.on('data', dataHandler);
+      input.on('keypress', hotkeyKeyHandler);
+      input.on('data', hotkeyDataHandler);
     }
-    process.on('exit', () => {
-      for (const input of hotkey.inputs) {
-        input.off('keypress', keyHandler);
-        input.off('data', dataHandler);
-        if (input.isTTY && typeof input.setRawMode === 'function') {
-          input.setRawMode(false);
-        }
-        input.pause();
-      }
-      hotkey.cleanup();
-    });
+    process.on('exit', stopHotkeys);
   }
 
   if (reporter.onResumeState && resumeState?.completedPages?.length) {
@@ -1944,6 +1951,7 @@ async function main() {
     writeCachedMcpPageId(mcpCacheKey, mcpPageIdArg);
   }
 
+  let shouldPrintComplete = true;
   try {
     const summary = await runAudit({
       pages,
@@ -1985,7 +1993,7 @@ async function main() {
         'Audit finished with errors (marked as "Error" in the report). Re-run with --allow-partial to keep exit code 0.'
       );
       process.exitCode = 1;
-      return;
+      shouldPrintComplete = false;
     }
   } catch (err) {
     watchdog.stop();
@@ -2007,9 +2015,21 @@ async function main() {
   }
 
   if (!abortController.signal.aborted) {
-    if (process.exitCode && process.exitCode !== 0) return;
-    if (outPath) console.log(`\nAudit complete: ${outPath}`);
-    else console.log('\nAudit complete.');
+    if (!process.exitCode || process.exitCode === 0) {
+      if (shouldPrintComplete) {
+        if (outPath) console.log(`\nAudit complete: ${outPath}`);
+        else console.log('\nAudit complete.');
+      }
+    }
+    if (process.exitCode && process.exitCode !== 0) {
+      stopHotkeys();
+      terminateCodexChildren();
+      process.exit(process.exitCode);
+      return;
+    }
+    stopHotkeys();
+    terminateCodexChildren();
+    process.exit(0);
   }
 }
 

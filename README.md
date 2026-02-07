@@ -264,6 +264,7 @@ To change the output path, pass `--out`.
 
 To disable XLSX export, pass `--no-xlsx`.
 By default, the generated XLSX is opened automatically; disable with `AUDIT_OPEN_XLS=0`.
+When the audit completes (success or error), the CLI exits automatically and terminates its subprocesses.
 
 The Excel file contains:
 - **Summary** (first tab): global counts + score, color-coded status chips.
