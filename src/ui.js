@@ -1359,8 +1359,11 @@ function createFancyReporter(options = {}) {
           ]
         : [])
     ];
+    const mergedPanels = headerRow
+      ? panels.map((panel, idx) => (idx === 0 ? panel.split('\n').slice(1).join('\n') : panel))
+      : panels;
 
-    renderer.render([headerRow, ...panels].join('\n'));
+    renderer.render([headerRow, ...mergedPanels].filter(Boolean).join('\n'));
   };
 
   const scheduleRender = ({ refreshTime = true } = {}) => {
