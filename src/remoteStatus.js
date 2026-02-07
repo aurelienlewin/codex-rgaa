@@ -141,6 +141,7 @@ export function createRemoteStatusReporter({ reporter }) {
   const feed = [];
   const stage = { event: '', details: '' };
   const secondPass = { total: 0, done: 0, detail: '' };
+  let startPayload = null;
 
   let startAt = 0;
   let lastError = '';
@@ -164,6 +165,11 @@ export function createRemoteStatusReporter({ reporter }) {
   };
 
   const buildPayload = () => ({
+    start: startPayload ? { ...startPayload } : null,
+    paths: {
+      resumePath: startPayload?.resumePath || '',
+      logPath: startPayload?.logPath || ''
+    },
     totals: {
       ...totals,
       overallDone: totals.completedPages * (totals.criteriaTotal || 0) + (currentCriteriaDone || 0),
@@ -251,6 +257,20 @@ export function createRemoteStatusReporter({ reporter }) {
       lastErrorAt = 0;
       allowPush = true;
       clearAttempts = 0;
+      startPayload = payload
+        ? {
+            pages: Number(payload.pages || 0),
+            criteriaCount: Number(payload.criteriaCount || 0),
+            codexModel: payload.codexModel || '',
+            mcpMode: payload.mcpMode || '',
+            auditMode: payload.auditMode || '',
+            enrichmentEnabled: Boolean(payload.enrichmentEnabled),
+            resumePath: payload.resumePath || '',
+            logPath: payload.logPath || '',
+            outDirName: payload.outDirName || '',
+            startedAt: new Date().toISOString()
+          }
+        : null;
       if (clearTimer) {
         clearTimeout(clearTimer);
         clearTimer = null;

@@ -1845,8 +1845,8 @@ async function main() {
   if (interactive && guided) {
     clearScreen();
   }
-  if (reporter.onStart) {
-    await reporter.onStart({
+  if (debugWrapped.reporter.onStart) {
+    await debugWrapped.reporter.onStart({
       pages: pages.length,
       criteriaCount,
       codexModel,
@@ -1854,6 +1854,7 @@ async function main() {
       auditMode: snapshotMode,
       enrichmentEnabled,
       resumePath: resumeStatePath,
+      logPath: debugLogPath,
       outDirName,
       resumeState
     });
