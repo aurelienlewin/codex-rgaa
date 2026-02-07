@@ -81,28 +81,6 @@ AUDIT_UPSTASH_KEY=rgaa-monitor:state
 AUDIT_MONITOR_UI_TOKEN=...
 ```
 
-### Option B: push from codex-rgaa-monitor
-
-On Vercel:
-
-```bash
-AUDIT_MONITOR_REMOTE=1
-UPSTASH_REDIS_REST_URL=...
-UPSTASH_REDIS_REST_TOKEN=...
-AUDIT_UPSTASH_KEY=rgaa-monitor:state
-AUDIT_MONITOR_INGEST_TOKEN=...
-AUDIT_MONITOR_UI_TOKEN=...
-```
-
-On the machine running the audit:
-
-```bash
-export AUDIT_MONITOR_INGEST_URL="https://your-vercel-app.vercel.app/api/ingest"
-export AUDIT_MONITOR_INGEST_TOKEN="same-as-vercel"
-export AUDIT_MONITOR_AUDIT_ROOT="/absolute/path/to/audit"
-npm run monitor:push
-```
-
 Tip: if a sibling `codex-rgaa-monitor/.env.local` exists, the CLI can auto-load missing Upstash creds from it.
 
 Cleanup: the CLI clears the Upstash key at startup and after completion/errors (with retries). To keep data longer,
