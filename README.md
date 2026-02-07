@@ -161,15 +161,16 @@ Hotkeys are read from the active TTY, so `p`, `r`, `q`, and `h` work even if std
 
 The CLI can push a live JSON snapshot to Upstash so the **codex-rgaa-monitor** webapp can read it remotely.
 
-Enable with:
+Remote status is enabled by default (disable with `AUDIT_REMOTE_STATUS=0`).
+To configure and push to Upstash:
 
 ```bash
-export AUDIT_REMOTE_STATUS=1
 export AUDIT_UPSTASH_REST_URL="https://<your-upstash>.upstash.io"
 export AUDIT_UPSTASH_REST_TOKEN="<token>"
 export AUDIT_UPSTASH_KEY="rgaa-monitor:state"
 ```
 
+The CLI logs sync status at startup, on first successful push, and on errors.
 The webapp (`codex-rgaa-monitor`) should be configured with the same Upstash credentials/key and `AUDIT_MONITOR_REMOTE=1`.
 </details>
 
