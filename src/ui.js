@@ -1058,16 +1058,16 @@ function createFancyReporter(options = {}) {
 
     const formatRemoteSyncLine = () => {
       const base = remoteSyncMessage || (remoteSyncState === 'ok'
-        ? i18n.t('Upstash sync OK', 'Upstash sync OK')
+        ? i18n.t('Cloud sync sync OK', 'Cloud sync sync OK')
         : remoteSyncState === 'missing'
-        ? i18n.t('Upstash missing creds', 'Upstash missing creds')
+        ? i18n.t('Cloud sync missing creds', 'Cloud sync missing creds')
         : remoteSyncState === 'error'
-        ? i18n.t('Upstash sync error', 'Upstash sync error')
+        ? i18n.t('Cloud sync sync error', 'Cloud sync sync error')
         : remoteSyncState === 'cleared'
-        ? i18n.t('Upstash cleared', 'Upstash cleared')
+        ? i18n.t('Cloud sync cleared', 'Cloud sync cleared')
         : remoteSyncState === 'enabled'
-        ? i18n.t('Upstash enabled', 'Upstash enabled')
-        : i18n.t('Upstash status unknown', 'Upstash status unknown'));
+        ? i18n.t('Cloud sync enabled', 'Cloud sync enabled')
+        : i18n.t('Cloud sync status unknown', 'Cloud sync status unknown'));
       const age = remoteSyncAt ? ` ${formatElapsed(clockNow - remoteSyncAt)}` : '';
       let color = palette.muted;
       if (remoteSyncState === 'ok') color = palette.ok;
@@ -1104,7 +1104,7 @@ function createFancyReporter(options = {}) {
         `${palette.muted(`${overallPct}% • ${overallDone}/${overallTotal || 0}`)}`
     });
     progressRows.push({
-      key: palette.muted('Upstash'),
+      key: palette.muted('Cloud sync'),
       value: formatRemoteSyncLine()
     });
 

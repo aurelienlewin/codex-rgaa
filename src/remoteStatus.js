@@ -40,7 +40,7 @@ function logRemoteWarn(message) {
   console.warn(`${INFO_PREFIX} ${message}`);
 }
 
-function getUpstashConfig() {
+function getCloud syncConfig() {
   return {
     url: process.env.AUDIT_UPSTASH_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '',
     token: process.env.AUDIT_UPSTASH_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
@@ -49,7 +49,7 @@ function getUpstashConfig() {
 }
 
 async function upstashDelete() {
-  const { url, token, key } = getUpstashConfig();
+  const { url, token, key } = getCloud syncConfig();
   if (!url || !token) return;
   const res = await fetch(`${url}/del/${encodeURIComponent(key)}`, {
     method: 'POST',
@@ -60,12 +60,12 @@ async function upstashDelete() {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Upstash error ${res.status}: ${text}`);
+    throw new Error(`Cloud sync error ${res.status}: ${text}`);
   }
 }
 
 async function upstashSet(state) {
-  const { url, token, key } = getUpstashConfig();
+  const { url, token, key } = getCloud syncConfig();
   if (!url || !token) return;
   const res = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: 'POST',
@@ -77,7 +77,7 @@ async function upstashSet(state) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Upstash error ${res.status}: ${text}`);
+    throw new Error(`Cloud sync error ${res.status}: ${text}`);
   }
 }
 
@@ -103,21 +103,21 @@ function notifyRemoteStatus(reporter, payload) {
 export function createRemoteStatusReporter({ reporter }) {
   if (!shouldEnable()) return { reporter, stop: () => {} };
 
-  const { url, token, key } = getUpstashConfig();
+  const { url, token, key } = getCloud syncConfig();
   const configured = Boolean(url && token);
   let lastErrorAt = 0;
   let didLogSuccess = false;
 
   if (!configured) {
     logRemoteWarn(
-      'Remote status enabled but missing Upstash creds (AUDIT_UPSTASH_REST_URL/AUDIT_UPSTASH_REST_TOKEN or UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN).'
+      'Remote status enabled but missing Cloud sync creds (AUDIT_UPSTASH_REST_URL/AUDIT_UPSTASH_REST_TOKEN or UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN).'
     );
-    notifyRemoteStatus(reporter, { state: 'missing', message: 'Missing Upstash credentials' });
+    notifyRemoteStatus(reporter, { state: 'missing', message: 'Missing cloud sync credentials' });
     return { reporter, stop: () => {} };
   }
 
-  logRemoteInfo(`Remote status enabled. Upstash key: ${key}.`);
-  notifyRemoteStatus(reporter, { state: 'enabled', message: `Upstash key: ${key}` });
+  logRemoteInfo(`Remote status enabled. Cloud sync key: ${key}.`);
+  notifyRemoteStatus(reporter, { state: 'enabled', message: `Cloud sync key: ${key}` });
 
   const counts = { C: 0, NC: 0, NA: 0, REVIEW: 0, ERR: 0 };
   const totals = {
@@ -172,10 +172,10 @@ export function createRemoteStatusReporter({ reporter }) {
   const clearRemote = async () => {
     try {
       await upstashDelete();
-      logRemoteInfo('Upstash cleared after completion.');
-      notifyRemoteStatus(reporter, { state: 'cleared', message: 'Upstash cleared after completion' });
+      logRemoteInfo('Cloud sync cleared after completion.');
+      notifyRemoteStatus(reporter, { state: 'cleared', message: 'Cloud sync cleared after completion' });
     } catch (err) {
-      const msg = `Upstash clear failed: ${String(err?.message || err)}`;
+      const msg = `Cloud sync clear failed: ${String(err?.message || err)}`;
       logRemoteWarn(msg);
       notifyRemoteStatus(reporter, { state: 'error', message: msg });
     }
@@ -189,14 +189,14 @@ export function createRemoteStatusReporter({ reporter }) {
       await upstashSet(buildPayload());
       if (!didLogSuccess) {
         didLogSuccess = true;
-        logRemoteInfo('Upstash sync OK.');
-        notifyRemoteStatus(reporter, { state: 'ok', message: 'Upstash sync OK' });
+        logRemoteInfo('Cloud sync OK.');
+        notifyRemoteStatus(reporter, { state: 'ok', message: 'Cloud sync OK' });
       }
     } catch (err) {
       const errorNow = Date.now();
       if (errorNow - lastErrorAt >= ERROR_COOLDOWN_MS) {
         lastErrorAt = errorNow;
-        const msg = `Upstash sync failed: ${String(err?.message || err)}`;
+        const msg = `Cloud sync failed: ${String(err?.message || err)}`;
         logRemoteWarn(msg);
         notifyRemoteStatus(reporter, { state: 'error', message: msg });
       }
