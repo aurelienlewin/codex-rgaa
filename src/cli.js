@@ -129,6 +129,42 @@ function renderPromptBox(title, lines, { borderColor = 'accent' } = {}) {
   });
 }
 
+function installFancyPromptResize({ render, rl, promptLabel, throttleMs = 120 } = {}) {
+  if (!isFancyTTY() || typeof render !== 'function' || !process.stdout?.on) {
+    return () => {};
+  }
+  let timer = null;
+  const repaint = (refreshPrompt = false) => {
+    render();
+    if (refreshPrompt && rl && typeof rl.prompt === 'function') {
+      if (typeof promptLabel === 'string') rl.setPrompt(promptLabel);
+      rl.prompt(true);
+    }
+  };
+  repaint(false);
+  const handler = () => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      repaint(true);
+    }, throttleMs);
+    if (typeof timer.unref === 'function') timer.unref();
+  };
+  process.stdout.on('resize', handler);
+  return () => {
+    if (timer) clearTimeout(timer);
+    process.stdout.off?.('resize', handler);
+  };
+}
+
+function askLine(rl, promptLabel) {
+  return new Promise((resolve) => {
+    rl.setPrompt(promptLabel);
+    rl.prompt();
+    rl.once('line', (answer) => resolve(answer));
+  });
+}
+
 function formatRunId(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   const y = date.getFullYear();
@@ -669,14 +705,15 @@ function createPauseController({ reporter }) {
   let paused = false;
   let resumePromise = null;
   let resumeResolve = null;
+  let quitRequested = false;
   const listeners = new Set();
-  const notify = (nextPaused) => {
+  const notify = (nextPaused, meta = {}) => {
     if (reporter?.onPause) {
-      reporter.onPause({ paused: nextPaused });
+      reporter.onPause({ paused: nextPaused, ...meta });
     }
     for (const listener of listeners) {
       try {
-        listener({ paused: nextPaused });
+        listener({ paused: nextPaused, ...meta });
       } catch {}
     }
   };
@@ -697,14 +734,25 @@ function createPauseController({ reporter }) {
       });
       notify(true);
     },
+    pauseWithMeta: (meta = {}) => {
+      if (paused) return;
+      paused = true;
+      if (meta?.quit) quitRequested = true;
+      resumePromise = new Promise((resolve) => {
+        resumeResolve = resolve;
+      });
+      notify(true, meta);
+    },
     resume: () => {
       if (!paused) return;
       paused = false;
+      quitRequested = false;
       if (resumeResolve) resumeResolve();
       resumeResolve = null;
       resumePromise = null;
       notify(false);
     },
+    shouldQuit: () => quitRequested,
     waitIfPaused: async () => {
       if (!paused || !resumePromise) return;
       await resumePromise;
@@ -878,10 +926,20 @@ async function promptPages({ tabs, guided = false } = {}) {
     if (tabPages.length > 12) {
       tabLines.push(promptPalette.muted(`(+${tabPages.length - 12} more)`));
     }
+    const tabPromptLabel = isFancyTTY()
+      ? promptPalette.primary('Select tab numbers (comma), "all", or press Enter to skip: ')
+      : 'Select tab numbers (comma), "all", or press Enter to skip: ';
+    let stopResize = null;
     if (isFancyTTY()) {
-      console.log(
-        renderPromptBox('Open Tabs Detected', tabLines, { borderColor: 'cyan' })
-      );
+      const renderTabs = () =>
+        console.log(
+          renderPromptBox('Open Tabs Detected', tabLines, { borderColor: 'cyan' })
+        );
+      if (guided) {
+        renderTabs();
+      } else {
+        stopResize = installFancyPromptResize({ render: renderTabs, rl, promptLabel: tabPromptLabel });
+      }
     } else {
       console.log('\nOpen tabs detected:');
       tabLines.forEach((line) => console.log(stripAnsi(line)));
@@ -897,16 +955,10 @@ async function promptPages({ tabs, guided = false } = {}) {
         }
       }
     } else {
-      const ask = (q) =>
-        new Promise((resolve) => {
-          rl.question(q, (answer) => resolve(answer));
-        });
-      const promptLabel = isFancyTTY()
-        ? promptPalette.primary('Select tab numbers (comma), "all", or press Enter to skip: ')
-        : 'Select tab numbers (comma), "all", or press Enter to skip: ';
-      const selection = String(await ask(promptLabel))
+      const selection = String(await askLine(rl, tabPromptLabel))
         .trim()
         .toLowerCase();
+      if (stopResize) stopResize();
       if (selection) {
         const picks =
           selection === 'all'
@@ -932,6 +984,7 @@ async function promptPages({ tabs, guided = false } = {}) {
       }
       clearScreen();
     }
+    if (guided && stopResize) stopResize();
   }
 
   if (guided && tabPages.length) {
@@ -940,17 +993,22 @@ async function promptPages({ tabs, guided = false } = {}) {
     return { urls, pageId: selectedPageId };
   }
 
+  let stopPagesResize = null;
   if (isFancyTTY()) {
-    console.log(
-      renderPromptBox(
-        'Pages to Audit',
-        [
-          'Enter page URLs (one per line).',
-          promptPalette.muted('Press Enter on an empty line to finish.')
-        ],
-        { borderColor: 'cyan' }
-      )
-    );
+    const renderPages = () =>
+      console.log(
+        renderPromptBox(
+          'Pages to Audit',
+          [
+            'Enter page URLs (one per line).',
+            promptPalette.muted('Press Enter on an empty line to finish.')
+          ],
+          { borderColor: 'cyan' }
+        )
+      );
+    stopPagesResize = installFancyPromptResize({ render: renderPages, rl, promptLabel: '' });
+    rl.setPrompt('');
+    rl.prompt();
   } else {
     console.log('Enter page URLs (one per line). Empty line to finish:');
   }
@@ -966,6 +1024,7 @@ async function promptPages({ tabs, guided = false } = {}) {
     }
   }
 
+  if (stopPagesResize) stopPagesResize();
   rl.close();
   clearScreen();
   return { urls, pageId: selectedPageId };
@@ -980,26 +1039,24 @@ async function promptYesNo(question, defaultValue = false) {
     output: process.stdout
   });
 
-  const ask = (q) =>
-    new Promise((resolve) => {
-      rl.question(q, (answer) => resolve(answer));
-    });
-
   const suffix = defaultValue ? 'Y/n' : 'y/N';
+  const promptLabel = isFancyTTY()
+    ? promptPalette.primary(`→ (${suffix}) `)
+    : `${question} (${suffix}) `;
+  let stopResize = null;
   if (isFancyTTY()) {
     const lines = [
       question,
       `${promptPalette.muted('Default:')} ${defaultValue ? promptPalette.ok('Yes') : promptPalette.warn('No')}`,
       `${promptPalette.muted('Answer:')} ${suffix}`
     ];
-    console.log(renderPromptBox('Question', lines, { borderColor: 'magenta' }));
+    const renderQuestion = () => console.log(renderPromptBox('Question', lines, { borderColor: 'magenta' }));
+    stopResize = installFancyPromptResize({ render: renderQuestion, rl, promptLabel });
   }
-  const promptLabel = isFancyTTY()
-    ? promptPalette.primary(`→ (${suffix}) `)
-    : `${question} (${suffix}) `;
-  const raw = String(await ask(promptLabel))
+  const raw = String(await askLine(rl, promptLabel))
     .trim()
     .toLowerCase();
+  if (stopResize) stopResize();
   rl.close();
   clearScreen();
 
@@ -1018,11 +1075,10 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
     output: process.stdout
   });
 
-  const ask = (q) =>
-    new Promise((resolve) => {
-      rl.question(q, (answer) => resolve(answer));
-    });
-
+  const promptLabel = isFancyTTY()
+    ? promptPalette.primary('→ Choose a number: ')
+    : 'Choose a number: ';
+  let stopResize = null;
   if (isFancyTTY()) {
     const lines = [];
     const labels = choices.map((label, index) => {
@@ -1033,7 +1089,8 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
     });
     const maxLen = Math.max(0, ...labels.map((line) => visibleLen(line)));
     labels.forEach((line) => lines.push(padVisible(line, maxLen)));
-    console.log(renderPromptBox(question, lines, { borderColor: 'cyan' }));
+    const renderChoice = () => console.log(renderPromptBox(question, lines, { borderColor: 'cyan' }));
+    stopResize = installFancyPromptResize({ render: renderChoice, rl, promptLabel });
   } else {
     console.log(`\n${question}`);
     choices.forEach((label, index) => {
@@ -1043,10 +1100,8 @@ async function promptChoice(question, choices, { defaultIndex = 0 } = {}) {
     });
   }
 
-  const promptLabel = isFancyTTY()
-    ? promptPalette.primary('→ Choose a number: ')
-    : 'Choose a number: ';
-  const raw = String(await ask(promptLabel)).trim();
+  const raw = String(await askLine(rl, promptLabel)).trim();
+  if (stopResize) stopResize();
   rl.close();
   clearScreen();
 
@@ -1067,22 +1122,21 @@ async function promptOptionalNumber(question) {
     output: process.stdout
   });
 
-  const ask = (q) =>
-    new Promise((resolve) => {
-      rl.question(q, (answer) => resolve(answer));
-    });
-
-  if (isFancyTTY()) {
-    console.log(
-      renderPromptBox(
-        'Optional',
-        [question, promptPalette.muted('Leave empty to skip.')],
-        { borderColor: 'cyan' }
-      )
-    );
-  }
   const promptLabel = isFancyTTY() ? promptPalette.primary('→ ') : question;
-  const raw = String(await ask(promptLabel)).trim();
+  let stopResize = null;
+  if (isFancyTTY()) {
+    const renderOptional = () =>
+      console.log(
+        renderPromptBox(
+          'Optional',
+          [question, promptPalette.muted('Leave empty to skip.')],
+          { borderColor: 'cyan' }
+        )
+      );
+    stopResize = installFancyPromptResize({ render: renderOptional, rl, promptLabel });
+  }
+  const raw = String(await askLine(rl, promptLabel)).trim();
+  if (stopResize) stopResize();
   rl.close();
   clearScreen();
   if (!raw) return undefined;
@@ -1100,16 +1154,20 @@ async function promptContinue(question, { title = 'Continue', lines = null } = {
     output: process.stdout
   });
 
+  const promptLabel = isFancyTTY() ? promptPalette.primary('→ ') : '→ ';
+  let stopResize = null;
   if (isFancyTTY()) {
     const content = Array.isArray(lines) && lines.length
       ? [...lines, promptPalette.muted('Press Enter to continue.')]
       : [question, promptPalette.muted('Press Enter to continue.')];
-    console.log(renderPromptBox(title, content, { borderColor: 'accent' }));
+    const renderContinue = () => console.log(renderPromptBox(title, content, { borderColor: 'accent' }));
+    stopResize = installFancyPromptResize({ render: renderContinue, rl, promptLabel });
   } else {
     console.log(`${question}\n`);
   }
 
-  await new Promise((resolve) => rl.question(isFancyTTY() ? promptPalette.primary('→ ') : '→ ', () => resolve()));
+  await askLine(rl, promptLabel);
+  if (stopResize) stopResize();
   rl.close();
   clearScreen();
 }
@@ -1123,11 +1181,6 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
     output: process.stdout
   });
 
-  const ask = (question) =>
-    new Promise((resolve) => {
-      rl.question(question, (answer) => resolve(answer));
-    });
-
   const channelLabel = channel ? ` (${channel})` : '';
   const lines = [
     `${promptPalette.accent('1.')} Launch Google Chrome${channelLabel} and keep it open.`,
@@ -1135,14 +1188,21 @@ async function promptMcpAutoConnectSetup({ channel } = {}) {
     `${promptPalette.accent('3.')} Open chrome://inspect/#remote-debugging and enable remote debugging.`,
     `${promptPalette.accent('4.')} Return here to continue. The Chrome permission prompt will appear after you press Enter.`
   ];
+  const promptLabel = isFancyTTY()
+    ? promptPalette.primary('Press Enter to start auto-connect…')
+    : 'Press Enter to start auto-connect…';
+  let stopResize = null;
   if (isFancyTTY()) {
-    console.log(renderPromptBox('MCP autoConnect setup (Chrome 144+)', lines, { borderColor: 'cyan' }));
+    const renderSetup = () =>
+      console.log(renderPromptBox('MCP autoConnect setup (Chrome 144+)', lines, { borderColor: 'cyan' }));
+    stopResize = installFancyPromptResize({ render: renderSetup, rl, promptLabel });
   } else {
     console.log('\nMCP autoConnect setup (Chrome 144+):');
     lines.forEach((line) => console.log(stripAnsi(line)));
   }
 
-  await ask(isFancyTTY() ? promptPalette.primary('Press Enter to start auto-connect…') : 'Press Enter to start auto-connect…');
+  await askLine(rl, promptLabel);
+  if (stopResize) stopResize();
   readline.clearLine(process.stdout, 0);
   readline.cursorTo(process.stdout, 0);
   rl.close();
@@ -1158,11 +1218,6 @@ async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
     output: process.stdout
   });
 
-  const ask = (question) =>
-    new Promise((resolve) => {
-      rl.question(question, (answer) => resolve(answer));
-    });
-
   const url = normalizeHttpBaseUrl(browserUrl);
   const lines = [
     `${promptPalette.muted('Target URL:')} ${url || '(empty)'}`,
@@ -1170,14 +1225,21 @@ async function promptMcpBrowserUrlSetup({ browserUrl } = {}) {
     `${promptPalette.muted('Example (Linux):')} google-chrome --remote-debugging-port=9222`,
     `${promptPalette.muted('Example (macOS):')} open -a "Google Chrome" --args --remote-debugging-port=9222`
   ];
+  const promptLabel = isFancyTTY()
+    ? promptPalette.primary('Press Enter to continue…')
+    : 'Press Enter to continue…';
+  let stopResize = null;
   if (isFancyTTY()) {
-    console.log(renderPromptBox('Chrome DevTools endpoint setup', lines, { borderColor: 'cyan' }));
+    const renderSetup = () =>
+      console.log(renderPromptBox('Chrome DevTools endpoint setup', lines, { borderColor: 'cyan' }));
+    stopResize = installFancyPromptResize({ render: renderSetup, rl, promptLabel });
   } else {
     console.log('\nChrome DevTools endpoint setup:');
     lines.forEach((line) => console.log(stripAnsi(line)));
   }
 
-  await ask(isFancyTTY() ? promptPalette.primary('Press Enter to continue…') : 'Press Enter to continue…');
+  await askLine(rl, promptLabel);
+  if (stopResize) stopResize();
   rl.close();
   clearScreen();
 }
@@ -1786,6 +1848,10 @@ async function main() {
     }, 5000);
     if (typeof forceExitTimer.unref === 'function') forceExitTimer.unref();
   };
+
+  pauseController.onChange?.(({ paused, quit }) => {
+    if (paused && quit) shutdown('SIGTERM');
+  });
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));

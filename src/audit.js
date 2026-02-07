@@ -175,9 +175,18 @@ async function withPauseRetry({
   if (!retryOnAny && !isRetryableAiError(firstErr)) throw firstErr;
   reporter?.onAILog?.({
     criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
-    message: `${label} failed (${String(firstErr?.message || firstErr)}). Pausing until resume to retry.`
+    message: `${label} failed (${String(firstErr?.message || firstErr)}). Pausing and quitting to resume later.`
   });
-  if (!pauseController.isPaused?.()) pauseController.pause();
+  if (!pauseController.isPaused?.()) {
+    if (typeof pauseController.pauseWithMeta === 'function') {
+      pauseController.pauseWithMeta({ reason: 'crash', quit: true });
+    } else {
+      pauseController.pause();
+    }
+  }
+  if (pauseController?.shouldQuit?.()) {
+    throw createAbortError();
+  }
   await pauseController.waitIfPaused();
   const second = await runAttempt();
   if (second.err) throw second.err;
