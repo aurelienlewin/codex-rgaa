@@ -2,6 +2,7 @@ const DEFAULT_PUSH_MS = 2000;
 const DEFAULT_KEY = 'rgaa-monitor:state';
 const INFO_PREFIX = '[remote]';
 const ERROR_COOLDOWN_MS = 10000;
+const CLEAR_ON_DONE_DELAY_MS = 5000;
 
 function normalizeStatus(status) {
   const raw = String(status || '').trim();
@@ -45,6 +46,22 @@ function getUpstashConfig() {
     token: process.env.AUDIT_UPSTASH_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
     key: process.env.AUDIT_UPSTASH_KEY || DEFAULT_KEY
   };
+}
+
+async function upstashDelete() {
+  const { url, token, key } = getUpstashConfig();
+  if (!url || !token) return;
+  const res = await fetch(`${url}/del/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upstash error ${res.status}: ${text}`);
+  }
 }
 
 async function upstashSet(state) {
@@ -141,6 +158,15 @@ export function createRemoteStatusReporter({ reporter }) {
     feed: [...feed],
     status: buildStatus()
   });
+
+  const clearRemote = async () => {
+    try {
+      await upstashDelete();
+      logRemoteInfo('Upstash cleared after completion.');
+    } catch (err) {
+      logRemoteWarn(`Upstash clear failed: ${String(err?.message || err)}`);
+    }
+  };
 
   const push = async (force = false) => {
     const now = Date.now();
@@ -353,6 +379,7 @@ export function createRemoteStatusReporter({ reporter }) {
       statusMessage = hasErrors ? 'Done with errors' : 'Done';
       pushFeed(feed, { ts: new Date().toISOString(), kind: 'stage', message: statusMessage });
       push(true);
+      setTimeout(clearRemote, CLEAR_ON_DONE_DELAY_MS);
       reporter.onDone?.(payload);
     },
     onError(payload) {
