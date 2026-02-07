@@ -74,9 +74,6 @@ function isFancyTTY() {
 function getHotkeyInput() {
   const inputs = [];
   const cleanups = [];
-  if (process.stdin.isTTY) {
-    inputs.push(process.stdin);
-  }
   const ttyPath = process.platform === 'win32' ? 'CONIN$' : '/dev/tty';
   try {
     const fd = fs.openSync(ttyPath, 'r');
@@ -97,6 +94,9 @@ function getHotkeyInput() {
       } catch {}
     });
   } catch {}
+  if (!inputs.length && process.stdin.isTTY && !inputs.includes(process.stdin)) {
+    inputs.push(process.stdin);
+  }
   const unique = Array.from(new Set(inputs));
   return {
     inputs: unique,
@@ -1956,13 +1956,13 @@ async function main() {
     };
     for (const input of hotkey.inputs) {
       readline.emitKeypressEvents(input);
-      input.setEncoding('utf8');
-      input.resume();
       if (typeof input.setRawMode === 'function') {
         try {
           input.setRawMode(true);
         } catch {}
       }
+      input.setEncoding('utf8');
+      input.resume();
       input.on('keypress', hotkeyKeyHandler);
       input.on('data', hotkeyDataHandler);
     }
