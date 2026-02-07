@@ -94,6 +94,12 @@ function pushFeed(feed, entry) {
   while (feed.length > 30) feed.shift();
 }
 
+function notifyRemoteStatus(reporter, payload) {
+  if (typeof reporter?.onRemoteStatus === 'function') {
+    reporter.onRemoteStatus(payload);
+  }
+}
+
 export function createRemoteStatusReporter({ reporter }) {
   if (!shouldEnable()) return { reporter, stop: () => {} };
 
@@ -106,10 +112,12 @@ export function createRemoteStatusReporter({ reporter }) {
     logRemoteWarn(
       'Remote status enabled but missing Upstash creds (AUDIT_UPSTASH_REST_URL/AUDIT_UPSTASH_REST_TOKEN or UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN).'
     );
+    notifyRemoteStatus(reporter, { state: 'missing', message: 'Missing Upstash credentials' });
     return { reporter, stop: () => {} };
   }
 
   logRemoteInfo(`Remote status enabled. Upstash key: ${key}.`);
+  notifyRemoteStatus(reporter, { state: 'enabled', message: `Upstash key: ${key}` });
 
   const counts = { C: 0, NC: 0, NA: 0, REVIEW: 0, ERR: 0 };
   const totals = {
@@ -165,8 +173,11 @@ export function createRemoteStatusReporter({ reporter }) {
     try {
       await upstashDelete();
       logRemoteInfo('Upstash cleared after completion.');
+      notifyRemoteStatus(reporter, { state: 'cleared', message: 'Upstash cleared after completion' });
     } catch (err) {
-      logRemoteWarn(`Upstash clear failed: ${String(err?.message || err)}`);
+      const msg = `Upstash clear failed: ${String(err?.message || err)}`;
+      logRemoteWarn(msg);
+      notifyRemoteStatus(reporter, { state: 'error', message: msg });
     }
   };
 
@@ -179,12 +190,15 @@ export function createRemoteStatusReporter({ reporter }) {
       if (!didLogSuccess) {
         didLogSuccess = true;
         logRemoteInfo('Upstash sync OK.');
+        notifyRemoteStatus(reporter, { state: 'ok', message: 'Upstash sync OK' });
       }
     } catch (err) {
       const errorNow = Date.now();
       if (errorNow - lastErrorAt >= ERROR_COOLDOWN_MS) {
         lastErrorAt = errorNow;
-        logRemoteWarn(`Upstash sync failed: ${String(err?.message || err)}`);
+        const msg = `Upstash sync failed: ${String(err?.message || err)}`;
+        logRemoteWarn(msg);
+        notifyRemoteStatus(reporter, { state: 'error', message: msg });
       }
     }
   };

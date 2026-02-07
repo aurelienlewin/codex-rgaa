@@ -838,6 +838,9 @@ function createFancyReporter(options = {}) {
   let enrichmentActive = false;
   let enrichmentLabel = '';
   let enrichmentStartedAt = 0;
+  let remoteSyncState = 'unknown';
+  let remoteSyncMessage = '';
+  let remoteSyncAt = 0;
   let aiActive = false;
   let aiLabel = '';
   let aiStartedAt = 0;
@@ -1053,6 +1056,27 @@ function createFancyReporter(options = {}) {
     const enrichmentAge =
       enrichmentActive && enrichmentStartedAt ? formatElapsed(nowMs() - enrichmentStartedAt) : '';
 
+    const formatRemoteSyncLine = () => {
+      const base = remoteSyncMessage || (remoteSyncState === 'ok'
+        ? i18n.t('Upstash sync OK', 'Upstash sync OK')
+        : remoteSyncState === 'missing'
+        ? i18n.t('Upstash missing creds', 'Upstash missing creds')
+        : remoteSyncState === 'error'
+        ? i18n.t('Upstash sync error', 'Upstash sync error')
+        : remoteSyncState === 'cleared'
+        ? i18n.t('Upstash cleared', 'Upstash cleared')
+        : remoteSyncState === 'enabled'
+        ? i18n.t('Upstash enabled', 'Upstash enabled')
+        : i18n.t('Upstash status unknown', 'Upstash status unknown'));
+      const age = remoteSyncAt ? ` ${formatElapsed(clockNow - remoteSyncAt)}` : '';
+      let color = palette.muted;
+      if (remoteSyncState === 'ok') color = palette.ok;
+      else if (remoteSyncState === 'missing') color = palette.warn;
+      else if (remoteSyncState === 'error') color = palette.error;
+      else if (remoteSyncState === 'enabled') color = palette.accent;
+      return color(clipInline(`${base}${age}`, width - 18));
+    };
+
     const showAiPost = aiActive && !secondPassActive && pageDone >= totalCriteria && totalCriteria > 0;
     const aiElapsed = aiStartedAt ? formatElapsed(clockNow - aiStartedAt) : '';
 
@@ -1078,6 +1102,10 @@ function createFancyReporter(options = {}) {
       value:
         `${renderBar({ value: overallDone, total: overallTotal, width: barW })} ` +
         `${palette.muted(`${overallPct}% • ${overallDone}/${overallTotal || 0}`)}`
+    });
+    progressRows.push({
+      key: palette.muted('Upstash'),
+      value: formatRemoteSyncLine()
     });
 
     if (showAiPost) {
@@ -1402,6 +1430,13 @@ function createFancyReporter(options = {}) {
       if (!resumeTempApplied) {
         resumeTempApplied = seedTempTrackerFromCompletedPages(tempTracker, completedPagesData);
       }
+      scheduleRender();
+    },
+
+    onRemoteStatus({ state, message } = {}) {
+      remoteSyncState = state || 'unknown';
+      remoteSyncMessage = message || '';
+      remoteSyncAt = nowMs();
       scheduleRender();
     },
 
@@ -2137,6 +2172,13 @@ function createLegacyReporter(options = {}) {
       aiPostActive = false;
     },
 
+    onRemoteStatus({ state, message } = {}) {
+      remoteSyncState = state || 'unknown';
+      remoteSyncMessage = message || '';
+      remoteSyncAt = nowMs();
+      scheduleRender();
+    },
+
     onPause({ paused } = {}) {
       isPaused = Boolean(paused);
       if (isPaused) {
@@ -2563,6 +2605,13 @@ function createPlainReporter(options = {}) {
 
     onInferenceEnd() {
       if (!codexReasoning) codexReasoning = 'n/a';
+    },
+
+    onRemoteStatus({ state, message } = {}) {
+      remoteSyncState = state || 'unknown';
+      remoteSyncMessage = message || '';
+      remoteSyncAt = nowMs();
+      scheduleRender();
     },
 
     onPause({ paused } = {}) {
