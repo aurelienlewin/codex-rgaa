@@ -145,6 +145,37 @@ function visibleLen(text) {
   return stripAnsi(text).length;
 }
 
+function getTerminalSize({ fallbackColumns = 100, fallbackRows = 30 } = {}) {
+  const rawCols = Number(process.stdout?.columns || 0);
+  const rawRows = Number(process.stdout?.rows || 0);
+  return {
+    columns: rawCols > 0 ? rawCols : fallbackColumns,
+    rows: rawRows > 0 ? rawRows : fallbackRows
+  };
+}
+
+export function createResizeWatcher({ onResize, throttleMs = 120 } = {}) {
+  if (typeof onResize !== 'function' || !process.stdout?.on) {
+    return () => {};
+  }
+  let timer = null;
+  const handler = () => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      onResize();
+    }, throttleMs);
+    if (typeof timer.unref === 'function') timer.unref();
+  };
+  process.stdout.on('resize', handler);
+  process.on('SIGWINCH', handler);
+  return () => {
+    if (timer) clearTimeout(timer);
+    process.stdout.off?.('resize', handler);
+    process.off?.('SIGWINCH', handler);
+  };
+}
+
 function padVisibleRight(text, width) {
   const str = String(text || '');
   const len = visibleLen(str);
@@ -675,8 +706,8 @@ function drawPanel({ title, lines, width, borderColor = palette.muted }) {
 }
 
 export function renderPromptFrame({ title, lines, borderColor = 'accent', width } = {}) {
-  const cols = process.stdout?.columns || 100;
-  const panelWidth = width || Math.max(68, Math.min(cols - 2, 120));
+  const { columns } = getTerminalSize();
+  const panelWidth = width || Math.max(68, Math.min(columns - 2, 120));
   const colorFn =
     typeof borderColor === 'function'
       ? borderColor
@@ -770,6 +801,16 @@ function createLiveBlockRenderer() {
       lastLineCount = lines.length;
       lastLines = lines;
     },
+    invalidate() {
+      if (!process.stdout.isTTY) {
+        lastLineCount = 0;
+        lastLines = null;
+        return;
+      }
+      clearPrevious();
+      lastLineCount = 0;
+      lastLines = null;
+    },
     stop({ keepBlock = true } = {}) {
       if (!keepBlock) clearPrevious();
       enableWrap();
@@ -803,6 +844,7 @@ function createFancyReporter(options = {}) {
   let animTimer = null;
   let clockTimer = null;
   let clockNow = nowMs();
+  let terminalSize = getTerminalSize();
 
   let totalCriteria = 0;
   let totalPages = 0;
@@ -976,10 +1018,15 @@ function createFancyReporter(options = {}) {
   const startTicking = () => {
     if (ticking) return;
     ticking = true;
-    resizeHandler = () => scheduleRender();
+    resizeHandler = createResizeWatcher({
+      onResize: () => {
+        terminalSize = getTerminalSize();
+        renderer.invalidate();
+        scheduleRender();
+      }
+    });
     exitHandler = () => renderer.stop({ keepBlock: true });
     process.on('exit', exitHandler);
-    process.stdout?.on?.('resize', resizeHandler);
     animTimer = setInterval(() => {
       if (!process.stdout.isTTY) return;
       frame = (frame + 1) % pulseGlyphs.length;
@@ -999,7 +1046,7 @@ function createFancyReporter(options = {}) {
   const stopTicking = () => {
     if (!ticking) return;
     ticking = false;
-    if (resizeHandler) process.stdout?.off?.('resize', resizeHandler);
+    if (resizeHandler) resizeHandler();
     if (exitHandler) process.off?.('exit', exitHandler);
     if (animTimer) clearInterval(animTimer);
     if (clockTimer) clearInterval(clockTimer);
@@ -1054,7 +1101,8 @@ function createFancyReporter(options = {}) {
 
   const render = () => {
     if (!process.stdout.isTTY) return;
-    const cols = process.stdout.columns || 100;
+    terminalSize = getTerminalSize();
+    const cols = terminalSize.columns;
     const width = Math.max(76, Math.min(cols - 1, 120));
     const headerWidth = Math.max(76, Math.min(cols - 2, 120));
     const half = Math.max(32, Math.floor((headerWidth - 2) / 2));
@@ -1359,18 +1407,7 @@ function createFancyReporter(options = {}) {
           ]
         : [])
     ];
-    const mergedPanels = headerRow
-      ? panels.map((panel, idx) => {
-          if (idx !== 0) return panel;
-          const lines = String(panel || '').split('\n');
-          if (lines.length === 0) return panel;
-          const trimmed = lines.slice(1);
-          if (trimmed.length >= 2 && /├.*┤/.test(trimmed[1])) trimmed.splice(1, 1);
-          return trimmed.join('\n');
-        })
-      : panels;
-
-    renderer.render([headerRow, ...mergedPanels].filter(Boolean).join('\n'));
+    renderer.render([headerRow, ...panels].filter(Boolean).join('\n'));
   };
 
   const scheduleRender = ({ refreshTime = true } = {}) => {
@@ -1417,7 +1454,8 @@ function createFancyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
-      const cols = process.stdout.columns || 100;
+      terminalSize = getTerminalSize();
+      const cols = terminalSize.columns;
       const totalWidth = Math.max(76, Math.min(cols - 4, 120));
       const half = Math.max(32, Math.floor((totalWidth - 3) / 2));
       const innerWidth = Math.max(1, half - 2);
@@ -1761,7 +1799,7 @@ function createFancyReporter(options = {}) {
       const summary = [scoreLine, reviewLine, secondPassLine].join('\n');
 
       if (isGuided) {
-        const cols = process.stdout.columns || 100;
+        const { columns: cols } = getTerminalSize();
         const width = Math.max(76, Math.min(cols - 1, 120));
         const summaryPanel = drawPanel({
           title: i18n.t('Synthèse', 'Summary'),
@@ -1997,7 +2035,7 @@ function createLegacyReporter(options = {}) {
       );
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
-      const cols = process.stdout.columns || 100;
+      const { columns: cols } = getTerminalSize();
       const totalWidth = Math.max(76, Math.min(cols - 4, 120));
       const half = Math.max(32, Math.floor((totalWidth - 3) / 2));
       const innerWidth = Math.max(1, half - 2);

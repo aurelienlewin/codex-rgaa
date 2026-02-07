@@ -14,7 +14,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { runAudit } from './audit.js';
 import { loadCriteria } from './criteria.js';
-import { createReporter, renderPromptFrame, chromeAutomationWarningLines } from './ui.js';
+import { createReporter, renderPromptFrame, chromeAutomationWarningLines, createResizeWatcher } from './ui.js';
 import { createRemoteStatusReporter } from './remoteStatus.js';
 import { getI18n } from './i18n.js';
 import { terminateCodexChildren } from './ai.js';
@@ -176,18 +176,20 @@ function installFancyPromptResize({ render, rl, promptLabel, throttleMs = 120 } 
     }
   };
   repaint(false);
-  const handler = () => {
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
-      repaint(true);
-    }, throttleMs);
-    if (typeof timer.unref === 'function') timer.unref();
-  };
-  process.stdout.on('resize', handler);
+  const stopWatcher = createResizeWatcher({
+    onResize: () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        repaint(true);
+      }, throttleMs);
+      if (typeof timer.unref === 'function') timer.unref();
+    },
+    throttleMs
+  });
   return () => {
     if (timer) clearTimeout(timer);
-    process.stdout.off?.('resize', handler);
+    stopWatcher();
   };
 }
 
@@ -1911,7 +1913,7 @@ async function main() {
     for (const input of hotkey.inputs) {
       if (hotkeyKeyHandler) input.off('keypress', hotkeyKeyHandler);
       if (hotkeyDataHandler) input.off('data', hotkeyDataHandler);
-      if (input.isTTY && typeof input.setRawMode === 'function') {
+      if (typeof input.setRawMode === 'function') {
         try {
           input.setRawMode(false);
         } catch {}
@@ -1954,13 +1956,13 @@ async function main() {
     };
     for (const input of hotkey.inputs) {
       readline.emitKeypressEvents(input);
+      input.setEncoding('utf8');
+      input.resume();
       if (typeof input.setRawMode === 'function') {
         try {
           input.setRawMode(true);
         } catch {}
       }
-      input.setEncoding('utf8');
-      input.resume();
       input.on('keypress', hotkeyKeyHandler);
       input.on('data', hotkeyDataHandler);
     }

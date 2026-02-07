@@ -33,10 +33,12 @@ function computeScore(counts) {
 }
 
 function logRemoteInfo(message) {
+  if (process.stdout.isTTY && process.env.AUDIT_REMOTE_LOGS !== '1') return;
   console.log(`${INFO_PREFIX} ${message}`);
 }
 
 function logRemoteWarn(message) {
+  if (process.stdout.isTTY && process.env.AUDIT_REMOTE_LOGS !== '1') return;
   console.warn(`${INFO_PREFIX} ${message}`);
 }
 
@@ -107,6 +109,7 @@ export function createRemoteStatusReporter({ reporter }) {
   const configured = Boolean(url && token);
   let lastErrorAt = 0;
   let didLogSuccess = false;
+  let clearPromise = null;
 
   if (!configured) {
     logRemoteWarn(
@@ -190,6 +193,13 @@ export function createRemoteStatusReporter({ reporter }) {
     if (!force && now - lastPushAt < minPushMs) return;
     lastPushAt = now;
     try {
+      const pendingClear = clearPromise;
+      if (pendingClear) {
+        try {
+          await pendingClear;
+        } catch {}
+        if (clearPromise === pendingClear) clearPromise = null;
+      }
       await upstashSet(buildPayload());
       if (!didLogSuccess) {
         didLogSuccess = true;
@@ -210,7 +220,10 @@ export function createRemoteStatusReporter({ reporter }) {
   const wrapped = {
     ...reporter,
     onStart(payload) {
-      clearRemote('start');
+      didLogSuccess = false;
+      lastError = '';
+      lastErrorAt = 0;
+      clearPromise = clearRemote('start');
       totals.pagesTotal = Number(payload?.pages || 0);
       totals.criteriaTotal = Number(payload?.criteriaCount || 0);
       startAt = Date.now() - Number(payload?.resumeState?.elapsedMs || 0);
