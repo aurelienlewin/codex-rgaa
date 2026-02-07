@@ -169,11 +169,15 @@ export function createRemoteStatusReporter({ reporter }) {
     status: buildStatus()
   });
 
-  const clearRemote = async () => {
+  const clearRemote = async (reason = 'completion') => {
     try {
       await upstashDelete();
-      logRemoteInfo('Cloud sync cleared after completion.');
-      notifyRemoteStatus(reporter, { state: 'cleared', message: 'Cloud sync cleared after completion' });
+      const message =
+        reason === 'start'
+          ? 'Cloud sync cleared before new audit.'
+          : 'Cloud sync cleared after completion.';
+      logRemoteInfo(message);
+      notifyRemoteStatus(reporter, { state: 'cleared', message });
     } catch (err) {
       const msg = `Cloud sync clear failed: ${String(err?.message || err)}`;
       logRemoteWarn(msg);
@@ -206,6 +210,7 @@ export function createRemoteStatusReporter({ reporter }) {
   const wrapped = {
     ...reporter,
     onStart(payload) {
+      clearRemote('start');
       totals.pagesTotal = Number(payload?.pages || 0);
       totals.criteriaTotal = Number(payload?.criteriaCount || 0);
       startAt = Date.now() - Number(payload?.resumeState?.elapsedMs || 0);
