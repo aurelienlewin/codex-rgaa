@@ -409,6 +409,7 @@ export function createRemoteStatusReporter({ reporter }) {
       statusMessage = 'Error';
       pushFeed(feed, { ts: new Date().toISOString(), kind: 'error', message: lastError });
       push(true);
+      clearRemote('error');
       reporter.onError?.(payload);
     }
   };
