@@ -156,6 +156,23 @@ When the guided flow auto‑launches Chrome, resume URLs are restored in separat
 Hotkeys are read from the active TTY, so `p`, `r`, `q`, and `h` work even if stdin is busy.
 </details>
 
+<details>
+<summary><strong>Remote live status (codex-rgaa-monitor)</strong></summary>
+
+The CLI can push a live JSON snapshot to Upstash so the **codex-rgaa-monitor** webapp can read it remotely.
+
+Enable with:
+
+```bash
+export AUDIT_REMOTE_STATUS=1
+export AUDIT_UPSTASH_REST_URL="https://<your-upstash>.upstash.io"
+export AUDIT_UPSTASH_REST_TOKEN="<token>"
+export AUDIT_UPSTASH_KEY="rgaa-monitor:state"
+```
+
+The webapp (`codex-rgaa-monitor`) should be configured with the same Upstash credentials/key and `AUDIT_MONITOR_REMOTE=1`.
+</details>
+
 ## UX moments
 <details open>
 <summary><strong>What the UI shows while it runs</strong></summary>

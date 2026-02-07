@@ -15,6 +15,7 @@ import { hideBin } from 'yargs/helpers';
 import { runAudit } from './audit.js';
 import { loadCriteria } from './criteria.js';
 import { createReporter, renderPromptFrame, chromeAutomationWarningLines } from './ui.js';
+import { createRemoteStatusReporter } from './remoteStatus.js';
 import { getI18n } from './i18n.js';
 import { terminateCodexChildren } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
@@ -1783,7 +1784,8 @@ async function main() {
     humanizeFeed,
     humanizeFeedModel
   });
-  const debugWrapped = wrapReporterWithDebug({ reporter, logger: debugLogger });
+  const remoteWrapped = createRemoteStatusReporter({ reporter });
+  const debugWrapped = wrapReporterWithDebug({ reporter: remoteWrapped.reporter, logger: debugLogger });
   const pauseController = createPauseController({ reporter: debugWrapped.reporter });
   const aiStallRaw = Number(process.env.AUDIT_AI_STALL_TIMEOUT_MS || '');
   const aiStallTimeoutMs =
@@ -1829,6 +1831,7 @@ async function main() {
     if (signal === 'SIGTERM') {
       watchdog.stop();
       debugWrapped.stop();
+      remoteWrapped.stop?.();
       if (reporter.onShutdown) {
         reporter.onShutdown({ signal });
       } else {
@@ -1838,6 +1841,7 @@ async function main() {
     } else {
       watchdog.stop();
       debugWrapped.stop();
+      remoteWrapped.stop?.();
       reporter.onError?.(`Received ${signal}. Shutting down…`);
     }
     abortController.abort();
