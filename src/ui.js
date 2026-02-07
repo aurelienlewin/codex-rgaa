@@ -1075,24 +1075,28 @@ function createFancyReporter(options = {}) {
       enrichmentActive && enrichmentStartedAt ? formatElapsed(nowMs() - enrichmentStartedAt) : '';
 
     const formatRemoteSyncLine = () => {
-      const base = remoteSyncMessage || (remoteSyncState === 'ok'
-        ? i18n.t('Cloud sync sync OK', 'Cloud sync sync OK')
+      const base = remoteSyncState === 'ok'
+        ? i18n.t('OK', 'OK')
         : remoteSyncState === 'missing'
-        ? i18n.t('Cloud sync missing creds', 'Cloud sync missing creds')
+        ? i18n.t('Missing creds', 'Missing creds')
         : remoteSyncState === 'error'
-        ? i18n.t('Cloud sync sync error', 'Cloud sync sync error')
+        ? i18n.t('Error', 'Error')
         : remoteSyncState === 'cleared'
-        ? i18n.t('Cloud sync cleared', 'Cloud sync cleared')
+        ? i18n.t('Cleared', 'Cleared')
         : remoteSyncState === 'enabled'
-        ? i18n.t('Cloud sync enabled', 'Cloud sync enabled')
-        : i18n.t('Cloud sync status unknown', 'Cloud sync status unknown'));
+        ? i18n.t('Enabled', 'Enabled')
+        : i18n.t('Unknown', 'Unknown');
       const age = remoteSyncAt ? ` ${formatElapsed(clockNow - remoteSyncAt)}` : '';
+      let detail = '';
+      if (remoteSyncState === 'error' && remoteSyncMessage) {
+        detail = ` • ${clipInline(remoteSyncMessage.replace(/cloud sync\s*/gi, '').trim(), Math.max(20, width - 26))}`;
+      }
       let color = palette.muted;
       if (remoteSyncState === 'ok') color = palette.ok;
       else if (remoteSyncState === 'missing') color = palette.warn;
       else if (remoteSyncState === 'error') color = palette.error;
       else if (remoteSyncState === 'enabled') color = palette.accent;
-      return color(clipInline(`${base}${age}`, width - 18));
+      return color(clipInline(`${base}${age}${detail}`, width - 18));
     };
 
     const showAiPost = aiActive && !secondPassActive && pageDone >= totalCriteria && totalCriteria > 0;
@@ -1404,8 +1408,8 @@ function createFancyReporter(options = {}) {
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
       const cols = process.stdout.columns || 100;
-      const totalWidth = Math.max(76, Math.min(cols - 2, 120));
-      const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
+      const totalWidth = Math.max(76, Math.min(cols - 4, 120));
+      const half = Math.max(32, Math.floor((totalWidth - 3) / 2));
       const innerWidth = Math.max(1, half - 2);
       const glowLen = Math.max(8, Math.min(32, innerWidth - 4));
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
@@ -1984,8 +1988,8 @@ function createLegacyReporter(options = {}) {
       const credit = 'Aurélien Lewin <aurelienlewin@proton.me>';
 
       const cols = process.stdout.columns || 100;
-      const totalWidth = Math.max(76, Math.min(cols - 2, 120));
-      const half = Math.max(32, Math.floor((totalWidth - 2) / 2));
+      const totalWidth = Math.max(76, Math.min(cols - 4, 120));
+      const half = Math.max(32, Math.floor((totalWidth - 3) / 2));
       const innerWidth = Math.max(1, half - 2);
       const glowLen = Math.max(8, Math.min(32, innerWidth - 4));
       const glowLine = gradientString(['#22d3ee', '#a78bfa', '#f472b6']).multiline(
