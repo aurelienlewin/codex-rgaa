@@ -140,6 +140,9 @@ npm run audit -- --pages https://example.com --allow-remote-debug --report-lang 
 
 - Press `p` to pause, `r` to resume, `q` to pause + quit (displayed in the CLI).
 - Pause is reactive: it cancels in‑flight AI/MCP calls and retries them after resume.
+- If an AI/MCP call crashes, the auditor pauses and quits automatically (to free memory); resume with the saved file.
+- If Chrome disconnects, the auditor pauses + quits (resume later with the saved file).
+- If AI credentials are missing, the auditor retries briefly (defaults to 60s, configurable via `AUDIT_AI_AUTH_RETRY_MS` / `AUDIT_AI_AUTH_RETRY_INTERVAL_MS`) then pauses + quits.
 - A resume file is written after each page and whenever you pause (captures in‑progress page info): `out/<run>/audit.resume.json`.
 - Resuming continues from the paused page, not the next one.
 - Resume later with:
@@ -163,7 +166,8 @@ Hotkeys are read from the active TTY, so `p`, `r`, `q`, and `h` work even if std
 - **End recap**: A modern summary line with Score + C/NC/NA/REV/ERR + remaining Review.
 - **Temp score**: Live C/(C+NC) updates after each decision.
 - **Pause**: UI animations stop while paused to keep the display stable.
-- **Recovery**: If Chrome disconnects, the auditor relaunches it and shows a “Recovered Chrome” badge.
+- **Prompts**: Fancy CLI frames re-render on terminal resize (throttled).
+- **Chrome disconnect**: If Chrome drops, the auditor pauses + quits so you can resume with a stable session.
 - **Crash handler**: On SIGINT/SIGTERM, the UI prints a progress-at-shutdown line and leaves the resume file for continuation.
 </details>
 

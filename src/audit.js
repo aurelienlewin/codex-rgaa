@@ -12,6 +12,7 @@ import { buildEnrichment } from './enrichment.js';
 import { evaluateCriterion, STATUS } from './checks.js';
 import { aiReviewCriteriaBatch, aiReviewCriterion, aiReviewCrossPageCriterion } from './ai.js';
 import { createAbortError, isAbortError } from './abort.js';
+import { looksLikeMissingAuth } from './codexAuth.js';
 import { getI18n, normalizeReportLang } from './i18n.js';
 import { validateHtmlUrl } from './htmlValidator.js';
 
@@ -89,6 +90,17 @@ function buildResumeState({
 function isRetryableAiError(err) {
   const text = String(err?.message || err || '').toLowerCase();
   return text.includes('timed out') || text.includes('timeout') || text.includes('stalled');
+}
+
+function isMissingAuthError(err) {
+  const text = err?.stderr || err?.message || err;
+  return looksLikeMissingAuth(text);
+}
+
+function sleepMs(ms) {
+  const delay = Number.isFinite(ms) && ms > 0 ? Math.floor(ms) : 0;
+  if (!delay) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, delay));
 }
 
 function isMcpDisconnectError(err) {
@@ -170,6 +182,45 @@ async function withPauseRetry({
   const pausedAbort = first.wasPausedAbort();
   if (signal?.aborted || (isAbortError(firstErr) && !pausedAbort)) {
     throw firstErr;
+  }
+  if (isMissingAuthError(firstErr)) {
+    const retryWindowRaw = Number(process.env.AUDIT_AI_AUTH_RETRY_MS || '');
+    const retryWindowMs =
+      Number.isFinite(retryWindowRaw) && retryWindowRaw > 0 ? Math.floor(retryWindowRaw) : 60000;
+    const retryIntervalRaw = Number(process.env.AUDIT_AI_AUTH_RETRY_INTERVAL_MS || '');
+    const retryIntervalMs =
+      Number.isFinite(retryIntervalRaw) && retryIntervalRaw > 0 ? Math.floor(retryIntervalRaw) : 5000;
+    reporter?.onAILog?.({
+      criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
+      message: `Missing AI credentials; retrying for up to ${Math.round(retryWindowMs / 1000)}s.`
+    });
+    const deadline = Date.now() + retryWindowMs;
+    let lastErr = firstErr;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) throw createAbortError();
+      if (pauseController?.isPaused?.()) await pauseController.waitIfPaused();
+      await sleepMs(retryIntervalMs);
+      const next = await runAttempt();
+      if (!next.err) return next.result;
+      lastErr = next.err;
+      if (!isMissingAuthError(lastErr)) break;
+    }
+    reporter?.onAILog?.({
+      criterion: { id: 'ai', title: 'AI', theme: 'Debug' },
+      message: 'AI credentials still missing. Pausing and quitting to resume later.'
+    });
+    if (!pauseController?.isPaused?.()) {
+      if (typeof pauseController?.pauseWithMeta === 'function') {
+        pauseController.pauseWithMeta({ reason: 'missing-auth', quit: true });
+      } else {
+        pauseController?.pause();
+      }
+    }
+    if (pauseController?.shouldQuit?.()) {
+      throw createAbortError();
+    }
+    await pauseController?.waitIfPaused?.();
+    throw lastErr;
   }
   if (!pauseController) throw firstErr;
   if (!retryOnAny && !isRetryableAiError(firstErr)) throw firstErr;
@@ -808,58 +859,27 @@ export async function runAudit(options) {
     queueResumeWrite();
   }
 
-  const relaunchChrome = async ({ label, reason }) => {
-    if (!chrome) return false;
-    reporter?.onAILog?.({
-      criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
-      message: `${label} failed (Chrome disconnected). Relaunching Chrome…`
-    });
-    try {
-      await chrome.kill();
-    } catch {}
-    try {
-      chrome = await launchChrome({
-        chromePath: options.chromePath,
-        port: options.chromePort,
-        userDataDir: options.chromeProfileDir
-      });
-      mcpConfig = {
-        ...mcpConfig,
-        browserUrl: `http://127.0.0.1:${chrome.port}`,
-        autoConnect: false
-      };
-      mcpConfig.cachedPages = [];
-      if (mcpForAi) {
-        mcpForAi = {
-          ...mcpForAi,
-          browserUrl: mcpConfig.browserUrl,
-          autoConnect: false
-        };
-        mcpForAi.cachedPages = [];
-      }
-      reporter?.onAILog?.({
-        criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
-        message: 'Chrome relaunched; retrying.'
-      });
-      reporter?.onChromeRecovered?.();
-      return true;
-    } catch (err) {
-      reporter?.onAILog?.({
-        criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
-        message: `Chrome relaunch failed: ${String(err?.message || err || reason || 'unknown error')}`
-      });
-      return false;
-    }
-  };
-
   const withMcpRecovery = async ({ label, fn }) => {
     try {
       return await fn();
     } catch (err) {
       if (!isMcpDisconnectError(err)) throw err;
-      const recovered = await relaunchChrome({ label, reason: err });
-      if (!recovered) throw err;
-      return fn();
+      reporter?.onAILog?.({
+        criterion: { id: 'snapshot', title: 'Chrome', theme: 'Debug' },
+        message: `${label} failed (Chrome disconnected). Pausing and quitting to resume later.`
+      });
+      if (pauseController && !pauseController.isPaused?.()) {
+        if (typeof pauseController.pauseWithMeta === 'function') {
+          pauseController.pauseWithMeta({ reason: 'chrome-crash', quit: true });
+        } else {
+          pauseController.pause();
+        }
+      }
+      if (pauseController?.shouldQuit?.()) {
+        throw createAbortError();
+      }
+      await pauseController?.waitIfPaused?.();
+      throw err;
     }
   };
 
