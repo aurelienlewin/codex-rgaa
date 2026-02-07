@@ -83,7 +83,9 @@ async function upstashSet(state) {
 
 function shouldEnable() {
   const raw = String(process.env.AUDIT_REMOTE_STATUS || '').trim().toLowerCase();
-  return raw === '1' || raw === 'true' || raw === 'yes';
+  if (raw === '0' || raw === 'false' || raw === 'no') return false;
+  if (raw === '1' || raw === 'true' || raw === 'yes') return true;
+  return true;
 }
 
 function pushFeed(feed, entry) {
