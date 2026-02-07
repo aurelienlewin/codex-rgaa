@@ -40,7 +40,7 @@ function logRemoteWarn(message) {
   console.warn(`${INFO_PREFIX} ${message}`);
 }
 
-function getCloud syncConfig() {
+function getCloudSyncConfig() {
   return {
     url: process.env.AUDIT_UPSTASH_REST_URL || process.env.UPSTASH_REDIS_REST_URL || '',
     token: process.env.AUDIT_UPSTASH_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
@@ -49,7 +49,7 @@ function getCloud syncConfig() {
 }
 
 async function upstashDelete() {
-  const { url, token, key } = getCloud syncConfig();
+  const { url, token, key } = getCloudSyncConfig();
   if (!url || !token) return;
   const res = await fetch(`${url}/del/${encodeURIComponent(key)}`, {
     method: 'POST',
@@ -65,7 +65,7 @@ async function upstashDelete() {
 }
 
 async function upstashSet(state) {
-  const { url, token, key } = getCloud syncConfig();
+  const { url, token, key } = getCloudSyncConfig();
   if (!url || !token) return;
   const res = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: 'POST',
@@ -103,7 +103,7 @@ function notifyRemoteStatus(reporter, payload) {
 export function createRemoteStatusReporter({ reporter }) {
   if (!shouldEnable()) return { reporter, stop: () => {} };
 
-  const { url, token, key } = getCloud syncConfig();
+  const { url, token, key } = getCloudSyncConfig();
   const configured = Boolean(url && token);
   let lastErrorAt = 0;
   let didLogSuccess = false;
