@@ -1583,6 +1583,7 @@ async function main() {
     const promptResult = await promptPages({ tabs: [], guided });
     pages = promptResult.urls;
   }
+  const firstGuidedUrl = pages.find((url) => isHttpUrl(url));
 
   if (interactive && guided && autoLaunchPlanned) {
     const i18n = getI18n(reportLang);
@@ -1615,6 +1616,14 @@ async function main() {
       autoLaunchOpenedInitial =
         restored.attempted > 0 && (restored.navigated || restored.opened > 0);
       await promptContinue('Chrome is ready with restored tabs.', {
+        title: 'Chrome Ready'
+      });
+    } else if (firstGuidedUrl) {
+      autoLaunchOpenedInitial = await forceNavigateFirstPage({
+        browserUrl: mcpBrowserUrlArg,
+        url: firstGuidedUrl
+      });
+      await promptContinue('Chrome is ready with your first page open.', {
         title: 'Chrome Ready'
       });
     } else {
