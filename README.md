@@ -68,6 +68,7 @@ export AUDIT_REMOTE_STATUS=1
 export AUDIT_UPSTASH_REST_URL="https://<your-upstash>.upstash.io"
 export AUDIT_UPSTASH_REST_TOKEN="<token>"
 export AUDIT_UPSTASH_KEY="rgaa-monitor:state"
+export AUDIT_REMOTE_PUSH_MS=60000
 ```
 
 In **codex-rgaa-monitor** (Vercel):
@@ -103,6 +104,9 @@ npm run monitor:push
 ```
 
 Tip: if a sibling `codex-rgaa-monitor/.env.local` exists, the CLI can auto-load missing Upstash creds from it.
+
+Cleanup: the CLI clears the Upstash key at startup and after completion/errors (with retries). To keep data longer,
+disable remote status or use a different key.
 
 ---
 

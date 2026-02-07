@@ -1,8 +1,11 @@
-const DEFAULT_PUSH_MS = 2000;
+const DEFAULT_PUSH_MS = 60000;
 const DEFAULT_KEY = 'rgaa-monitor:state';
 const INFO_PREFIX = '[remote]';
 const ERROR_COOLDOWN_MS = 10000;
 const CLEAR_ON_DONE_DELAY_MS = 5000;
+const CLEAR_RETRY_ATTEMPTS = 5;
+const CLEAR_RETRY_BASE_MS = 2000;
+const CLEAR_RETRY_MAX_MS = 30000;
 
 function normalizeStatus(status) {
   const raw = String(status || '').trim();
@@ -110,6 +113,10 @@ export function createRemoteStatusReporter({ reporter }) {
   let lastErrorAt = 0;
   let didLogSuccess = false;
   let clearPromise = null;
+  let clearTimer = null;
+  let clearAttempts = 0;
+  let clearInProgress = false;
+  let allowPush = true;
 
   if (!configured) {
     logRemoteWarn(
@@ -173,6 +180,8 @@ export function createRemoteStatusReporter({ reporter }) {
   });
 
   const clearRemote = async (reason = 'completion') => {
+    if (clearInProgress) return clearPromise;
+    clearInProgress = true;
     try {
       await upstashDelete();
       const message =
@@ -185,10 +194,27 @@ export function createRemoteStatusReporter({ reporter }) {
       const msg = `Cloud sync clear failed: ${String(err?.message || err)}`;
       logRemoteWarn(msg);
       notifyRemoteStatus(reporter, { state: 'error', message: msg });
+      if (clearAttempts < CLEAR_RETRY_ATTEMPTS) {
+        clearAttempts += 1;
+        const delay = Math.min(CLEAR_RETRY_BASE_MS * 2 ** (clearAttempts - 1), CLEAR_RETRY_MAX_MS);
+        scheduleClear(reason, { delayMs: delay, resetAttempts: false });
+      }
+    } finally {
+      clearInProgress = false;
     }
   };
 
+  const scheduleClear = (reason, { delayMs = 0, resetAttempts = true } = {}) => {
+    if (clearTimer) clearTimeout(clearTimer);
+    if (resetAttempts) clearAttempts = 0;
+    clearTimer = setTimeout(() => {
+      clearPromise = clearRemote(reason);
+    }, delayMs);
+    if (typeof clearTimer.unref === 'function') clearTimer.unref();
+  };
+
   const push = async (force = false) => {
+    if (!allowPush) return;
     const now = Date.now();
     if (!force && now - lastPushAt < minPushMs) return;
     lastPushAt = now;
@@ -223,6 +249,12 @@ export function createRemoteStatusReporter({ reporter }) {
       didLogSuccess = false;
       lastError = '';
       lastErrorAt = 0;
+      allowPush = true;
+      clearAttempts = 0;
+      if (clearTimer) {
+        clearTimeout(clearTimer);
+        clearTimer = null;
+      }
       clearPromise = clearRemote('start');
       totals.pagesTotal = Number(payload?.pages || 0);
       totals.criteriaTotal = Number(payload?.criteriaCount || 0);
@@ -413,7 +445,8 @@ export function createRemoteStatusReporter({ reporter }) {
       statusMessage = hasErrors ? 'Done with errors' : 'Done';
       pushFeed(feed, { ts: new Date().toISOString(), kind: 'stage', message: statusMessage });
       push(true);
-      setTimeout(clearRemote, CLEAR_ON_DONE_DELAY_MS);
+      allowPush = false;
+      scheduleClear('completion', { delayMs: CLEAR_ON_DONE_DELAY_MS });
       reporter.onDone?.(payload);
     },
     onError(payload) {
@@ -422,10 +455,16 @@ export function createRemoteStatusReporter({ reporter }) {
       statusMessage = 'Error';
       pushFeed(feed, { ts: new Date().toISOString(), kind: 'error', message: lastError });
       push(true);
-      clearRemote('error');
+      allowPush = false;
+      scheduleClear('error');
       reporter.onError?.(payload);
     }
   };
 
-  return { reporter: wrapped, stop: () => {} };
+  const stop = () => {
+    allowPush = false;
+    scheduleClear('stop');
+  };
+
+  return { reporter: wrapped, stop };
 }
